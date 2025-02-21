@@ -24,6 +24,7 @@ import {
   Description as DescriptionIcon,
   Edit as EditIcon,
   Add as AddIcon,
+  EventNote as EventNoteIcon,
 } from '@mui/icons-material';
 
 interface Meeting {
@@ -133,10 +134,13 @@ const MyMeetings: React.FC = () => {
           background: 'linear-gradient(90deg, #3B82F6 0%, #8B5CF6 100%)',
           WebkitBackgroundClip: 'text',
           WebkitTextFillColor: 'transparent',
-          letterSpacing: '-0.5px'
+          letterSpacing: '-0.5px',
+          display: 'flex',
+          alignItems: 'center',
+          gap: 1
         }}
       >
-        📅 My Meetings
+        <EventNoteIcon sx={{ fontSize: 32, color: '#3B82F6' }} /> My Meetings
       </Typography>
 
       <Grid container spacing={3}>

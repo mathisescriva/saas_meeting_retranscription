@@ -12,6 +12,8 @@ import {
   Divider,
   LinearProgress,
   Stack,
+  Chip,
+  alpha,
 } from '@mui/material';
 import {
   Timer as TimerIcon,
@@ -22,6 +24,9 @@ import {
   Mic as MicIcon,
   CloudUpload as CloudUploadIcon,
   Share as ShareIcon,
+  EventNote as EventNoteIcon,
+  PlayArrow as PlayArrowIcon,
+  Description as DescriptionIcon,
 } from '@mui/icons-material';
 
 const features = [
@@ -256,46 +261,75 @@ const Dashboard = () => {
       </Grid>
 
       {/* Recent Meetings */}
-      <Typography variant="h5" sx={{ mb: 3, fontWeight: 600 }}>
-        Recent Meetings
+      <Typography
+        variant="h5"
+        sx={{
+          mb: 3,
+          fontWeight: 700,
+          background: 'linear-gradient(90deg, #3B82F6 0%, #8B5CF6 100%)',
+          WebkitBackgroundClip: 'text',
+          WebkitTextFillColor: 'transparent',
+          letterSpacing: '-0.5px',
+          display: 'flex',
+          alignItems: 'center',
+          gap: 1
+        }}
+      >
+        <EventNoteIcon sx={{ fontSize: 28, color: '#3B82F6' }} /> Recent Meetings
       </Typography>
-      <Grid container spacing={2}>
+      <Grid container spacing={3}>
         {recentMeetings.map((meeting) => (
           <Grid item xs={12} key={meeting.title}>
-            <Paper sx={{ p: 2 }}>
-              <Box
-                sx={{
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'space-between',
-                  mb: 1,
-                }}
-              >
-                <Typography variant="subtitle1" sx={{ fontWeight: 500 }}>
-                  {meeting.title}
-                </Typography>
-                <Typography variant="body2" color="text.secondary">
-                  {meeting.date}
-                </Typography>
+            <Paper
+              sx={{
+                p: 3,
+                borderRadius: '16px',
+                boxShadow: '0 4px 12px rgba(0,0,0,0.05)',
+                transition: 'all 0.3s ease-in-out',
+                '&:hover': {
+                  transform: 'translateY(-2px)',
+                  boxShadow: '0 8px 24px rgba(0,0,0,0.1)',
+                },
+              }}
+            >
+              <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                <Box>
+                  <Typography variant="h6" sx={{ mb: 1, fontWeight: 600 }}>
+                    {meeting.title}
+                  </Typography>
+                  <Stack direction="row" spacing={2} alignItems="center">
+                    <Typography variant="body2" color="text.secondary">
+                      🕒 {meeting.duration}
+                    </Typography>
+                    <Typography variant="body2" color="text.secondary">
+                      📅 {meeting.date}
+                    </Typography>
+                    <Typography variant="body2" color="text.secondary">
+                      👥 {meeting.participants} participants
+                    </Typography>
+                    <Chip
+                      label="completed"
+                      size="small"
+                      sx={{
+                        bgcolor: alpha('#10B981', 0.1),
+                        color: '#10B981',
+                        fontWeight: 500,
+                      }}
+                    />
+                  </Stack>
+                </Box>
+                <Stack direction="row" spacing={1}>
+                  <IconButton size="small" sx={{ color: '#3B82F6' }}>
+                    <PlayArrowIcon />
+                  </IconButton>
+                  <IconButton size="small" sx={{ color: '#10B981' }}>
+                    <DescriptionIcon />
+                  </IconButton>
+                  <IconButton size="small" sx={{ color: '#6366F1' }}>
+                    <ShareIcon />
+                  </IconButton>
+                </Stack>
               </Box>
-              <Stack
-                direction="row"
-                spacing={2}
-                divider={<Divider orientation="vertical" flexItem />}
-                sx={{ mb: 1 }}
-              >
-                <Typography variant="body2" color="text.secondary">
-                  Duration: {meeting.duration}
-                </Typography>
-                <Typography variant="body2" color="text.secondary">
-                  Participants: {meeting.participants}
-                </Typography>
-              </Stack>
-              <LinearProgress
-                variant="determinate"
-                value={meeting.progress}
-                sx={{ height: 6, borderRadius: 1 }}
-              />
             </Paper>
           </Grid>
         ))}

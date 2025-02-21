@@ -22,6 +22,8 @@ import {
   DialogContent,
   DialogActions,
   Grid,
+  LinearProgress,
+  CircularProgress,
 } from '@mui/material';
 import LoadingModal from './LoadingModal';
 import MeetingStats from './MeetingStats';
@@ -197,23 +199,84 @@ const TranscriptionView = () => {
         </Typography>
       </Box>
 
-      <input
-        type="file"
-        accept="audio/*"
-        onChange={handleFileUpload}
-        style={{ display: 'none' }}
-        id="audio-file-input"
-      />
+      <Box sx={{ 
+        p: 4,
+        background: 'linear-gradient(145deg, rgba(255,255,255,0.9) 0%, rgba(249,250,251,0.9) 100%)',
+        minHeight: '100vh'
+      }}>
+        <Typography
+          variant="h4"
+          sx={{
+            mb: 3,
+            fontWeight: 700,
+            background: 'linear-gradient(90deg, #3B82F6 0%, #8B5CF6 100%)',
+            WebkitBackgroundClip: 'text',
+            WebkitTextFillColor: 'transparent',
+            letterSpacing: '-0.5px',
+            display: 'flex',
+            alignItems: 'center',
+            gap: 1
+          }}
+        >
+          <CloudUpload sx={{ fontSize: 32, color: '#3B82F6' }} /> New Transcription
+        </Typography>
 
-      <Button
-        variant="contained"
-        component="label"
-        htmlFor="audio-file-input"
-        disabled={isTranscribing}
-        startIcon={<CloudUpload />}
-      >
-        {isTranscribing ? 'Transcribing...' : 'Upload Audio File'}
-      </Button>
+        <Grid container spacing={3}>
+          <Grid item xs={12}>
+            <Paper
+              sx={{
+                p: 3,
+                borderRadius: '16px',
+                boxShadow: '0 4px 12px rgba(0,0,0,0.05)',
+                transition: 'all 0.3s ease-in-out',
+                '&:hover': {
+                  transform: 'translateY(-2px)',
+                  boxShadow: '0 8px 24px rgba(0,0,0,0.1)',
+                },
+              }}
+            >
+              <Box sx={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 3, py: 4 }}>
+                <input
+                  type="file"
+                  accept="audio/*"
+                  onChange={handleFileUpload}
+                  style={{ display: 'none' }}
+                  id="audio-file-input"
+                />
+
+                <Stack spacing={2} alignItems="center">
+                  <Typography variant="h6" sx={{ fontWeight: 600 }}>
+                    Upload your meeting recording
+                  </Typography>
+                  <Typography variant="body2" color="text.secondary">
+                    Supported formats: MP3, WAV, M4A
+                  </Typography>
+                </Stack>
+
+                <Button
+                  variant="contained"
+                  component="label"
+                  htmlFor="audio-file-input"
+                  disabled={isTranscribing}
+                  startIcon={isTranscribing ? <CircularProgress size={20} color="inherit" /> : <CloudUpload />}
+                  sx={{
+                    py: 1.5,
+                    px: 3,
+                    borderRadius: '8px',
+                    textTransform: 'none',
+                    bgcolor: '#3B82F6',
+                    '&:hover': {
+                      bgcolor: '#2563EB'
+                    }
+                  }}
+                >
+                  {isTranscribing ? 'Transcribing...' : 'Select Audio File'}
+                </Button>
+              </Box>
+            </Paper>
+          </Grid>
+        </Grid>
+      </Box>
 
       {selectedFile && (
         <Box sx={{ mt: 2, maxWidth: 600, mx: 'auto' }}>
