@@ -6,9 +6,9 @@ import Sidebar from './components/Sidebar';
 import MainContent from './components/MainContent';
 
 function App() {
-  const [currentView, setCurrentView] = useState<'dashboard' | 'transcription'>('dashboard');
+  const [currentView, setCurrentView] = useState<'dashboard' | 'transcription' | 'meetings'>('dashboard');
 
-  const handleViewChange = (view: 'dashboard' | 'transcription') => {
+  const handleViewChange = (view: 'dashboard' | 'transcription' | 'meetings') => {
     setCurrentView(view);
   };
 

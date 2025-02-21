@@ -2,6 +2,7 @@ import React, { useState, useRef, useMemo, useEffect, useCallback } from 'react'
 import { transcribeAudio } from '../services/assemblyAI';
 import Dashboard from './Dashboard';
 import AudioPlayer from './AudioPlayer';
+import MyMeetings from './MyMeetings';
 import {
   Box,
   Paper,
@@ -47,7 +48,7 @@ interface Report {
 }
 
 interface MainContentProps {
-  currentView: 'dashboard' | 'transcription';
+  currentView: 'dashboard' | 'transcription' | 'meetings';
 }
 
 const formatDuration = (seconds: number): string => {
@@ -406,7 +407,16 @@ const TranscriptionView = () => {
 };
 
 const MainContent: React.FC<MainContentProps> = ({ currentView }) => {
-  return currentView === 'dashboard' ? <Dashboard /> : <TranscriptionView />;
+  switch (currentView) {
+    case 'dashboard':
+      return <Dashboard />;
+    case 'transcription':
+      return <TranscriptionView />;
+    case 'meetings':
+      return <MyMeetings />;
+    default:
+      return <Dashboard />;
+  }
 };
 
 export default MainContent;

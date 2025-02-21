@@ -26,28 +26,28 @@ import {
 
 const features = [
   {
-    title: 'Real-time Transcription',
+    title: '🎙️ Real-time Transcription',
     description: 'Transcribe meetings in real-time with high accuracy',
-    icon: <MicIcon />,
+    icon: <MicIcon sx={{ color: '#3B82F6' }} />,
     action: 'Start Recording',
     highlight: true,
   },
   {
-    title: 'Multi-language Support',
+    title: '🌍 Multi-language Support',
     description: 'Support for 100+ languages and dialects',
-    icon: <LanguageIcon />,
+    icon: <LanguageIcon sx={{ color: '#10B981' }} />,
     action: 'Change Language',
   },
   {
-    title: 'Smart Summaries',
+    title: '✨ Smart Summaries',
     description: 'AI-powered meeting summaries and key points',
-    icon: <SummarizeIcon />,
+    icon: <SummarizeIcon sx={{ color: '#6366F1' }} />,
     action: 'View Demo',
   },
   {
-    title: 'Speaker Recognition',
+    title: '👥 Speaker Recognition',
     description: 'Automatically identify different speakers',
-    icon: <GroupIcon />,
+    icon: <GroupIcon sx={{ color: '#8B5CF6' }} />,
     action: 'Setup Voices',
   },
   {
@@ -90,11 +90,24 @@ const recentMeetings = [
 
 const Dashboard = () => {
   return (
-    <Box sx={{ p: 4 }}>
+    <Box sx={{ 
+      p: 4,
+      background: 'linear-gradient(145deg, rgba(255,255,255,0.9) 0%, rgba(249,250,251,0.9) 100%)',
+      minHeight: '100vh'
+    }}>
       {/* Header */}
       <Box sx={{ mb: 4 }}>
-        <Typography variant="h4" sx={{ mb: 1, fontWeight: 600 }}>
-          Welcome back!
+        <Typography 
+            variant="h4" 
+            sx={{ 
+              mb: 1, 
+              fontWeight: 700,
+              background: 'linear-gradient(90deg, #3B82F6 0%, #8B5CF6 100%)',
+              WebkitBackgroundClip: 'text',
+              WebkitTextFillColor: 'transparent',
+              letterSpacing: '-0.5px'
+            }}>
+          👋 Welcome back!
         </Typography>
         <Typography variant="body1" color="text.secondary">
           Manage your meetings and transcriptions from one place
@@ -112,11 +125,18 @@ const Dashboard = () => {
                 alignItems: 'center',
                 bgcolor: 'primary.main',
                 color: 'white',
+                borderRadius: '16px',
+                boxShadow: '0 10px 20px rgba(59, 130, 246, 0.15)',
+                transition: 'all 0.3s ease-in-out',
+                '&:hover': {
+                  transform: 'translateY(-5px)',
+                  boxShadow: '0 15px 30px rgba(59, 130, 246, 0.2)'
+                }
               }}
             >
               <Box sx={{ flexGrow: 1 }}>
                 <Typography variant="h6" sx={{ mb: 1 }}>
-                  Start New Meeting
+                  🎯 Start New Meeting
                 </Typography>
                 <Typography variant="body2" sx={{ mb: 2, opacity: 0.8 }}>
                   Begin recording and transcribing instantly
@@ -148,7 +168,7 @@ const Dashboard = () => {
             >
               <Box sx={{ flexGrow: 1 }}>
                 <Typography variant="h6" sx={{ mb: 1 }}>
-                  Upload Recording
+                  📁 Upload Recording
                 </Typography>
                 <Typography variant="body2" sx={{ mb: 2, color: 'text.secondary' }}>
                   Transcribe existing audio files

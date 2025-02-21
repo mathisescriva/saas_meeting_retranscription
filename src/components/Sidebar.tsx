@@ -22,7 +22,7 @@ import {
 const drawerWidth = 280;
 
 interface SidebarProps {
-  onViewChange: (view: 'dashboard' | 'transcription') => void;
+  onViewChange: (view: 'dashboard' | 'transcription' | 'meetings') => void;
 }
 
 const Sidebar: React.FC<SidebarProps> = ({ onViewChange }) => {
@@ -85,6 +85,7 @@ const Sidebar: React.FC<SidebarProps> = ({ onViewChange }) => {
         <Button
           variant="contained"
           startIcon={<AddIcon />}
+          onClick={() => onViewChange('transcription')}
           fullWidth
           sx={{
             background: 'linear-gradient(45deg, #6366F1 30%, #0EA5E9 90%)',
@@ -101,7 +102,7 @@ const Sidebar: React.FC<SidebarProps> = ({ onViewChange }) => {
             },
           }}
         >
-          New Meeting
+          Start New Meeting
         </Button>
       </Box>
 
@@ -117,13 +118,13 @@ const Sidebar: React.FC<SidebarProps> = ({ onViewChange }) => {
             text: 'My Meetings', 
             icon: <DescriptionIcon />, 
             count: 12,
-            onClick: () => onViewChange('transcription')
+            onClick: () => onViewChange('meetings')
           },
           { 
             text: 'Shared With Me', 
             icon: <ShareIcon />, 
             count: 3,
-            onClick: () => onViewChange('transcription')
+            onClick: () => onViewChange('meetings')
           },
         ].map((item) => (
           <ListItem
