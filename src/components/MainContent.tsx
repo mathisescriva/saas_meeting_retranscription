@@ -1,5 +1,6 @@
 import React, { useState, useRef } from 'react';
 import { transcribeAudio } from '../services/assemblyAI';
+import Dashboard from './Dashboard';
 import {
   Box,
   Paper,
@@ -10,7 +11,6 @@ import {
   Toolbar,
   Divider,
   Stack,
-  Chip,
   useTheme,
   alpha,
   Menu,
@@ -26,15 +26,7 @@ import {
   FormatListBulleted,
   FormatListNumbered,
   CloudUpload,
-  PlayArrow,
-  Pause,
-  AudioFile,
-  Schedule,
-  Person,
-  Add as AddIcon,
   Description as DescriptionIcon,
-  Business as BusinessIcon,
-  Code as CodeIcon,
 } from '@mui/icons-material';
 
 interface AudioFile {
@@ -49,9 +41,18 @@ interface Report {
   content: string;
 }
 
-const MainContent = () => {
+interface MainContentProps {
+  currentView: 'dashboard' | 'transcription';
+}
+
+const formatDuration = (seconds: number): string => {
+  const minutes = Math.floor(seconds / 60);
+  const remainingSeconds = Math.floor(seconds % 60);
+  return `${minutes}:${remainingSeconds.toString().padStart(2, '0')}`;
+};
+
+const TranscriptionView = () => {
   const theme = useTheme();
-  const [isPlaying, setIsPlaying] = useState(false);
   const [transcription, setTranscription] = useState('');
   const [audioFile, setAudioFile] = useState<AudioFile | null>(null);
   const [reports, setReports] = useState<Report[]>([]);
@@ -59,8 +60,6 @@ const MainContent = () => {
   const [isCustomReportDialogOpen, setIsCustomReportDialogOpen] = useState(false);
   const [isTranscribing, setIsTranscribing] = useState(false);
   const [transcriptionError, setTranscriptionError] = useState<string | null>(null);
-  
-  // Menu
   const reportButtonRef = useRef<HTMLButtonElement>(null);
   const [isReportMenuOpen, setIsReportMenuOpen] = useState(false);
 
@@ -74,17 +73,14 @@ const MainContent = () => {
       setIsReportMenuOpen(false);
 
       try {
-        // Mettre à jour l'interface immédiatement avec le nouveau fichier
         setAudioFile({
           name: file.name,
           duration: '...',
           speakers: 0,
         });
 
-        // Lancer la transcription
         const result = await transcribeAudio(file);
 
-        // Mettre à jour l'interface avec les résultats
         setAudioFile({
           name: file.name,
           duration: formatDuration(result.audio_duration || 0),
@@ -98,12 +94,6 @@ const MainContent = () => {
         setIsTranscribing(false);
       }
     }
-  };
-
-  const formatDuration = (seconds: number): string => {
-    const minutes = Math.floor(seconds / 60);
-    const remainingSeconds = Math.floor(seconds % 60);
-    return `${minutes}:${remainingSeconds.toString().padStart(2, '0')}`;
   };
 
   const handleReportCreate = (type: Report['type']) => {
@@ -150,202 +140,76 @@ const MainContent = () => {
   };
 
   return (
-    <Box
-      sx={{
-        flexGrow: 1,
-        p: 4,
-        bgcolor: theme.palette.background.default,
-        overflowY: 'auto',
-      }}
-    >
-      <Paper
-        elevation={0}
-        sx={{
-          p: 3,
-          mb: 3,
-          bgcolor: alpha(theme.palette.primary.main, 0.03),
-          border: `1px solid ${alpha(theme.palette.primary.main, 0.1)}`,
-        }}
+    <Box sx={{ p: 3 }}>
+      <Box sx={{ mb: 4 }}>
+        <Typography variant="h4" gutterBottom>
+          Meeting Transcriber
+        </Typography>
+        <Typography variant="subtitle1" color="text.secondary" gutterBottom>
+          Upload an audio file to get started
+        </Typography>
+      </Box>
+
+      <input
+        type="file"
+        accept="audio/*"
+        onChange={handleFileUpload}
+        style={{ display: 'none' }}
+        id="audio-file-input"
+      />
+
+      <Button
+        variant="contained"
+        component="label"
+        htmlFor="audio-file-input"
+        disabled={isTranscribing}
+        startIcon={<CloudUpload />}
       >
-        {/* Menu pour les rapports */}
-        <Menu
-          anchorEl={reportButtonRef.current}
-          open={isReportMenuOpen}
-          onClose={() => setIsReportMenuOpen(false)}
-        >
-          <MenuItem onClick={() => handleReportCreate('general')}>
-            <DescriptionIcon sx={{ mr: 1 }} /> General Report
-          </MenuItem>
-          <MenuItem onClick={() => handleReportCreate('commercial')}>
-            <BusinessIcon sx={{ mr: 1 }} /> Commercial Report
-          </MenuItem>
-          <MenuItem onClick={() => handleReportCreate('technical')}>
-            <CodeIcon sx={{ mr: 1 }} /> Technical Report
-          </MenuItem>
-          <MenuItem onClick={() => setIsCustomReportDialogOpen(true)}>
-            <AddIcon sx={{ mr: 1 }} /> Custom Report
-          </MenuItem>
-        </Menu>
+        {isTranscribing ? 'Transcribing...' : 'Upload Audio File'}
+      </Button>
 
-        {/* Dialog pour le rapport personnalisé */}
-        <Dialog
-          open={isCustomReportDialogOpen}
-          onClose={() => setIsCustomReportDialogOpen(false)}
-        >
-          <DialogTitle>Create Custom Report</DialogTitle>
-          <DialogContent>
-            <TextField
-              autoFocus
-              margin="dense"
-              label="Report Title"
-              fullWidth
-              variant="outlined"
-              value={customReportTitle}
-              onChange={(e) => setCustomReportTitle(e.target.value)}
-            />
-          </DialogContent>
-          <DialogActions>
-            <Button onClick={() => setIsCustomReportDialogOpen(false)}>
-              Cancel
-            </Button>
-            <Button onClick={() => handleReportCreate('custom')} variant="contained">
-              Create
-            </Button>
-          </DialogActions>
-        </Dialog>
-        <Stack spacing={3}>
-          <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
-            <Typography
-              variant="h5"
-              sx={{
-                flexGrow: 1,
-                fontWeight: 600,
-                color: theme.palette.text.primary,
-              }}
-            >
-              New Meeting Transcription
-            </Typography>
-            <Stack direction="row" spacing={2}>
-              {audioFile && (
-                <Button
-                  ref={reportButtonRef}
-                  variant="outlined"
-                  onClick={() => setIsReportMenuOpen(true)}
-                  startIcon={<DescriptionIcon />}
-                  sx={{
-                    px: 3,
-                    py: 1.5,
-                  }}
-                >
-                  Create Report
-                </Button>
-              )}
-              <Button
-                variant="contained"
-                component="label"
-                startIcon={<CloudUpload />}
-                sx={{
-                  px: 3,
-                  py: 1.5,
-                  bgcolor: theme.palette.primary.main,
-                  '&:hover': {
-                    bgcolor: theme.palette.primary.dark,
-                  },
-                }}
-              >
-                {audioFile ? 'Change Audio' : 'Upload Audio'}
-                <input
-                  type="file"
-                  hidden
-                  accept="audio/*"
-                  onChange={handleFileUpload}
-                />
-              </Button>
-            </Stack>
-          </Box>
+      {audioFile && (
+        <Typography variant="body1" sx={{ mt: 2 }}>
+          Selected file: {audioFile.name}
+        </Typography>
+      )}
 
-          {audioFile && (
-            <Stack
-              direction="row"
-              spacing={2}
-              sx={{
-                p: 2,
-                bgcolor: 'white',
-                borderRadius: 2,
-                border: `1px solid ${alpha(theme.palette.primary.main, 0.1)}`,
-              }}
-            >
-              <Chip
-                icon={<AudioFile />}
-                label={audioFile.name}
-                variant="outlined"
-              />
-              <Chip
-                icon={<Schedule />}
-                label={`Duration: ${audioFile.duration}`}
-                variant="outlined"
-              />
-              <Chip
-                icon={<Person />}
-                label={`${audioFile.speakers} speakers detected`}
-                variant="outlined"
-              />
-            </Stack>
-          )}
+      <Menu
+        anchorEl={reportButtonRef.current}
+        open={isReportMenuOpen}
+        onClose={() => setIsReportMenuOpen(false)}
+      >
+        <MenuItem onClick={() => handleReportCreate('general')}>General Report</MenuItem>
+        <MenuItem onClick={() => handleReportCreate('commercial')}>Commercial Report</MenuItem>
+        <MenuItem onClick={() => handleReportCreate('technical')}>Technical Report</MenuItem>
+        <MenuItem onClick={() => setIsCustomReportDialogOpen(true)}>Custom Report...</MenuItem>
+      </Menu>
 
-          <Box
-            sx={{
-              display: 'flex',
-              alignItems: 'center',
-              gap: 2,
-              p: 2,
-              bgcolor: 'white',
-              borderRadius: 2,
-              border: `1px solid ${alpha(theme.palette.primary.main, 0.1)}`,
-            }}
-          >
-            <IconButton
-              onClick={() => setIsPlaying(!isPlaying)}
-              sx={{
-                bgcolor: theme.palette.primary.main,
-                color: 'white',
-                '&:hover': {
-                  bgcolor: theme.palette.primary.dark,
-                },
-              }}
-            >
-              {isPlaying ? <Pause /> : <PlayArrow />}
-            </IconButton>
-            <Box
-              sx={{
-                flexGrow: 1,
-                height: 4,
-                bgcolor: alpha(theme.palette.primary.main, 0.1),
-                borderRadius: 2,
-              }}
-            >
-              <Box
-                sx={{
-                  width: '30%',
-                  height: '100%',
-                  bgcolor: theme.palette.primary.main,
-                  borderRadius: 2,
-                }}
-              />
-            </Box>
-            <Typography
-              variant="body2"
-              sx={{ color: theme.palette.text.secondary }}
-            >
-              13:45 / 45:30
-            </Typography>
-          </Box>
-        </Stack>
-      </Paper>
+      <Dialog open={isCustomReportDialogOpen} onClose={() => setIsCustomReportDialogOpen(false)}>
+        <DialogTitle>Create Custom Report</DialogTitle>
+        <DialogContent>
+          <TextField
+            autoFocus
+            margin="dense"
+            label="Report Title"
+            fullWidth
+            variant="outlined"
+            value={customReportTitle}
+            onChange={(e) => setCustomReportTitle(e.target.value)}
+          />
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setIsCustomReportDialogOpen(false)}>Cancel</Button>
+          <Button onClick={() => handleReportCreate('custom')} variant="contained">
+            Create
+          </Button>
+        </DialogActions>
+      </Dialog>
 
       <Paper
         elevation={0}
         sx={{
+          mt: 3,
           p: 3,
           bgcolor: 'white',
         }}
@@ -410,6 +274,21 @@ const MainContent = () => {
           </Box>
         )}
       </Paper>
+    </Box>
+  );
+};
+
+const MainContent: React.FC<MainContentProps> = ({ currentView }) => {
+  return (
+    <Box
+      component="main"
+      sx={{
+        flexGrow: 1,
+        bgcolor: 'background.default',
+        minHeight: '100vh',
+      }}
+    >
+      {currentView === 'dashboard' ? <Dashboard /> : <TranscriptionView />}
     </Box>
   );
 };

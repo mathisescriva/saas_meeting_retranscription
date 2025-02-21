@@ -1,0 +1,287 @@
+import React from 'react';
+import {
+  Box,
+  Grid,
+  Paper,
+  Typography,
+  Button,
+  Card,
+  CardContent,
+  CardActions,
+  IconButton,
+  Divider,
+  LinearProgress,
+  Stack,
+} from '@mui/material';
+import {
+  Timer as TimerIcon,
+  Language as LanguageIcon,
+  Summarize as SummarizeIcon,
+  Psychology as PsychologyIcon,
+  Group as GroupIcon,
+  Mic as MicIcon,
+  CloudUpload as CloudUploadIcon,
+  Share as ShareIcon,
+} from '@mui/icons-material';
+
+const features = [
+  {
+    title: 'Real-time Transcription',
+    description: 'Transcribe meetings in real-time with high accuracy',
+    icon: <MicIcon />,
+    action: 'Start Recording',
+    highlight: true,
+  },
+  {
+    title: 'Multi-language Support',
+    description: 'Support for 100+ languages and dialects',
+    icon: <LanguageIcon />,
+    action: 'Change Language',
+  },
+  {
+    title: 'Smart Summaries',
+    description: 'AI-powered meeting summaries and key points',
+    icon: <SummarizeIcon />,
+    action: 'View Demo',
+  },
+  {
+    title: 'Speaker Recognition',
+    description: 'Automatically identify different speakers',
+    icon: <GroupIcon />,
+    action: 'Setup Voices',
+  },
+  {
+    title: 'Sentiment Analysis',
+    description: 'Analyze meeting tone and participant engagement',
+    icon: <PsychologyIcon />,
+    action: 'View Analytics',
+  },
+  {
+    title: 'Meeting Duration',
+    description: 'Track and manage meeting length',
+    icon: <TimerIcon />,
+    action: 'View Stats',
+  },
+];
+
+const recentMeetings = [
+  {
+    title: 'Weekly Team Sync',
+    date: '21 Feb 2025',
+    duration: '45 min',
+    participants: 8,
+    progress: 100,
+  },
+  {
+    title: 'Product Review',
+    date: '20 Feb 2025',
+    duration: '60 min',
+    participants: 12,
+    progress: 100,
+  },
+  {
+    title: 'Client Meeting',
+    date: '19 Feb 2025',
+    duration: '30 min',
+    participants: 5,
+    progress: 100,
+  },
+];
+
+const Dashboard = () => {
+  return (
+    <Box sx={{ p: 4 }}>
+      {/* Header */}
+      <Box sx={{ mb: 4 }}>
+        <Typography variant="h4" sx={{ mb: 1, fontWeight: 600 }}>
+          Welcome back!
+        </Typography>
+        <Typography variant="body1" color="text.secondary">
+          Manage your meetings and transcriptions from one place
+        </Typography>
+      </Box>
+
+      {/* Quick Actions */}
+      <Box sx={{ mb: 6 }}>
+        <Grid container spacing={2}>
+          <Grid item xs={12} md={4}>
+            <Paper
+              sx={{
+                p: 3,
+                display: 'flex',
+                alignItems: 'center',
+                bgcolor: 'primary.main',
+                color: 'white',
+              }}
+            >
+              <Box sx={{ flexGrow: 1 }}>
+                <Typography variant="h6" sx={{ mb: 1 }}>
+                  Start New Meeting
+                </Typography>
+                <Typography variant="body2" sx={{ mb: 2, opacity: 0.8 }}>
+                  Begin recording and transcribing instantly
+                </Typography>
+                <Button
+                  variant="contained"
+                  startIcon={<MicIcon />}
+                  sx={{
+                    bgcolor: 'white',
+                    color: 'primary.main',
+                    '&:hover': {
+                      bgcolor: 'rgba(255, 255, 255, 0.9)',
+                    },
+                  }}
+                >
+                  Start Now
+                </Button>
+              </Box>
+            </Paper>
+          </Grid>
+          <Grid item xs={12} md={4}>
+            <Paper
+              sx={{
+                p: 3,
+                display: 'flex',
+                alignItems: 'center',
+                bgcolor: 'background.paper',
+              }}
+            >
+              <Box sx={{ flexGrow: 1 }}>
+                <Typography variant="h6" sx={{ mb: 1 }}>
+                  Upload Recording
+                </Typography>
+                <Typography variant="body2" sx={{ mb: 2, color: 'text.secondary' }}>
+                  Transcribe existing audio files
+                </Typography>
+                <Button variant="outlined" startIcon={<CloudUploadIcon />}>
+                  Upload File
+                </Button>
+              </Box>
+            </Paper>
+          </Grid>
+          <Grid item xs={12} md={4}>
+            <Paper
+              sx={{
+                p: 3,
+                display: 'flex',
+                alignItems: 'center',
+                bgcolor: 'background.paper',
+              }}
+            >
+              <Box sx={{ flexGrow: 1 }}>
+                <Typography variant="h6" sx={{ mb: 1 }}>
+                  Share Transcripts
+                </Typography>
+                <Typography variant="body2" sx={{ mb: 2, color: 'text.secondary' }}>
+                  Collaborate with your team
+                </Typography>
+                <Button variant="outlined" startIcon={<ShareIcon />}>
+                  Manage Access
+                </Button>
+              </Box>
+            </Paper>
+          </Grid>
+        </Grid>
+      </Box>
+
+      {/* Features Grid */}
+      <Typography variant="h5" sx={{ mb: 3, fontWeight: 600 }}>
+        Available Features
+      </Typography>
+      <Grid container spacing={3} sx={{ mb: 6 }}>
+        {features.map((feature) => (
+          <Grid item xs={12} sm={6} md={4} key={feature.title}>
+            <Card
+              sx={{
+                height: '100%',
+                display: 'flex',
+                flexDirection: 'column',
+                ...(feature.highlight && {
+                  borderColor: 'primary.main',
+                  borderWidth: 2,
+                  borderStyle: 'solid',
+                }),
+              }}
+            >
+              <CardContent sx={{ flexGrow: 1 }}>
+                <IconButton
+                  sx={{
+                    mb: 2,
+                    color: feature.highlight ? 'primary.main' : 'text.secondary',
+                    bgcolor: feature.highlight
+                      ? 'primary.light'
+                      : 'action.selected',
+                    '&:hover': {
+                      bgcolor: feature.highlight
+                        ? 'primary.light'
+                        : 'action.selected',
+                    },
+                  }}
+                >
+                  {feature.icon}
+                </IconButton>
+                <Typography variant="h6" component="h2" sx={{ mb: 1 }}>
+                  {feature.title}
+                </Typography>
+                <Typography variant="body2" color="text.secondary">
+                  {feature.description}
+                </Typography>
+              </CardContent>
+              <CardActions>
+                <Button size="small">{feature.action}</Button>
+              </CardActions>
+            </Card>
+          </Grid>
+        ))}
+      </Grid>
+
+      {/* Recent Meetings */}
+      <Typography variant="h5" sx={{ mb: 3, fontWeight: 600 }}>
+        Recent Meetings
+      </Typography>
+      <Grid container spacing={2}>
+        {recentMeetings.map((meeting) => (
+          <Grid item xs={12} key={meeting.title}>
+            <Paper sx={{ p: 2 }}>
+              <Box
+                sx={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'space-between',
+                  mb: 1,
+                }}
+              >
+                <Typography variant="subtitle1" sx={{ fontWeight: 500 }}>
+                  {meeting.title}
+                </Typography>
+                <Typography variant="body2" color="text.secondary">
+                  {meeting.date}
+                </Typography>
+              </Box>
+              <Stack
+                direction="row"
+                spacing={2}
+                divider={<Divider orientation="vertical" flexItem />}
+                sx={{ mb: 1 }}
+              >
+                <Typography variant="body2" color="text.secondary">
+                  Duration: {meeting.duration}
+                </Typography>
+                <Typography variant="body2" color="text.secondary">
+                  Participants: {meeting.participants}
+                </Typography>
+              </Stack>
+              <LinearProgress
+                variant="determinate"
+                value={meeting.progress}
+                sx={{ height: 6, borderRadius: 1 }}
+              />
+            </Paper>
+          </Grid>
+        ))}
+      </Grid>
+    </Box>
+  );
+};
+
+export default Dashboard;

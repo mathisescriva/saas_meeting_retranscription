@@ -13,7 +13,7 @@ import {
 } from '@mui/material';
 import {
   Description as DescriptionIcon,
-  BookmarkBorder as BookmarkIcon,
+  Home as HomeIcon,
   Share as ShareIcon,
   Add as AddIcon,
   MicNone as MicIcon,
@@ -21,7 +21,11 @@ import {
 
 const drawerWidth = 280;
 
-const Sidebar = () => {
+interface SidebarProps {
+  onViewChange: (view: 'dashboard' | 'transcription') => void;
+}
+
+const Sidebar: React.FC<SidebarProps> = ({ onViewChange }) => {
   const theme = useTheme();
 
   return (
@@ -103,13 +107,29 @@ const Sidebar = () => {
 
       <List sx={{ px: 3, mt: 2 }}>
         {[
-          { text: 'My Meetings', icon: <DescriptionIcon />, count: 12 },
-          { text: 'Shared With Me', icon: <ShareIcon />, count: 3 },
-          { text: 'My Bookmarks', icon: <BookmarkIcon />, count: 5 },
+          { 
+            text: 'Home', 
+            icon: <HomeIcon />, 
+            count: null,
+            onClick: () => onViewChange('dashboard')
+          },
+          { 
+            text: 'My Meetings', 
+            icon: <DescriptionIcon />, 
+            count: 12,
+            onClick: () => onViewChange('transcription')
+          },
+          { 
+            text: 'Shared With Me', 
+            icon: <ShareIcon />, 
+            count: 3,
+            onClick: () => onViewChange('transcription')
+          },
         ].map((item) => (
           <ListItem
             button
             key={item.text}
+            onClick={item.onClick}
             sx={{
               borderRadius: 1,
               mb: 0.5,
