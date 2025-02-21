@@ -321,7 +321,17 @@ const TranscriptionView = () => {
                 }, 0) / utterances.length
               }
             />
-            <Typography variant="h6" gutterBottom sx={{ mt: 4, mb: 2 }}>
+            <Typography
+              sx={{
+                mt: 4,
+                mb: 2,
+                fontSize: '1.5rem',
+                fontFamily: theme.typography.fontFamily,
+                color: 'text.primary',
+                textTransform: 'none',
+                fontWeight: 400
+              }}
+            >
               Retranscription de la réunion
             </Typography>
           </>
@@ -335,31 +345,50 @@ const TranscriptionView = () => {
               key={index}
               sx={{
                 mb: 2,
-                p: 2,
-                borderRadius: 2,
-                bgcolor: getSpeakerColor(utterance.speaker).light,
+                display: 'flex',
+                borderLeft: `4px solid ${getSpeakerColor(utterance.speaker).main}`,
+                pl: 2
               }}
             >
-              <Box sx={{ display: 'flex', alignItems: 'center', mb: 1 }}>
-                <AccountCircleIcon
-                  sx={{
-                    color: getSpeakerColor(utterance.speaker).main,
-                    mr: 1,
-                  }}
-                />
-                <Typography
-                  variant="subtitle2"
-                  sx={{ color: getSpeakerColor(utterance.speaker).main }}
-                >
-                  {speakerNames[utterance.speaker] || utterance.speaker}
-                </Typography>
-                {utterance.timestamp && (
-                  <Typography variant="caption" sx={{ ml: 2, color: 'text.secondary' }}>
-                    {utterance.timestamp}
-                  </Typography>
-                )}
+              <Box sx={{ flex: 1 }}>
+                <Box sx={{ display: 'flex', alignItems: 'center', mb: 1 }}>
+                  <TextField
+                    size="small"
+                    variant="standard"
+                    value={speakerNames[utterance.speaker] || utterance.speaker}
+                    onChange={(e) => {
+                      const newValue = e.target.value;
+                      // Mettre à jour tous les locuteurs qui avaient le même nom
+                      const updatedSpeakerNames = { ...speakerNames };
+                      utterances.forEach(u => {
+                        if (u.speaker === utterance.speaker) {
+                          updatedSpeakerNames[u.speaker] = newValue;
+                        }
+                      });
+                      setSpeakerNames(updatedSpeakerNames);
+                    }}
+                    sx={{
+                      '& .MuiInput-input': {
+                        color: getSpeakerColor(utterance.speaker).main,
+                        fontWeight: 500,
+                        fontSize: '0.875rem'
+                      },
+                      '& .MuiInput-underline:before': {
+                        borderBottomColor: 'transparent'
+                      },
+                      '& .MuiInput-underline:hover:before': {
+                        borderBottomColor: getSpeakerColor(utterance.speaker).main
+                      }
+                    }}
+                  />
+                  {utterance.timestamp && (
+                    <Typography variant="caption" sx={{ ml: 2, color: 'text.secondary' }}>
+                      {utterance.timestamp}
+                    </Typography>
+                  )}
+                </Box>
+                <Typography variant="body1" sx={{ pl: 0 }}>{utterance.text}</Typography>
               </Box>
-              <Typography variant="body1">{utterance.text}</Typography>
             </Box>
           ))}
         </Box>
