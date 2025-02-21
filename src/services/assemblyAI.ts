@@ -1,6 +1,13 @@
 const ASSEMBLY_AI_API_KEY = '3419005ee6924e08a14235043cabcd4e';
 const ASSEMBLY_AI_API_URL = 'https://api.assemblyai.com/v2';
 
+interface Utterance {
+  speaker: string;
+  text: string;
+  start: number;
+  end: number;
+}
+
 interface TranscriptionResponse {
   id: string;
   status: 'queued' | 'processing' | 'completed' | 'error';
@@ -10,6 +17,7 @@ interface TranscriptionResponse {
   speakers_expected?: number;
   confidence?: number;
   error?: string;
+  utterances?: Utterance[];
 }
 
 export async function uploadAudio(audioFile: File): Promise<string> {
@@ -42,7 +50,8 @@ export async function startTranscription(audioUrl: string): Promise<string> {
     body: JSON.stringify({
       audio_url: audioUrl,
       speaker_labels: true,
-      language_code: 'fr'
+      language_code: 'fr',
+      speakers_expected: 2
     })
   });
 

@@ -55,6 +55,8 @@ const formatDuration = (seconds: number): string => {
 const TranscriptionView = () => {
   const theme = useTheme();
   const [transcription, setTranscription] = useState('');
+  const [utterances, setUtterances] = useState<Array<{ speaker: string; text: string; timestamp?: string }>>([]);
+  const [speakerNames, setSpeakerNames] = useState<Record<string, string>>({});
   const [audioFile, setAudioFile] = useState<AudioFile | null>(null);
   const [reports, setReports] = useState<Report[]>([]);
   const [customReportTitle, setCustomReportTitle] = useState('');
@@ -87,7 +89,17 @@ const TranscriptionView = () => {
           duration: formatDuration(result.audio_duration || 0),
           speakers: result.speakers_expected || 1,
         });
-        setTranscription(result.text || '');
+        if (result.utterances && result.utterances.length > 0) {
+          setUtterances(result.utterances.map(u => ({
+            speaker: u.speaker,
+            text: u.text,
+            timestamp: new Date(u.start || 0).toISOString().substr(14, 5)
+          })));
+          setTranscription(result.text || '');
+        } else {
+          setUtterances([]);
+          setTranscription(result.text || '');
+        }
       } catch (error) {
         console.error('Transcription error:', error);
         setTranscriptionError(error instanceof Error ? error.message : 'Failed to transcribe audio');
@@ -240,33 +252,95 @@ const TranscriptionView = () => {
           </Stack>
         </Toolbar>
 
-        <TextField
-          fullWidth
-          multiline
-          minRows={12}
-          value={transcription}
-          onChange={(e) => setTranscription(e.target.value)}
-          placeholder={
-            isTranscribing
-              ? 'Processing...'
-              : transcriptionError
-              ? `Error: ${transcriptionError}`
-              : 'Upload an audio file to see the transcription here...'
-          }
-          variant="outlined"
-          disabled={isTranscribing}
-          error={!!transcriptionError}
-          sx={{
-            '& .MuiOutlinedInput-root': {
-              bgcolor: 'white',
-              '&.Mui-focused': {
-                '& > fieldset': {
-                  borderColor: theme.palette.primary.main,
+        <Box sx={{ bgcolor: 'white', p: 2, borderRadius: 1 }}>
+          {utterances.length > 0 ? (
+            <Stack spacing={3}>
+              {utterances.map((utterance, index) => (
+                <Box key={index} sx={{ display: 'flex', gap: 2, alignItems: 'flex-start' }}>
+                  <Box
+                    sx={{
+                      display: 'flex',
+                      flexDirection: 'column',
+                      alignItems: 'flex-start',
+                      minWidth: '150px',
+                    }}
+                  >
+                    <TextField
+                      size="small"
+                      value={speakerNames[utterance.speaker] || `Speaker ${utterance.speaker}`}
+                      onChange={(e) => {
+                        setSpeakerNames(prev => ({
+                          ...prev,
+                          [utterance.speaker]: e.target.value
+                        }));
+                      }}
+                      sx={{
+                        '& .MuiInputBase-input': {
+                          color: theme.palette.primary.main,
+                          fontWeight: 500,
+                          fontSize: '0.875rem',
+                        },
+                        '& .MuiOutlinedInput-notchedOutline': {
+                          border: 'none',
+                        },
+                        '&:hover .MuiOutlinedInput-notchedOutline': {
+                          border: '1px solid ' + theme.palette.primary.light,
+                        },
+                      }}
+                    />
+                    {utterance.timestamp && (
+                      <Typography
+                        variant="caption"
+                        sx={{ color: 'text.secondary', ml: 1 }}
+                      >
+                        {utterance.timestamp}
+                      </Typography>
+                    )}
+                  </Box>
+                  <Typography
+                    variant="body1"
+                    sx={{
+                      flex: 1,
+                      backgroundColor: alpha(theme.palette.background.paper, 0.5),
+                      p: 2,
+                      borderRadius: 1,
+                    }}
+                  >
+                    {utterance.text}
+                  </Typography>
+                </Box>
+              ))}
+            </Stack>
+          ) : (
+            <TextField
+              fullWidth
+              multiline
+              minRows={12}
+              value={transcription}
+              onChange={(e) => setTranscription(e.target.value)}
+              placeholder={
+                isTranscribing
+                  ? 'Processing...'
+                  : transcriptionError
+                  ? `Error: ${transcriptionError}`
+                  : 'Upload an audio file to see the transcription here...'
+              }
+              variant="outlined"
+              disabled={isTranscribing}
+              error={!!transcriptionError}
+              sx={{
+                '& .MuiOutlinedInput-root': {
+                  bgcolor: 'white',
+                  '&.Mui-focused': {
+                    '& > fieldset': {
+                      borderColor: theme.palette.primary.main,
+                    },
+                  },
                 },
-              },
-            },
-          }}
-        />
+              }}
+            />
+          )}
+        </Box>
         <LoadingModal 
           open={isTranscribing}
           message="Transcribing your audio..."
