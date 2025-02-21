@@ -88,9 +88,7 @@ const MeetingStats: React.FC<MeetingStatsProps> = ({
 
   return (
     <Box sx={{ mb: 4 }}>
-      <Typography variant="h6" sx={{ mb: 2, fontWeight: 600 }}>
-        Résumé de la réunion
-      </Typography>
+
       <Grid container spacing={2}>
         <Grid item xs={12} sm={6} md={3}>
           <StatCard

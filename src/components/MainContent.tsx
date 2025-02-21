@@ -310,9 +310,6 @@ const TranscriptionView = () => {
                 </Stack>
               </Toolbar>
             </Box>
-            <Typography variant="h6" gutterBottom sx={{ mt: 3 }}>
-              Retranscription de la réunion
-            </Typography>
             <MeetingStats
               duration={utterances.length > 0 ? (utterances[utterances.length - 1].end || 0) / 1000 : 0}
               speakersCount={new Set(utterances.map(u => u.speaker)).size}
@@ -324,6 +321,9 @@ const TranscriptionView = () => {
                 }, 0) / utterances.length
               }
             />
+            <Typography variant="h6" gutterBottom sx={{ mt: 4, mb: 2 }}>
+              Retranscription de la réunion
+            </Typography>
           </>
         )}
 
