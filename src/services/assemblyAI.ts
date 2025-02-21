@@ -41,7 +41,8 @@ export async function startTranscription(audioUrl: string): Promise<string> {
     },
     body: JSON.stringify({
       audio_url: audioUrl,
-      speaker_labels: true
+      speaker_labels: true,
+      language_code: 'fr'
     })
   });
 
