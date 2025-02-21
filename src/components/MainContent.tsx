@@ -20,18 +20,18 @@ import {
   DialogTitle,
   DialogContent,
   DialogActions,
+  Grid,
 } from '@mui/material';
 import LoadingModal from './LoadingModal';
 import MeetingStats from './MeetingStats';
 import { AccountCircle as AccountCircleIcon } from '@mui/icons-material';
-import AudioPlayer from './AudioPlayer';
 import {
-  FormatBold,
-  FormatItalic,
-  FormatListBulleted,
-  FormatListNumbered,
   CloudUpload,
   Description as DescriptionIcon,
+  Assignment as AssignmentIcon,
+  Business as BusinessIcon,
+  Code as CodeIcon,
+  Edit as EditIcon,
 } from '@mui/icons-material';
 
 interface AudioFile {
@@ -62,6 +62,14 @@ const TranscriptionView = () => {
   const [utterances, setUtterances] = useState<Array<{ speaker: string; text: string; timestamp?: string; start?: number; end?: number }>>([]);
   const [speakerNames, setSpeakerNames] = useState<Record<string, string>>({});
   const [speakerColors, setSpeakerColors] = useState<Record<string, { main: string; light: string }>>({});
+  const [isCustomReportDialogOpen, setIsCustomReportDialogOpen] = useState(false);
+  const [isTranscribing, setIsTranscribing] = useState(false);
+  const [transcriptionError, setTranscriptionError] = useState<string | null>(null);
+  const reportButtonRef = useRef<HTMLButtonElement>(null);
+  const [isReportMenuOpen, setIsReportMenuOpen] = useState(false);
+  const [reports, setReports] = useState<Report[]>([]);
+  const [selectedReport, setSelectedReport] = useState<Report | null>(null);
+  const [customReportTitle, setCustomReportTitle] = useState('');
 
   const themeColors = useMemo(() => [
     { main: theme.palette.primary.main, light: alpha(theme.palette.primary.main, 0.1) },
@@ -72,7 +80,6 @@ const TranscriptionView = () => {
     { main: theme.palette.secondary.main, light: alpha(theme.palette.secondary.main, 0.1) },
   ], [theme]);
 
-  // Initialiser les couleurs des speakers une seule fois au chargement des utterances
   useEffect(() => {
     if (utterances.length > 0) {
       const newColors: Record<string, { main: string; light: string }> = {};
@@ -94,16 +101,8 @@ const TranscriptionView = () => {
     return speakerColors[speaker] || themeColors[0];
   }, [speakerColors, themeColors]);
 
-
   const [audioFile, setAudioFile] = useState<AudioFile | null>(null);
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
-  const [reports, setReports] = useState<Report[]>([]);
-  const [customReportTitle, setCustomReportTitle] = useState('');
-  const [isCustomReportDialogOpen, setIsCustomReportDialogOpen] = useState(false);
-  const [isTranscribing, setIsTranscribing] = useState(false);
-  const [transcriptionError, setTranscriptionError] = useState<string | null>(null);
-  const reportButtonRef = useRef<HTMLButtonElement>(null);
-  const [isReportMenuOpen, setIsReportMenuOpen] = useState(false);
 
   const handleFileUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
@@ -151,47 +150,39 @@ const TranscriptionView = () => {
     }
   };
 
-  const handleReportCreate = (type: Report['type']) => {
-    let newReport: Report;
-    const baseContent = transcription || 'No transcription available';
+  const generateSummary = async (type: 'general' | 'commercial' | 'technical' | 'custom') => {
+    if (!transcription) return;
 
+    let prompt = '';
     switch (type) {
       case 'general':
-        newReport = {
-          type,
-          title: 'General Meeting Report',
-          content: `# General Meeting Summary\n\n${baseContent}`,
-        };
+        prompt = 'Generate a concise summary of the key points discussed in this meeting.';
         break;
       case 'commercial':
-        newReport = {
-          type,
-          title: 'Commercial Report',
-          content: `# Commercial Meeting Summary\n\nKey Business Points:\n\n${baseContent}`,
-        };
+        prompt = 'Extract the main business points, decisions, and action items from this meeting.';
         break;
       case 'technical':
-        newReport = {
-          type,
-          title: 'Technical Report',
-          content: `# Technical Meeting Summary\n\nTechnical Specifications:\n\n${baseContent}`,
-        };
+        prompt = 'Summarize the technical discussions, specifications, and decisions made in this meeting.';
         break;
       case 'custom':
-        newReport = {
-          type,
-          title: customReportTitle || 'Custom Report',
-          content: `# ${customReportTitle}\n\n${baseContent}`,
-        };
+        prompt = 'Create a custom summary based on specific requirements.';
         break;
-      default:
-        return;
     }
 
+    // Pour l'instant, on simule la génération du résumé
+    const summary = `Summary of type: ${type}\n\nKey Points:\n1. Point 1\n2. Point 2\n3. Point 3`;
+
+    const newReport: Report = {
+      type,
+      title: `${type.charAt(0).toUpperCase() + type.slice(1)} Summary`,
+      content: summary
+    };
+
     setReports([...reports, newReport]);
-    setIsReportMenuOpen(false);
-    setIsCustomReportDialogOpen(false);
-    setCustomReportTitle('');
+    if (type === 'custom') {
+      setIsCustomReportDialogOpen(false);
+      setCustomReportTitle('');
+    }
   };
 
   return (
@@ -229,17 +220,6 @@ const TranscriptionView = () => {
         </Box>
       )}
 
-      <Menu
-        anchorEl={reportButtonRef.current}
-        open={isReportMenuOpen}
-        onClose={() => setIsReportMenuOpen(false)}
-      >
-        <MenuItem onClick={() => handleReportCreate('general')}>General Report</MenuItem>
-        <MenuItem onClick={() => handleReportCreate('commercial')}>Commercial Report</MenuItem>
-        <MenuItem onClick={() => handleReportCreate('technical')}>Technical Report</MenuItem>
-        <MenuItem onClick={() => setIsCustomReportDialogOpen(true)}>Custom Report...</MenuItem>
-      </Menu>
-
       <Dialog open={isCustomReportDialogOpen} onClose={() => setIsCustomReportDialogOpen(false)}>
         <DialogTitle>Create Custom Report</DialogTitle>
         <DialogContent>
@@ -261,6 +241,17 @@ const TranscriptionView = () => {
         </DialogActions>
       </Dialog>
 
+      <Menu
+        anchorEl={reportButtonRef.current}
+        open={isReportMenuOpen}
+        onClose={() => setIsReportMenuOpen(false)}
+      >
+        <MenuItem onClick={() => handleReportCreate('general')}>General Report</MenuItem>
+        <MenuItem onClick={() => handleReportCreate('commercial')}>Commercial Report</MenuItem>
+        <MenuItem onClick={() => handleReportCreate('technical')}>Technical Report</MenuItem>
+        <MenuItem onClick={() => setIsCustomReportDialogOpen(true)}>Custom Report...</MenuItem>
+      </Menu>
+
       <Paper
         elevation={0}
         sx={{
@@ -269,177 +260,121 @@ const TranscriptionView = () => {
           bgcolor: 'white',
         }}
       >
-        <Toolbar
-          sx={{
-            mb: 2,
-            px: 2,
-            bgcolor: alpha(theme.palette.primary.main, 0.03),
-            borderRadius: 2,
-          }}
-        >
-          <Stack direction="row" spacing={1}>
-            <IconButton size="small">
-              <FormatBold />
-            </IconButton>
-            <IconButton size="small">
-              <FormatItalic />
-            </IconButton>
-            <Divider orientation="vertical" flexItem sx={{ mx: 1 }} />
-            <IconButton size="small">
-              <FormatListBulleted />
-            </IconButton>
-            <IconButton size="small">
-              <FormatListNumbered />
-            </IconButton>
-          </Stack>
-        </Toolbar>
-
         {utterances.length > 0 && (
-          <MeetingStats
-            duration={utterances.length > 0 ? (utterances[utterances.length - 1].end || 0) / 1000 : 0}
-            speakersCount={new Set(utterances.map(u => u.speaker)).size}
-            utterancesCount={utterances.length}
-            averageUtteranceLength={
-              utterances.reduce((acc, curr) => {
-                const duration = curr.end && curr.start ? (curr.end - curr.start) / 1000 : 0;
-                return acc + duration;
-              }, 0) / utterances.length
-            }
+          <>
+            <Box sx={{ mb: 3 }}>
+              <Toolbar
+                sx={{
+                  mb: 2,
+                  px: 2,
+                  bgcolor: alpha(theme.palette.primary.main, 0.03),
+                  borderRadius: 2,
+                  minHeight: 'auto !important',
+                  py: 1
+                }}
+              >
+                <Stack direction="row" spacing={1}>
+                  <Button
+                    size="small"
+                    onClick={() => generateSummary('general')}
+                    startIcon={<AssignmentIcon />}
+                    sx={{ textTransform: 'none' }}
+                  >
+                    Compte rendu standard
+                  </Button>
+                  <Button
+                    size="small"
+                    onClick={() => generateSummary('commercial')}
+                    startIcon={<BusinessIcon />}
+                    sx={{ textTransform: 'none' }}
+                  >
+                    Compte rendu business
+                  </Button>
+                  <Divider orientation="vertical" flexItem sx={{ mx: 1 }} />
+                  <Button
+                    size="small"
+                    onClick={() => generateSummary('technical')}
+                    startIcon={<CodeIcon />}
+                    sx={{ textTransform: 'none' }}
+                  >
+                    Compte rendu technique
+                  </Button>
+                  <Button
+                    size="small"
+                    onClick={() => setIsCustomReportDialogOpen(true)}
+                    startIcon={<EditIcon />}
+                    sx={{ textTransform: 'none' }}
+                  >
+                    Compte rendu personnalisé
+                  </Button>
+                </Stack>
+              </Toolbar>
+            </Box>
+            <MeetingStats
+              duration={utterances.length > 0 ? (utterances[utterances.length - 1].end || 0) / 1000 : 0}
+              speakersCount={new Set(utterances.map(u => u.speaker)).size}
+              utterancesCount={utterances.length}
+              averageUtteranceLength={
+                utterances.reduce((acc, curr) => {
+                  const duration = curr.end && curr.start ? (curr.end - curr.start) / 1000 : 0;
+                  return acc + duration;
+                }, 0) / utterances.length
+              }
+            />
+          </>
+        )}
+
+
+
+        <Box sx={{ mt: 3 }}>
+          {utterances.map((utterance, index) => (
+            <Box
+              key={index}
+              sx={{
+                mb: 2,
+                p: 2,
+                borderRadius: 2,
+                bgcolor: getSpeakerColor(utterance.speaker).light,
+              }}
+            >
+              <Box sx={{ display: 'flex', alignItems: 'center', mb: 1 }}>
+                <AccountCircleIcon
+                  sx={{
+                    color: getSpeakerColor(utterance.speaker).main,
+                    mr: 1,
+                  }}
+                />
+                <Typography
+                  variant="subtitle2"
+                  sx={{ color: getSpeakerColor(utterance.speaker).main }}
+                >
+                  {speakerNames[utterance.speaker] || utterance.speaker}
+                </Typography>
+                {utterance.timestamp && (
+                  <Typography variant="caption" sx={{ ml: 2, color: 'text.secondary' }}>
+                    {utterance.timestamp}
+                  </Typography>
+                )}
+              </Box>
+              <Typography variant="body1">{utterance.text}</Typography>
+            </Box>
+          ))}
+        </Box>
+
+        {isTranscribing && (
+          <LoadingModal
+            open={isTranscribing}
+            message="Transcribing Audio"
+            submessage="We're using AI to analyze your audio and generate an accurate transcription. This may take a few minutes depending on the file size."
           />
         )}
-        <Box 
-          sx={{
-            bgcolor: 'white',
-            p: 2,
-            borderRadius: 2,
-            boxShadow: '0 2px 4px rgba(0,0,0,0.05)',
-          }}
-        >
-          {utterances.length > 0 ? (
-            <Stack spacing={3}>
-              {utterances.map((utterance, index) => (
-                <Box key={index} sx={{ display: 'flex', gap: 2, alignItems: 'flex-start' }}>
-                  <Box
-                    sx={{
-                      display: 'flex',
-                      flexDirection: 'column',
-                      alignItems: 'flex-start',
-                      minWidth: '150px',
-                    }}
-                  >
-                    <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, width: '100%' }}>
-                      <AccountCircleIcon
-                        sx={{
-                          fontSize: 32,
-                          color: getSpeakerColor(utterance.speaker).main,
-                        }}
-                      />
-                      <TextField
-                        size="small"
-                        value={speakerNames[utterance.speaker] || `Speaker ${utterance.speaker}`}
-                        onChange={(e) => {
-                          setSpeakerNames(prev => ({
-                            ...prev,
-                            [utterance.speaker]: e.target.value
-                          }));
-                        }}
-                        sx={{
-                          '& .MuiInputBase-input': {
-                            color: getSpeakerColor(utterance.speaker).main,
-                          fontWeight: 600,
-                          fontSize: '0.875rem',
-                          },
-                          '& .MuiOutlinedInput-notchedOutline': {
-                            border: 'none',
-                          },
-                          '&:hover .MuiOutlinedInput-notchedOutline': {
-                            border: `1px solid ${getSpeakerColor(utterance.speaker).main}`,
-                          },
-                        }}
-                      />
-                    </Box>
-                    {utterance.timestamp && (
-                      <Typography
-                        variant="caption"
-                        sx={{ color: 'text.secondary', ml: 1 }}
-                      >
-                        {utterance.timestamp}
-                      </Typography>
-                    )}
-                  </Box>
-                  <Typography
-                    variant="body1"
-                    sx={{
-                      flex: 1,
-                      backgroundColor: 'transparent',
-                      p: 2,
-                      pl: 3,
-                      borderLeft: `4px solid ${getSpeakerColor(utterance.speaker).main}`,
-                      color: 'text.primary',
-                      transition: 'all 0.2s ease-in-out',
-                      '&:hover': {
-                        backgroundColor: alpha(getSpeakerColor(utterance.speaker).main, 0.05),
-                      },
-                    }}
-                  >
-                    {utterance.text}
-                  </Typography>
-                </Box>
-              ))}
-            </Stack>
-          ) : (
-            <TextField
-              fullWidth
-              multiline
-              minRows={12}
-              value={transcription}
-              onChange={(e) => setTranscription(e.target.value)}
-              placeholder={
-                isTranscribing
-                  ? 'Processing...'
-                  : transcriptionError
-                  ? `Error: ${transcriptionError}`
-                  : 'Upload an audio file to see the transcription here...'
-              }
-              variant="outlined"
-              disabled={isTranscribing}
-              error={!!transcriptionError}
-              sx={{
-                '& .MuiOutlinedInput-root': {
-                  bgcolor: 'white',
-                  '&.Mui-focused': {
-                    '& > fieldset': {
-                      borderColor: theme.palette.primary.main,
-                    },
-                  },
-                },
-              }}
-            />
-          )}
-        </Box>
-        <LoadingModal 
-          open={isTranscribing}
-          message="Transcribing your audio..."
-          submessage="We're using AI to analyze your audio and generate an accurate transcription. This may take a few minutes depending on the file size."
-        />
       </Paper>
     </Box>
   );
 };
 
 const MainContent: React.FC<MainContentProps> = ({ currentView }) => {
-  return (
-    <Box
-      component="main"
-      sx={{
-        flexGrow: 1,
-        bgcolor: 'background.default',
-        minHeight: '100vh',
-      }}
-    >
-      {currentView === 'dashboard' ? <Dashboard /> : <TranscriptionView />}
-    </Box>
-  );
+  return currentView === 'dashboard' ? <Dashboard /> : <TranscriptionView />;
 };
 
 export default MainContent;

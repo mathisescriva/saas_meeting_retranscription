@@ -92,7 +92,6 @@ const AudioPlayer: React.FC<AudioPlayerProps> = ({ audioFile }) => {
       const newTime = Math.min(Math.max(audioRef.current.currentTime + seconds, 0), duration);
       audioRef.current.currentTime = newTime;
       setCurrentTime(newTime);
-
     }
   };
 
@@ -112,6 +111,7 @@ const AudioPlayer: React.FC<AudioPlayerProps> = ({ audioFile }) => {
         <Typography variant="subtitle1" sx={{ textAlign: 'center', color: 'text.primary' }}>
           {audioFile.name}
         </Typography>
+
         <Box sx={{ px: 2 }}>
           <Slider
             value={currentTime}
@@ -131,30 +131,18 @@ const AudioPlayer: React.FC<AudioPlayerProps> = ({ audioFile }) => {
               },
             }}
           />
-<<<<<<< HEAD
-=======
         </Box>
+
         <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
           <Typography variant="body2" color="text.secondary">
             {formatTime(currentTime)}
           </Typography>
->>>>>>> 6215f9eb (feat: réimplémentation du lecteur audio avec contrôles de navigation)
           <Typography variant="body2" color="text.secondary">
             {formatTime(duration)}
           </Typography>
         </Box>
 
         <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 1 }}>
-<<<<<<< HEAD
-          <IconButton 
-            onClick={() => handleSkip(-10)}
-            size="small"
-            sx={{ color: theme.palette.text.secondary }}
-          >
-            <FastRewind />
-          </IconButton>
-          
-=======
           <IconButton
             onClick={() => skipTime(-10)}
             sx={{
@@ -167,7 +155,6 @@ const AudioPlayer: React.FC<AudioPlayerProps> = ({ audioFile }) => {
             <FastRewind />
           </IconButton>
 
->>>>>>> 6215f9eb (feat: réimplémentation du lecteur audio avec contrôles de navigation)
           <IconButton
             onClick={handlePlayPause}
             sx={{
@@ -182,11 +169,6 @@ const AudioPlayer: React.FC<AudioPlayerProps> = ({ audioFile }) => {
           </IconButton>
 
           <IconButton
-<<<<<<< HEAD
-            onClick={() => handleSkip(10)}
-            size="small"
-            sx={{ color: theme.palette.text.secondary }}
-=======
             onClick={() => skipTime(10)}
             sx={{
               color: theme.palette.primary.main,
@@ -194,7 +176,6 @@ const AudioPlayer: React.FC<AudioPlayerProps> = ({ audioFile }) => {
                 backgroundColor: theme.palette.primary.main + '20',
               },
             }}
->>>>>>> 6215f9eb (feat: réimplémentation du lecteur audio avec contrôles de navigation)
           >
             <FastForward />
           </IconButton>
