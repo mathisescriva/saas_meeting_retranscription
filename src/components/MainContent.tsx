@@ -23,6 +23,7 @@ import {
 import LoadingModal from './LoadingModal';
 import MeetingStats from './MeetingStats';
 import { AccountCircle as AccountCircleIcon } from '@mui/icons-material';
+import AudioPlayer from './AudioPlayer';
 import {
   FormatBold,
   FormatItalic,
@@ -94,6 +95,7 @@ const TranscriptionView = () => {
 
 
   const [audioFile, setAudioFile] = useState<AudioFile | null>(null);
+  const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [reports, setReports] = useState<Report[]>([]);
   const [customReportTitle, setCustomReportTitle] = useState('');
   const [isCustomReportDialogOpen, setIsCustomReportDialogOpen] = useState(false);
@@ -105,6 +107,7 @@ const TranscriptionView = () => {
   const handleFileUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
     if (file) {
+      setSelectedFile(file);
       setIsTranscribing(true);
       setTranscriptionError(null);
       setTranscription('');
@@ -219,10 +222,10 @@ const TranscriptionView = () => {
         {isTranscribing ? 'Transcribing...' : 'Upload Audio File'}
       </Button>
 
-      {audioFile && (
-        <Typography variant="body1" sx={{ mt: 2 }}>
-          Selected file: {audioFile.name}
-        </Typography>
+      {selectedFile && (
+        <Box sx={{ mt: 2, maxWidth: 600, mx: 'auto' }}>
+          <AudioPlayer audioFile={selectedFile} />
+        </Box>
       )}
 
       <Menu
