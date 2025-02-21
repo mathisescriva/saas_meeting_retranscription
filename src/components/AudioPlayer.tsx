@@ -25,6 +25,13 @@ const formatTime = (seconds: number): string => {
   return `${minutes}:${remainingSeconds.toString().padStart(2, '0')}`;
 };
 
+const generateBarHeights = () => {
+  return Array.from({ length: 100 }).map((_, index) => {
+    const angle = index * (Math.PI / 8);
+    return 20 + Math.sin(angle) * 15 + Math.random() * 10;
+  });
+};
+
 const AudioPlayer: React.FC<AudioPlayerProps> = ({ audioFile }) => {
   const theme = useTheme();
   const audioRef = useRef<HTMLAudioElement>(null);
@@ -32,6 +39,7 @@ const AudioPlayer: React.FC<AudioPlayerProps> = ({ audioFile }) => {
   const [currentTime, setCurrentTime] = useState(0);
   const [duration, setDuration] = useState(0);
   const audioUrl = useRef<string>('');
+  const barHeights = useRef<number[]>(generateBarHeights());
 
   React.useEffect(() => {
     audioUrl.current = URL.createObjectURL(audioFile);
@@ -112,25 +120,47 @@ const AudioPlayer: React.FC<AudioPlayerProps> = ({ audioFile }) => {
           {audioFile.name}
         </Typography>
 
-        <Box sx={{ px: 2 }}>
-          <Slider
-            value={currentTime}
-            min={0}
-            max={duration}
-            onChange={handleSeek}
-            sx={{
-              color: theme.palette.primary.main,
-              height: 4,
-              '& .MuiSlider-thumb': {
-                width: 8,
-                height: 8,
-                transition: '0.3s cubic-bezier(.47,1.64,.41,.8)',
-                '&:hover, &.Mui-focusVisible': {
-                  boxShadow: `0px 0px 0px 8px ${theme.palette.primary.main}30`,
-                },
-              },
-            }}
-          />
+        <Box 
+          sx={{ 
+            px: 2,
+            height: 60,
+            display: 'flex',
+            alignItems: 'center',
+            gap: '1px',
+            cursor: 'pointer',
+            bgcolor: '#F8F9FE',
+            borderRadius: 1,
+            py: 2,
+            width: '100%',
+            '& .audio-bar': {
+              flex: '1 1 0%'
+            }
+          }}
+          onClick={(e) => {
+            const box = e.currentTarget;
+            const rect = box.getBoundingClientRect();
+            const ratio = (e.clientX - rect.left) / rect.width;
+            handleSeek(e as any, ratio * duration);
+          }}
+        >
+          {barHeights.current.map((height, index) => {
+            // Calcul plus précis de la progression
+            const progress = currentTime / duration;
+            const isCurrent = index / barHeights.current.length <= progress;
+            
+            return (
+              <Box
+                key={index}
+                className="audio-bar"
+                sx={{
+                  minWidth: '2px',
+                  height: `${height}px`,
+                  backgroundColor: isCurrent ? '#2D7FF9' : '#2D7FF940',
+                  transition: 'background-color 0.2s ease',
+                }}
+              />
+            );
+          })}
         </Box>
 
         <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
