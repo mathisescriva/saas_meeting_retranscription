@@ -1,12 +1,12 @@
-import React, { useState, useRef, useEffect } from 'react';
+import React, { useRef, useState } from 'react';
 import {
   Box,
   IconButton,
-  Slider,
-  Typography,
   Paper,
   Stack,
+  Typography,
   useTheme,
+  Slider,
 } from '@mui/material';
 import {
   PlayArrow,
@@ -33,21 +33,15 @@ const AudioPlayer: React.FC<AudioPlayerProps> = ({ audioFile }) => {
   const [duration, setDuration] = useState(0);
   const audioUrl = useRef<string>('');
 
-  useEffect(() => {
-    if (audioFile instanceof File) {
-      // Créer une URL pour le fichier audio
-      audioUrl.current = URL.createObjectURL(audioFile);
-      
-      // Nettoyer l'URL à la destruction du composant
-      return () => {
-        if (audioUrl.current) {
-          URL.revokeObjectURL(audioUrl.current);
-        }
-      };
-    }
+  React.useEffect(() => {
+    audioUrl.current = URL.createObjectURL(audioFile);
+    
+    return () => {
+      URL.revokeObjectURL(audioUrl.current);
+    };
   }, [audioFile]);
 
-  useEffect(() => {
+  React.useEffect(() => {
     const audio = audioRef.current;
     if (!audio) return;
 
@@ -86,19 +80,19 @@ const AudioPlayer: React.FC<AudioPlayerProps> = ({ audioFile }) => {
     }
   };
 
-  const handleSeek = (_event: Event, newValue: number | number[]) => {
-    if (audioRef.current && typeof newValue === 'number') {
-      audioRef.current.currentTime = newValue;
-      setCurrentTime(newValue);
+  const handleSeek = (_: Event, value: number | number[]) => {
+    if (audioRef.current && typeof value === 'number') {
+      audioRef.current.currentTime = value;
+      setCurrentTime(value);
     }
   };
 
-  const handleSkip = (seconds: number) => {
+  const skipTime = (seconds: number) => {
     if (audioRef.current) {
-      audioRef.current.currentTime = Math.min(
-        Math.max(audioRef.current.currentTime + seconds, 0),
-        duration
-      );
+      const newTime = Math.min(Math.max(audioRef.current.currentTime + seconds, 0), duration);
+      audioRef.current.currentTime = newTime;
+      setCurrentTime(newTime);
+
     }
   };
 
@@ -115,32 +109,43 @@ const AudioPlayer: React.FC<AudioPlayerProps> = ({ audioFile }) => {
       <audio ref={audioRef} src={audioUrl.current} />
       
       <Stack spacing={2}>
-        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-          <Typography variant="body2" color="text.secondary">
-            {formatTime(currentTime)}
-          </Typography>
+        <Typography variant="subtitle1" sx={{ textAlign: 'center', color: 'text.primary' }}>
+          {audioFile.name}
+        </Typography>
+        <Box sx={{ px: 2 }}>
           <Slider
             value={currentTime}
+            min={0}
             max={duration}
             onChange={handleSeek}
             sx={{
               color: theme.palette.primary.main,
+              height: 4,
               '& .MuiSlider-thumb': {
-                width: 12,
-                height: 12,
+                width: 8,
+                height: 8,
                 transition: '0.3s cubic-bezier(.47,1.64,.41,.8)',
                 '&:hover, &.Mui-focusVisible': {
-                  boxShadow: `0px 0px 0px 8px ${theme.palette.primary.main}20`,
+                  boxShadow: `0px 0px 0px 8px ${theme.palette.primary.main}30`,
                 },
               },
             }}
           />
+<<<<<<< HEAD
+=======
+        </Box>
+        <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+          <Typography variant="body2" color="text.secondary">
+            {formatTime(currentTime)}
+          </Typography>
+>>>>>>> 6215f9eb (feat: réimplémentation du lecteur audio avec contrôles de navigation)
           <Typography variant="body2" color="text.secondary">
             {formatTime(duration)}
           </Typography>
         </Box>
 
         <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 1 }}>
+<<<<<<< HEAD
           <IconButton 
             onClick={() => handleSkip(-10)}
             size="small"
@@ -149,6 +154,20 @@ const AudioPlayer: React.FC<AudioPlayerProps> = ({ audioFile }) => {
             <FastRewind />
           </IconButton>
           
+=======
+          <IconButton
+            onClick={() => skipTime(-10)}
+            sx={{
+              color: theme.palette.primary.main,
+              '&:hover': {
+                backgroundColor: theme.palette.primary.main + '20',
+              },
+            }}
+          >
+            <FastRewind />
+          </IconButton>
+
+>>>>>>> 6215f9eb (feat: réimplémentation du lecteur audio avec contrôles de navigation)
           <IconButton
             onClick={handlePlayPause}
             sx={{
@@ -163,9 +182,19 @@ const AudioPlayer: React.FC<AudioPlayerProps> = ({ audioFile }) => {
           </IconButton>
 
           <IconButton
+<<<<<<< HEAD
             onClick={() => handleSkip(10)}
             size="small"
             sx={{ color: theme.palette.text.secondary }}
+=======
+            onClick={() => skipTime(10)}
+            sx={{
+              color: theme.palette.primary.main,
+              '&:hover': {
+                backgroundColor: theme.palette.primary.main + '20',
+              },
+            }}
+>>>>>>> 6215f9eb (feat: réimplémentation du lecteur audio avec contrôles de navigation)
           >
             <FastForward />
           </IconButton>

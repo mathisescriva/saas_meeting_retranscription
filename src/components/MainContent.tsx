@@ -1,6 +1,7 @@
 import React, { useState, useRef, useMemo, useEffect, useCallback } from 'react';
 import { transcribeAudio } from '../services/assemblyAI';
 import Dashboard from './Dashboard';
+import AudioPlayer from './AudioPlayer';
 import {
   Box,
   Paper,
