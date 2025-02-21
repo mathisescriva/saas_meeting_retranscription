@@ -1,4 +1,4 @@
-import React, { useState, useRef } from 'react';
+import React, { useState, useRef, useMemo, useEffect, useCallback } from 'react';
 import { transcribeAudio } from '../services/assemblyAI';
 import Dashboard from './Dashboard';
 import {
@@ -21,6 +21,8 @@ import {
   DialogActions,
 } from '@mui/material';
 import LoadingModal from './LoadingModal';
+import MeetingStats from './MeetingStats';
+import { AccountCircle as AccountCircleIcon } from '@mui/icons-material';
 import {
   FormatBold,
   FormatItalic,
@@ -55,8 +57,46 @@ const formatDuration = (seconds: number): string => {
 const TranscriptionView = () => {
   const theme = useTheme();
   const [transcription, setTranscription] = useState('');
-  const [utterances, setUtterances] = useState<Array<{ speaker: string; text: string; timestamp?: string }>>([]);
+  const [utterances, setUtterances] = useState<Array<{ speaker: string; text: string; timestamp?: string; start?: number; end?: number }>>([]);
   const [speakerNames, setSpeakerNames] = useState<Record<string, string>>({});
+  const [speakerColors, setSpeakerColors] = useState<Record<string, { main: string; light: string }>>({});
+
+  const pastelColors = useMemo(() => [
+    { main: '#9DB4C0', light: '#E8EEF1' }, // Bleu gris doux
+    { main: '#C6A4A4', light: '#F2E8E8' }, // Rose poudré
+    { main: '#A5C0A7', light: '#E9F0E9' }, // Vert sauge
+    { main: '#C0B9A4', light: '#F0EEE8' }, // Beige doré
+    { main: '#B4A4C0', light: '#EDE8F0' }, // Lavande
+    { main: '#A4B8C0', light: '#E8EEF1' }, // Bleu ciel pâle
+    { main: '#C0A4B5', light: '#F0E8ED' }, // Mauve doux
+    { main: '#A4C0B7', light: '#E8F0EE' }, // Vert d'eau
+    { main: '#C0AFA4', light: '#F0EDE8' }, // Taupe clair
+    { main: '#A4A5C0', light: '#E8E8F0' }, // Bleu pervenche
+  ], []);
+
+  // Initialiser les couleurs des speakers une seule fois au chargement des utterances
+  useEffect(() => {
+    if (utterances.length > 0) {
+      const newColors: Record<string, { main: string; light: string }> = {};
+      const uniqueSpeakers = Array.from(new Set(utterances.map(u => u.speaker)));
+      
+      uniqueSpeakers.sort((a, b) => {
+        const numA = parseInt(a.replace(/[^0-9]/g, '')) || 0;
+        const numB = parseInt(b.replace(/[^0-9]/g, '')) || 0;
+        return numA - numB;
+      }).forEach((speaker, index) => {
+        newColors[speaker] = pastelColors[index % pastelColors.length];
+      });
+
+      setSpeakerColors(newColors);
+    }
+  }, [utterances.length, pastelColors]);
+
+  const getSpeakerColor = useCallback((speaker: string) => {
+    return speakerColors[speaker] || pastelColors[0];
+  }, [speakerColors, pastelColors]);
+
+
   const [audioFile, setAudioFile] = useState<AudioFile | null>(null);
   const [reports, setReports] = useState<Report[]>([]);
   const [customReportTitle, setCustomReportTitle] = useState('');
@@ -93,7 +133,9 @@ const TranscriptionView = () => {
           setUtterances(result.utterances.map(u => ({
             speaker: u.speaker,
             text: u.text,
-            timestamp: new Date(u.start || 0).toISOString().substr(14, 5)
+            start: u.start,
+            end: u.end,
+            timestamp: new Date(Math.floor(u.start || 0)).toISOString().substr(14, 5)
           })));
           setTranscription(result.text || '');
         } else {
@@ -252,7 +294,27 @@ const TranscriptionView = () => {
           </Stack>
         </Toolbar>
 
-        <Box sx={{ bgcolor: 'white', p: 2, borderRadius: 1 }}>
+        {utterances.length > 0 && (
+          <MeetingStats
+            duration={utterances.length > 0 ? (utterances[utterances.length - 1].end || 0) / 1000 : 0}
+            speakersCount={new Set(utterances.map(u => u.speaker)).size}
+            utterancesCount={utterances.length}
+            averageUtteranceLength={
+              utterances.reduce((acc, curr) => {
+                const duration = curr.end && curr.start ? (curr.end - curr.start) / 1000 : 0;
+                return acc + duration;
+              }, 0) / utterances.length
+            }
+          />
+        )}
+        <Box 
+          sx={{
+            bgcolor: 'white',
+            p: 2,
+            borderRadius: 2,
+            boxShadow: '0 2px 4px rgba(0,0,0,0.05)',
+          }}
+        >
           {utterances.length > 0 ? (
             <Stack spacing={3}>
               {utterances.map((utterance, index) => (
@@ -265,29 +327,37 @@ const TranscriptionView = () => {
                       minWidth: '150px',
                     }}
                   >
-                    <TextField
-                      size="small"
-                      value={speakerNames[utterance.speaker] || `Speaker ${utterance.speaker}`}
-                      onChange={(e) => {
-                        setSpeakerNames(prev => ({
-                          ...prev,
-                          [utterance.speaker]: e.target.value
-                        }));
-                      }}
-                      sx={{
-                        '& .MuiInputBase-input': {
-                          color: theme.palette.primary.main,
-                          fontWeight: 500,
-                          fontSize: '0.875rem',
-                        },
-                        '& .MuiOutlinedInput-notchedOutline': {
-                          border: 'none',
-                        },
-                        '&:hover .MuiOutlinedInput-notchedOutline': {
-                          border: '1px solid ' + theme.palette.primary.light,
-                        },
-                      }}
-                    />
+                    <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, width: '100%' }}>
+                      <AccountCircleIcon
+                        sx={{
+                          fontSize: 32,
+                          color: getSpeakerColor(utterance.speaker).main,
+                        }}
+                      />
+                      <TextField
+                        size="small"
+                        value={speakerNames[utterance.speaker] || `Speaker ${utterance.speaker}`}
+                        onChange={(e) => {
+                          setSpeakerNames(prev => ({
+                            ...prev,
+                            [utterance.speaker]: e.target.value
+                          }));
+                        }}
+                        sx={{
+                          '& .MuiInputBase-input': {
+                            color: getSpeakerColor(utterance.speaker).main,
+                            fontWeight: 500,
+                            fontSize: '0.875rem',
+                          },
+                          '& .MuiOutlinedInput-notchedOutline': {
+                            border: 'none',
+                          },
+                          '&:hover .MuiOutlinedInput-notchedOutline': {
+                            border: `1px solid ${getSpeakerColor(utterance.speaker).main}`,
+                          },
+                        }}
+                      />
+                    </Box>
                     {utterance.timestamp && (
                       <Typography
                         variant="caption"
@@ -301,9 +371,16 @@ const TranscriptionView = () => {
                     variant="body1"
                     sx={{
                       flex: 1,
-                      backgroundColor: alpha(theme.palette.background.paper, 0.5),
+                      backgroundColor: getSpeakerColor(utterance.speaker).light,
                       p: 2,
-                      borderRadius: 1,
+                      borderRadius: 2,
+                      border: `1px solid ${getSpeakerColor(utterance.speaker).main}`,
+                      borderLeftWidth: '4px',
+                      transition: 'all 0.2s ease-in-out',
+                      '&:hover': {
+                        backgroundColor: alpha(getSpeakerColor(utterance.speaker).main, 0.15),
+                        transform: 'translateX(4px)',
+                      },
                     }}
                   >
                     {utterance.text}
