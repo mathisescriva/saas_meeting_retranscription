@@ -61,18 +61,14 @@ const TranscriptionView = () => {
   const [speakerNames, setSpeakerNames] = useState<Record<string, string>>({});
   const [speakerColors, setSpeakerColors] = useState<Record<string, { main: string; light: string }>>({});
 
-  const pastelColors = useMemo(() => [
-    { main: '#9DB4C0', light: '#E8EEF1' }, // Bleu gris doux
-    { main: '#C6A4A4', light: '#F2E8E8' }, // Rose poudré
-    { main: '#A5C0A7', light: '#E9F0E9' }, // Vert sauge
-    { main: '#C0B9A4', light: '#F0EEE8' }, // Beige doré
-    { main: '#B4A4C0', light: '#EDE8F0' }, // Lavande
-    { main: '#A4B8C0', light: '#E8EEF1' }, // Bleu ciel pâle
-    { main: '#C0A4B5', light: '#F0E8ED' }, // Mauve doux
-    { main: '#A4C0B7', light: '#E8F0EE' }, // Vert d'eau
-    { main: '#C0AFA4', light: '#F0EDE8' }, // Taupe clair
-    { main: '#A4A5C0', light: '#E8E8F0' }, // Bleu pervenche
-  ], []);
+  const themeColors = useMemo(() => [
+    { main: theme.palette.primary.main, light: alpha(theme.palette.primary.main, 0.1) },
+    { main: theme.palette.success.main, light: alpha(theme.palette.success.main, 0.1) },
+    { main: theme.palette.info.main, light: alpha(theme.palette.info.main, 0.1) },
+    { main: theme.palette.warning.main, light: alpha(theme.palette.warning.main, 0.1) },
+    { main: theme.palette.error.main, light: alpha(theme.palette.error.main, 0.1) },
+    { main: theme.palette.secondary.main, light: alpha(theme.palette.secondary.main, 0.1) },
+  ], [theme]);
 
   // Initialiser les couleurs des speakers une seule fois au chargement des utterances
   useEffect(() => {
@@ -85,16 +81,16 @@ const TranscriptionView = () => {
         const numB = parseInt(b.replace(/[^0-9]/g, '')) || 0;
         return numA - numB;
       }).forEach((speaker, index) => {
-        newColors[speaker] = pastelColors[index % pastelColors.length];
+        newColors[speaker] = themeColors[index % themeColors.length];
       });
 
       setSpeakerColors(newColors);
     }
-  }, [utterances.length, pastelColors]);
+  }, [utterances.length, themeColors]);
 
   const getSpeakerColor = useCallback((speaker: string) => {
-    return speakerColors[speaker] || pastelColors[0];
-  }, [speakerColors, pastelColors]);
+    return speakerColors[speaker] || themeColors[0];
+  }, [speakerColors, themeColors]);
 
 
   const [audioFile, setAudioFile] = useState<AudioFile | null>(null);
@@ -346,8 +342,8 @@ const TranscriptionView = () => {
                         sx={{
                           '& .MuiInputBase-input': {
                             color: getSpeakerColor(utterance.speaker).main,
-                            fontWeight: 500,
-                            fontSize: '0.875rem',
+                          fontWeight: 600,
+                          fontSize: '0.875rem',
                           },
                           '& .MuiOutlinedInput-notchedOutline': {
                             border: 'none',
@@ -371,15 +367,14 @@ const TranscriptionView = () => {
                     variant="body1"
                     sx={{
                       flex: 1,
-                      backgroundColor: getSpeakerColor(utterance.speaker).light,
+                      backgroundColor: 'transparent',
                       p: 2,
-                      borderRadius: 2,
-                      border: `1px solid ${getSpeakerColor(utterance.speaker).main}`,
-                      borderLeftWidth: '4px',
+                      pl: 3,
+                      borderLeft: `4px solid ${getSpeakerColor(utterance.speaker).main}`,
+                      color: 'text.primary',
                       transition: 'all 0.2s ease-in-out',
                       '&:hover': {
-                        backgroundColor: alpha(getSpeakerColor(utterance.speaker).main, 0.15),
-                        transform: 'translateX(4px)',
+                        backgroundColor: alpha(getSpeakerColor(utterance.speaker).main, 0.05),
                       },
                     }}
                   >
