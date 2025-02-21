@@ -20,6 +20,7 @@ import {
   DialogContent,
   DialogActions,
 } from '@mui/material';
+import LoadingModal from './LoadingModal';
 import {
   FormatBold,
   FormatItalic,
@@ -247,7 +248,7 @@ const TranscriptionView = () => {
           onChange={(e) => setTranscription(e.target.value)}
           placeholder={
             isTranscribing
-              ? 'Transcribing your audio file... This may take a few minutes.'
+              ? 'Processing...'
               : transcriptionError
               ? `Error: ${transcriptionError}`
               : 'Upload an audio file to see the transcription here...'
@@ -266,13 +267,11 @@ const TranscriptionView = () => {
             },
           }}
         />
-        {isTranscribing && (
-          <Box sx={{ display: 'flex', justifyContent: 'center', mt: 2 }}>
-            <Typography variant="body2" color="text.secondary">
-              Transcribing... This may take a few minutes depending on the file size.
-            </Typography>
-          </Box>
-        )}
+        <LoadingModal 
+          open={isTranscribing}
+          message="Transcribing your audio..."
+          submessage="We're using AI to analyze your audio and generate an accurate transcription. This may take a few minutes depending on the file size."
+        />
       </Paper>
     </Box>
   );
