@@ -73,40 +73,79 @@ const theme = createTheme({
     MuiButton: {
       styleOverrides: {
         root: {
-          borderRadius: 6,
+          borderRadius: 8,
           textTransform: 'none',
           fontWeight: 600,
-          padding: '8px 16px',
-          transition: 'all 0.2s ease-in-out',
+          fontSize: '0.9rem',
+          padding: '10px 20px',
+          letterSpacing: '0.5px',
+          position: 'relative',
+          overflow: 'hidden',
+          transition: 'all 250ms ease-out',
+          '&::before': {
+            content: '""',
+            position: 'absolute',
+            top: 0,
+            left: 0,
+            width: '100%',
+            height: '100%',
+            background: 'linear-gradient(120deg, rgba(255,255,255,0) 30%, rgba(255,255,255,0.15) 50%, rgba(255,255,255,0) 70%)',
+            transform: 'translateX(-100%)',
+            transition: 'transform 750ms ease-in-out',
+          },
           '&:hover': {
             transform: 'translateY(-1px)',
-            boxShadow: '0 4px 12px rgba(10, 102, 255, 0.2)',
+            boxShadow: '0 4px 8px rgba(0, 0, 0, 0.05)',
+            '&::before': {
+              transform: 'translateX(100%)',
+            }
+          },
+          '&:active': {
+            transform: 'translateY(0)',
+            boxShadow: '0 2px 4px rgba(0, 0, 0, 0.05)',
           },
         },
         contained: {
-          backgroundColor: '#0A66FF',
+          background: 'linear-gradient(45deg, #3B82F6 0%, #6366F1 100%)',
           color: 'white',
-          boxShadow: '0 2px 4px rgba(10, 102, 255, 0.1)',
+          border: 'none',
+          boxShadow: '0 2px 8px rgba(99, 102, 241, 0.25)',
           '&:hover': {
-            backgroundColor: '#0044BB',
+            background: 'linear-gradient(45deg, #2563EB 0%, #4F46E5 100%)',
+            boxShadow: '0 3px 10px rgba(99, 102, 241, 0.35)',
           },
         },
         outlined: {
-          background: 'transparent',
-          border: '1.5px solid',
+          background: 'rgba(255, 255, 255, 0.7)',
+          backdropFilter: 'blur(6px)',
+          border: '1px solid',
           borderColor: '#6366F1',
           color: '#6366F1',
+          boxShadow: '0 1px 4px rgba(99, 102, 241, 0.05)',
           '&:hover': {
-            background: alpha('#6366F1', 0.04),
+            background: 'rgba(255, 255, 255, 0.9)',
             borderColor: '#4F46E5',
+            color: '#4F46E5',
+            boxShadow: '0 2px 8px rgba(99, 102, 241, 0.1)',
           },
         },
         text: {
-          background: 'transparent',
           color: '#6366F1',
           '&:hover': {
-            background: alpha('#6366F1', 0.04),
+            background: 'rgba(99, 102, 241, 0.05)',
           },
+        },
+        startIcon: {
+          transition: 'transform 250ms ease-out',
+          '.MuiButton-root:hover &': {
+            transform: 'translateX(-1px)',
+          }
+        },
+        endIcon: {
+          transition: 'transform 250ms ease-out',
+          '.MuiButton-root:hover &': {
+            transform: 'translateX(1px)',
+          }
         },
       },
     },

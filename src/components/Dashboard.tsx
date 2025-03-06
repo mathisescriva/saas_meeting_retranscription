@@ -791,18 +791,31 @@ const Dashboard = () => {
     }}>
       {/* Header */}
       <Box sx={{ mb: 4 }}>
-        <Typography 
-            variant="h4" 
-            sx={{ 
-              mb: 1, 
-              fontWeight: 700,
-              background: 'linear-gradient(90deg, #3B82F6 0%, #8B5CF6 100%)',
-              WebkitBackgroundClip: 'text',
-              WebkitTextFillColor: 'transparent',
-              letterSpacing: '-0.5px'
-            }}>
-          👋 Welcome back!
-        </Typography>
+        <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mb: 1 }}>
+          <Box sx={{ display: 'flex', alignItems: 'center', ml: -2 }}>
+            <Box component="img" 
+              src="/img/avatar.jpg" 
+              alt="Avatar" 
+              sx={{ 
+                width: 150, 
+                height: 150,
+                objectFit: 'cover',
+              }}
+            />
+            <Typography 
+              variant="h4" 
+              sx={{
+                fontWeight: 700,
+                background: 'linear-gradient(90deg, #3B82F6 0%, #8B5CF6 100%)',
+                WebkitBackgroundClip: 'text',
+                WebkitTextFillColor: 'transparent',
+                letterSpacing: '-0.5px',
+                ml: 0.5
+              }}>
+              👋 Welcome back!
+            </Typography>
+          </Box>
+        </Box>
         <Typography variant="body1" color="text.secondary">
           Manage your meetings and transcriptions from one place
         </Typography>
@@ -859,13 +872,17 @@ const Dashboard = () => {
                 ) : (
                   <Button
                     variant="contained"
-                    startIcon={<MicIcon />}
+                    startIcon={<MicIcon sx={{ color: 'white' }} />}
                     onClick={startRecording}
                     sx={{
-                      bgcolor: 'white',
-                      color: 'primary.main',
+                      bgcolor: '#FF5722', // Orange vif
+                      color: 'white',
+                      fontWeight: 'bold',
+                      boxShadow: '0 4px 10px rgba(0, 0, 0, 0.15)',
+                      border: '2px solid white',
                       '&:hover': {
-                        bgcolor: 'rgba(255, 255, 255, 0.9)',
+                        bgcolor: '#E64A19', // Orange plus foncé
+                        boxShadow: '0 6px 12px rgba(0, 0, 0, 0.2)',
                       },
                     }}
                   >

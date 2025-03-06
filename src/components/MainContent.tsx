@@ -50,7 +50,8 @@ interface Report {
 }
 
 interface MainContentProps {
-  currentView: 'dashboard' | 'transcription' | 'meetings';
+  currentUser: User | null;
+  currentView: 'dashboard' | 'meetings';
 }
 
 const formatDuration = (seconds: number): string => {
@@ -469,12 +470,10 @@ const TranscriptionView = () => {
   );
 };
 
-const MainContent: React.FC<MainContentProps> = ({ currentView }) => {
+const MainContent: React.FC<MainContentProps> = ({ currentUser, currentView }) => {
   switch (currentView) {
     case 'dashboard':
       return <Dashboard />;
-    case 'transcription':
-      return <TranscriptionView />;
     case 'meetings':
       return <MyMeetings />;
     default:

@@ -9,7 +9,7 @@ import { isAuthenticated, getUserProfile, User, logoutUser } from './services/au
 import { NotificationProvider } from './contexts/NotificationContext';
 
 function App() {
-  const [currentView, setCurrentView] = useState<'dashboard' | 'transcription' | 'meetings'>('dashboard');
+  const [currentView, setCurrentView] = useState<'dashboard' | 'meetings'>('dashboard');
   const [isLoggedIn, setIsLoggedIn] = useState<boolean>(false);
   const [currentUser, setCurrentUser] = useState<User | null>(null);
   const [isLoading, setIsLoading] = useState<boolean>(true);
@@ -70,7 +70,7 @@ function App() {
     checkAuth();
   }, []);
 
-  const handleViewChange = (view: 'dashboard' | 'transcription' | 'meetings') => {
+  const handleViewChange = (view: 'dashboard' | 'meetings') => {
     setCurrentView(view);
   };
 

@@ -25,7 +25,7 @@ import {
 import { User, logoutUser } from '../services/authService';
 
 interface SidebarProps {
-  onViewChange: (view: 'dashboard' | 'transcription' | 'meetings') => void;
+  onViewChange: (view: 'dashboard' | 'meetings') => void;
   user: User | null;
 }
 
@@ -43,9 +43,6 @@ const Sidebar: React.FC<SidebarProps> = ({ onViewChange, user }) => {
         onViewChange('dashboard');
         break;
       case 1:
-        onViewChange('transcription');
-        break;
-      case 2:
         onViewChange('meetings');
         break;
     }
@@ -86,12 +83,12 @@ const Sidebar: React.FC<SidebarProps> = ({ onViewChange, user }) => {
       }}
     >
       <Box sx={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
-        <Box sx={{ p: 3, display: 'flex', alignItems: 'center' }}>
+        <Box sx={{ p: 2, display: 'flex', alignItems: 'center' }}>
           <Typography
-            variant="h6"
+            variant="h5"
             sx={{
               fontWeight: 700,
-              background: 'linear-gradient(90deg, #3B82F6 0%, #8B5CF6 100%)',
+              background: 'linear-gradient(45deg, #3B82F6 30%, #6366F1 90%)',
               WebkitBackgroundClip: 'text',
               WebkitTextFillColor: 'transparent',
             }}
@@ -187,32 +184,6 @@ const Sidebar: React.FC<SidebarProps> = ({ onViewChange, user }) => {
             <ListItemButton
               selected={selectedIndex === 1}
               onClick={(event) => handleListItemClick(event, 1)}
-              sx={{
-                borderRadius: 1,
-                mb: 1,
-                '&.Mui-selected': {
-                  bgcolor: alpha('#3B82F6', 0.08),
-                  color: '#3B82F6',
-                  '&:hover': {
-                    bgcolor: alpha('#3B82F6', 0.12),
-                  },
-                  '& .MuiListItemIcon-root': {
-                    color: '#3B82F6',
-                  },
-                },
-              }}
-            >
-              <ListItemIcon sx={{ minWidth: 40 }}>
-                <MicIcon />
-              </ListItemIcon>
-              <ListItemText primary="New Transcription" />
-            </ListItemButton>
-          </ListItem>
-
-          <ListItem disablePadding>
-            <ListItemButton
-              selected={selectedIndex === 2}
-              onClick={(event) => handleListItemClick(event, 2)}
               sx={{
                 borderRadius: 1,
                 '&.Mui-selected': {
