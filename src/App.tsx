@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { ThemeProvider } from '@mui/material/styles';
-import { Box, CssBaseline, Snackbar, Alert } from '@mui/material';
+import { Box, CssBaseline, Snackbar, Alert, Typography } from '@mui/material';
 import theme from './styles/theme';
 import Sidebar from './components/Sidebar';
 import MainContent from './components/MainContent';
@@ -94,12 +94,56 @@ function App() {
     <ThemeProvider theme={theme}>
       <CssBaseline />
       {isLoggedIn ? (
-        <Box sx={{ display: 'flex', height: '100vh' }}>
-          <Sidebar onViewChange={handleViewChange} user={currentUser} />
-          <MainContent currentView={currentView} />
+        <Box sx={{ display: 'flex', height: '100vh', flexDirection: 'column' }}>
+          <Box sx={{ display: 'flex', flex: 1, overflow: 'hidden', paddingBottom: '40px' }}>
+            <Sidebar onViewChange={handleViewChange} user={currentUser} />
+            <MainContent currentView={currentView} />
+          </Box>
+          <Box 
+            component="footer" 
+            sx={{ 
+              py: 1, 
+              textAlign: 'center', 
+              borderTop: '1px solid', 
+              borderColor: 'divider', 
+              bgcolor: 'background.paper',
+              position: 'fixed',
+              bottom: 0,
+              left: 0,
+              right: 0,
+              zIndex: 1000
+            }}
+          >
+            <Typography variant="caption" color="text.secondary">
+              powered by Lexia France
+            </Typography>
+          </Box>
         </Box>
       ) : (
-        <AuthForm onAuthSuccess={handleAuthSuccess} />
+        <Box sx={{ height: '100vh', display: 'flex', flexDirection: 'column' }}>
+          <Box sx={{ flex: 1, paddingBottom: '40px' }}>
+            <AuthForm onAuthSuccess={handleAuthSuccess} />
+          </Box>
+          <Box 
+            component="footer" 
+            sx={{ 
+              py: 1, 
+              textAlign: 'center', 
+              borderTop: '1px solid', 
+              borderColor: 'divider', 
+              bgcolor: 'background.paper',
+              position: 'fixed',
+              bottom: 0,
+              left: 0,
+              right: 0,
+              zIndex: 1000
+            }}
+          >
+            <Typography variant="caption" color="text.secondary">
+              powered by Lexia France
+            </Typography>
+          </Box>
+        </Box>
       )}
       
       {/* Notification d'erreur d'authentification */}

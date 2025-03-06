@@ -27,7 +27,7 @@ import {
   EventNote as EventNoteIcon,
   Delete as DeleteIcon,
 } from '@mui/icons-material';
-import { getAllMeetings, getTranscript, deleteMeeting, Meeting as ApiMeeting } from '../services/meetingService';
+import { getAllMeetings, getTranscript, deleteMeeting, Meeting as ApiMeeting, getMeetingDetails } from '../services/meetingService';
 
 interface Meeting extends ApiMeeting {
   summary?: {
@@ -98,6 +98,16 @@ const MyMeetings: React.FC = () => {
       });
       
       setMeetings(processedMeetings);
+      
+      // Pour chaque réunion complétée, mettre à jour les détails avec les informations les plus récentes
+      processedMeetings.forEach(meeting => {
+        if (meeting.transcript_status === 'completed' || meeting.transcription_status === 'completed') {
+          // Mettre à jour les détails de durée et de participants pour les réunions terminées
+          updateMeetingDetails(meeting.id).catch(err => {
+            console.error(`Failed to update details for meeting ${meeting.id}:`, err);
+          });
+        }
+      });
     } catch (err) {
       console.error('Failed to load meetings:', err);
       setError('Failed to load your meetings. Please try again.');
@@ -132,6 +142,10 @@ const MyMeetings: React.FC = () => {
   const handleViewTranscript = async (meetingId: string) => {
     try {
       console.log(`Fetching transcript for meeting ID: ${meetingId}`);
+      
+      // Mettre à jour les détails de la réunion avant d'afficher la transcription
+      await updateMeetingDetails(meetingId);
+      
       const transcriptData = await getTranscript(meetingId);
       console.log('Transcript data:', transcriptData);
       
@@ -185,6 +199,55 @@ const MyMeetings: React.FC = () => {
         setIsDeleting(false);
       }
     }
+  };
+
+  // Fonction pour mettre à jour les détails d'une réunion spécifique
+  const updateMeetingDetails = async (meetingId: string) => {
+    try {
+      console.log(`Updating details for meeting ${meetingId} in MyMeetings`);
+      
+      // Récupérer les détails complets de la réunion
+      const meetingDetails = await getMeetingDetails(meetingId);
+      
+      // Mettre à jour l'interface utilisateur
+      setMeetings(prevMeetings => 
+        prevMeetings.map(meeting => 
+          meeting.id === meetingId 
+            ? {
+                ...meeting,
+                // Utiliser les nouveaux champs de durée et de participants
+                audio_duration: meetingDetails.duration_seconds || 
+                               meetingDetails.audio_duration,
+                duration: meetingDetails.duration_seconds || 
+                         meetingDetails.audio_duration || 
+                         meetingDetails.duration,
+                participants: meetingDetails.speakers_count || 
+                             meetingDetails.participants || 
+                             meeting.participants || 0
+              } 
+            : meeting
+        )
+      );
+      
+      console.log(`Meeting details updated for ${meetingId} in MyMeetings`);
+      return meetingDetails;
+    } catch (error) {
+      console.error(`Error updating meeting details for ${meetingId}:`, error);
+      throw error;
+    }
+  };
+
+  const handleMeetingClick = (meetingId: string) => {
+    // Mettre à jour les détails de la réunion lorsqu'on clique dessus
+    updateMeetingDetails(meetingId)
+      .then(meetingDetails => {
+        console.log('Meeting details refreshed on click:', meetingDetails);
+        // Ici on pourrait ouvrir une vue détaillée ou effectuer une autre action
+      })
+      .catch(error => {
+        console.error('Failed to refresh meeting details:', error);
+        setError(`Erreur lors de la mise à jour des détails: ${error instanceof Error ? error.message : 'Erreur inconnue'}`);
+      });
   };
 
   return (
@@ -269,7 +332,9 @@ const MyMeetings: React.FC = () => {
                       transform: 'translateY(-2px)',
                       boxShadow: '0 8px 24px rgba(0,0,0,0.1)',
                     },
+                    cursor: 'pointer'
                   }}
+                  onClick={() => handleMeetingClick(meeting.id)}
                 >
                   <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                     <Box>
@@ -284,7 +349,7 @@ const MyMeetings: React.FC = () => {
                           📅 {formatDate(meeting.created_at)}
                         </Typography>
                         <Typography variant="body2" color="text.secondary">
-                          👥 {meeting.participants || 0} participants
+                          👥 {meeting.participants || meeting.speakers_count || '0'} participants
                         </Typography>
                         
                         {/* Status chip */}

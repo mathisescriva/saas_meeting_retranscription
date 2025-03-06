@@ -56,7 +56,8 @@ import {
   retryTranscription, 
   pollTranscriptionStatus,
   getTranscript,
-  deleteMeeting
+  deleteMeeting,
+  getMeetingDetails
 } from '../services/meetingService';
 
 const features = [
@@ -194,7 +195,7 @@ const Dashboard = () => {
           title: meeting.title,
           date: new Date(meeting.created_at).toLocaleDateString(),
           duration: durationInSeconds,
-          participants: meeting.participants || 0,
+          participants: meeting.participants || meeting.speakers_count || 0,
           progress: meeting.transcript_status === 'completed' || meeting.transcription_status === 'completed' ? 100 : 
                    meeting.transcript_status === 'error' || meeting.transcription_status === 'failed' ? 0 :
                    meeting.transcript_status === 'processing' || meeting.transcription_status === 'processing' ? 50 : 25,
@@ -239,6 +240,19 @@ const Dashboard = () => {
                       : m
                   )
                 );
+                
+                // Si la transcription est terminée avec succès, mettre à jour les détails
+                if (updatedStatus === 'completed') {
+                  console.log('Transcription completed, updating meeting details');
+                  // Mettre à jour les détails de la réunion (durée, participants)
+                  updateMeetingDetails(meeting.id)
+                    .then(details => {
+                      console.log('Meeting details updated successfully:', details);
+                    })
+                    .catch(error => {
+                      console.error('Failed to update meeting details:', error);
+                    });
+                }
                 
                 // Rafraîchir complètement seulement après une courte pause
                 setTimeout(() => {
@@ -609,6 +623,57 @@ const Dashboard = () => {
     }
   };
 
+  // Nouvelle fonction pour mettre à jour les détails d'une réunion spécifique
+  const updateMeetingDetails = async (meetingId: string) => {
+    try {
+      console.log(`Updating details for meeting ${meetingId}`);
+      
+      // Récupérer les détails complets de la réunion
+      const meetingDetails = await getMeetingDetails(meetingId);
+      
+      // Mettre à jour l'interface utilisateur
+      setRecentMeetings(prevMeetings => 
+        prevMeetings.map(meeting => 
+          meeting.id === meetingId 
+            ? {
+                ...meeting,
+                // Utiliser les nouveaux champs de durée et de participants
+                duration: meetingDetails.duration_seconds || 
+                          meetingDetails.audio_duration || 
+                          meetingDetails.duration,
+                participants: meetingDetails.speakers_count || 
+                              meetingDetails.participants || 
+                              meeting.participants
+              } 
+            : meeting
+        )
+      );
+      
+      console.log(`Meeting details updated for ${meetingId}`);
+      return meetingDetails;
+    } catch (error) {
+      console.error(`Error updating meeting details for ${meetingId}:`, error);
+      throw error;
+    }
+  };
+
+  const handleMeetingClick = (meetingId: string) => {
+    // Mettre à jour les détails avant d'ouvrir
+    updateMeetingDetails(meetingId)
+      .then(meetingDetails => {
+        console.log('Meeting details refreshed before opening:', meetingDetails);
+        // Rediriger vers la page détaillée de la réunion ou ouvrir un modal
+        // window.location.href = `/meetings/${meetingId}`;
+        // ou
+        // setSelectedMeeting(meetingDetails);
+        // setShowMeetingDetails(true);
+      })
+      .catch(error => {
+        console.error('Failed to refresh meeting details:', error);
+        // Gérer l'erreur (par exemple, afficher une notification)
+      });
+  };
+
   return (
     <Box sx={{ 
       p: 4,
@@ -861,7 +926,9 @@ const Dashboard = () => {
                   transform: 'translateY(-2px)',
                   boxShadow: '0 8px 24px rgba(0,0,0,0.1)',
                 },
+                cursor: 'pointer'
               }}
+              onClick={() => handleMeetingClick(meeting.id)}
             >
               <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                 <Box>

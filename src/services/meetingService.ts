@@ -16,6 +16,8 @@ export interface Meeting {
   // Nouveaux champs pour les détails de la transcription
   audio_duration?: number; // Durée de l'audio en secondes
   participants?: number;   // Nombre de participants détectés
+  duration_seconds?: number; // Durée alternative en secondes
+  speakers_count?: number;   // Nombre de locuteurs alternatif
   utterances?: Array<{     // Segments de texte avec timing
     speaker: string;
     text: string;
@@ -37,6 +39,8 @@ export interface TranscriptResponse {
   }>;
   audio_duration?: number; // Durée de l'audio en secondes 
   participants?: number;   // Nombre de participants détectés
+  duration_seconds?: number; // Durée alternative en secondes
+  speakers_count?: number;   // Nombre de locuteurs alternatif
 }
 
 export interface UploadOptions {
@@ -86,6 +90,31 @@ export async function uploadMeeting(
  */
 export async function getMeeting(meetingId: string): Promise<Meeting> {
   return apiClient.get<Meeting>(`/meetings/${meetingId}`);
+}
+
+/**
+ * Get detailed meeting info including duration and participant count
+ */
+export async function getMeetingDetails(meetingId: string): Promise<Meeting> {
+  console.log(`Fetching detailed info for meeting ${meetingId}`);
+  try {
+    // Utiliser l'API pour récupérer les données complètes de la réunion
+    const meetingData = await apiClient.get<Meeting>(`/meetings/${meetingId}`);
+    
+    // Normaliser les informations de durée et de participants
+    const meeting: Meeting = {
+      ...meetingData,
+      // Assurer la compatibilité avec les différents formats de champs
+      duration: meetingData.duration_seconds || meetingData.audio_duration || meetingData.duration,
+      participants: meetingData.speakers_count || meetingData.participants || 0
+    };
+    
+    console.log('Retrieved meeting details:', meeting);
+    return meeting;
+  } catch (error) {
+    console.error(`Error fetching meeting details for ${meetingId}:`, error);
+    throw error;
+  }
 }
 
 /**
