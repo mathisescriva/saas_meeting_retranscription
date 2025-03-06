@@ -6,6 +6,7 @@ import Sidebar from './components/Sidebar';
 import MainContent from './components/MainContent';
 import AuthForm from './components/AuthForm';
 import { isAuthenticated, getUserProfile, User, logoutUser } from './services/authService';
+import { NotificationProvider } from './contexts/NotificationContext';
 
 function App() {
   const [currentView, setCurrentView] = useState<'dashboard' | 'transcription' | 'meetings'>('dashboard');
@@ -99,8 +100,9 @@ function App() {
 
   return (
     <ThemeProvider theme={theme}>
-      <CssBaseline />
-      {isLoggedIn ? (
+      <NotificationProvider>
+        <CssBaseline />
+        {isLoggedIn ? (
         <Grid container sx={{ height: '100vh', overflow: 'hidden' }}>
           {/* Colonne de la sidebar - largeur fixe */}
           <Grid item sx={{ width: '280px', height: '100%', position: 'relative' }}>
@@ -112,25 +114,26 @@ function App() {
             <MainContent currentView={currentView} />
           </Grid>
         </Grid>
-      ) : (
-        <Box sx={{ height: '100vh', display: 'flex', flexDirection: 'column' }}>
-          <Box sx={{ flex: 1 }}>
-            <AuthForm onAuthSuccess={handleAuthSuccess} />
+        ) : (
+          <Box sx={{ height: '100vh', display: 'flex', flexDirection: 'column' }}>
+            <Box sx={{ flex: 1 }}>
+              <AuthForm onAuthSuccess={handleAuthSuccess} />
+            </Box>
           </Box>
-        </Box>
-      )}
-      
-      {/* Notification d'erreur d'authentification */}
-      <Snackbar 
-        open={!!authError} 
-        autoHideDuration={6000} 
-        onClose={handleCloseAuthError}
-        anchorOrigin={{ vertical: 'top', horizontal: 'center' }}
-      >
-        <Alert onClose={handleCloseAuthError} severity="error" sx={{ width: '100%' }}>
-          {authError}
-        </Alert>
-      </Snackbar>
+        )}
+        
+        {/* Notification d'erreur d'authentification */}
+        <Snackbar 
+          open={!!authError} 
+          autoHideDuration={6000} 
+          onClose={handleCloseAuthError}
+          anchorOrigin={{ vertical: 'top', horizontal: 'center' }}
+        >
+          <Alert onClose={handleCloseAuthError} severity="error" sx={{ width: '100%' }}>
+            {authError}
+          </Alert>
+        </Snackbar>
+      </NotificationProvider>
     </ThemeProvider>
   );
 }

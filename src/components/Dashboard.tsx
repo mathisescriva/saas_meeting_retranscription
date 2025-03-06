@@ -59,8 +59,10 @@ import {
   deleteMeeting,
   getMeetingDetails,
   syncMeetingsCache,
-  getMeetingsFromCache
+  getMeetingsFromCache,
+  onTranscriptionCompleted
 } from '../services/meetingService';
+import { useNotification } from '../contexts/NotificationContext';
 
 const features = [
   {
@@ -158,15 +160,23 @@ const Dashboard = () => {
   const timerRef = useRef<NodeJS.Timeout | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
+  const { showSuccessPopup } = useNotification();
+
   useEffect(() => {
     fetchMeetings();
+    const unsubscribe = onTranscriptionCompleted((meeting) => {
+      showSuccessPopup(
+        "Good news!",
+        `The transcription "${meeting.name || meeting.title || 'Untitled meeting'}" has been completed.`
+      );
+    });
     
-    // Nettoyage à la sortie du composant
     return () => {
+      unsubscribe();
       // Arrêter tous les pollings en cours
       cleanupPolling && cleanupPolling();
     };
-  }, []);
+  }, [showSuccessPopup]);
   
   // Référence pour stocker la fonction de nettoyage du polling
   const [cleanupPolling, setCleanupPolling] = useState<(() => void) | null>(null);

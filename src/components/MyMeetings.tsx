@@ -27,7 +27,8 @@ import {
   EventNote as EventNoteIcon,
   Delete as DeleteIcon,
 } from '@mui/icons-material';
-import { getAllMeetings, getTranscript, deleteMeeting, Meeting as ApiMeeting, getMeetingDetails } from '../services/meetingService';
+import { getAllMeetings, getTranscript, deleteMeeting, Meeting as ApiMeeting, getMeetingDetails, onTranscriptionCompleted } from '../services/meetingService';
+import { useNotification } from '../contexts/NotificationContext';
 
 interface Meeting extends ApiMeeting {
   summary?: {
@@ -38,6 +39,7 @@ interface Meeting extends ApiMeeting {
 
 const MyMeetings: React.FC = () => {
   const theme = useTheme();
+  const { showSuccessPopup } = useNotification();
   const [meetings, setMeetings] = useState<Meeting[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -50,6 +52,26 @@ const MyMeetings: React.FC = () => {
   useEffect(() => {
     fetchMeetings();
   }, []);
+
+  // Subscribe to transcription completion events
+  useEffect(() => {
+    // Register a listener for transcription completed events
+    const unsubscribe = onTranscriptionCompleted((meeting) => {
+      // Show a success notification when a transcription is completed
+      showSuccessPopup(
+        "Good news!",
+        `The transcription "${meeting.name || meeting.title || 'Untitled meeting'}" has been completed.`
+      );
+      
+      // Refresh meetings list to show the updated status
+      fetchMeetings();
+    });
+    
+    // Cleanup subscription when component unmounts
+    return () => {
+      unsubscribe();
+    };
+  }, [showSuccessPopup]);
 
   const fetchMeetings = async () => {
     try {

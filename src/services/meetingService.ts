@@ -321,6 +321,39 @@ export async function deleteMeeting(meetingId: string): Promise<void> {
   return apiClient.delete<void>(`/meetings/${meetingId}`);
 }
 
+// Event emitter pour les notifications de transcription
+type TranscriptionCallback = (meeting: Meeting) => void;
+const transcriptionCompletedListeners: TranscriptionCallback[] = [];
+
+/**
+ * S'abonner aux événements de complétion de transcription
+ * @param callback Fonction à appeler quand une transcription est complétée
+ * @returns Fonction pour se désabonner
+ */
+export function onTranscriptionCompleted(callback: TranscriptionCallback) {
+  transcriptionCompletedListeners.push(callback);
+  return () => {
+    const index = transcriptionCompletedListeners.indexOf(callback);
+    if (index !== -1) {
+      transcriptionCompletedListeners.splice(index, 1);
+    }
+  };
+}
+
+/**
+ * Notifie tous les abonnés qu'une transcription est complétée
+ * @param meeting Meeting qui a été complété
+ */
+function notifyTranscriptionCompleted(meeting: Meeting) {
+  transcriptionCompletedListeners.forEach(callback => {
+    try {
+      callback(meeting);
+    } catch (error) {
+      console.error('Error in transcription completed listener:', error);
+    }
+  });
+}
+
 // File d'attente de polling pour éviter les requêtes parallèles trop nombreuses
 const pollingQueue: Array<{
   meetingId: string;
@@ -463,6 +496,11 @@ async function processPollingQueue() {
         } else {
           // Sinon, marquer comme inactif pour le prochain cycle
           pollingQueue[currentIndex].active = false;
+        }
+        
+        // Notifier les abonnés si la transcription est complétée
+        if (status === 'completed') {
+          notifyTranscriptionCompleted(meeting);
         }
       } catch (fetchError) {
         // Gérer spécifiquement les erreurs de timeout ou d'abort
