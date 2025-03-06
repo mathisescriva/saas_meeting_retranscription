@@ -14,6 +14,7 @@ interface ApiClient {
   get<T>(endpoint: string, withAuth?: boolean): Promise<T>;
   post<T>(endpoint: string, data?: any, withMultipart?: boolean, withAuth?: boolean): Promise<T>;
   put<T>(endpoint: string, data?: any, withAuth?: boolean): Promise<T>;
+  patch<T>(endpoint: string, data?: any, withAuth?: boolean): Promise<T>;
   delete<T>(endpoint: string, withAuth?: boolean): Promise<T>;
 }
 
@@ -204,6 +205,10 @@ const apiClient: ApiClient = {
   
   put: <T>(endpoint: string, data?: any, withAuth = true): Promise<T> => {
     return request<T>(endpoint, 'PUT', data, false, withAuth);
+  },
+  
+  patch: <T>(endpoint: string, data?: any, withAuth = true): Promise<T> => {
+    return request<T>(endpoint, 'PATCH', data, false, withAuth);
   },
   
   delete: <T>(endpoint: string, withAuth = true): Promise<T> => {

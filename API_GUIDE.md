@@ -1,6 +1,6 @@
-# Guide d'intégration API pour Meeting Transcriber
+# Guide d'intégration API pour Gilbert
 
-Ce document détaille comment utiliser l'API backend depuis le frontend de l'application Meeting Transcriber.
+Ce document détaille comment utiliser l'API backend depuis le frontend de l'application Gilbert.
 
 ## Points d'entrée API
 

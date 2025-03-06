@@ -13,6 +13,15 @@ export interface Meeting {
   date?: string;
   duration?: number;
   transcription_status?: 'pending' | 'processing' | 'completed' | 'failed';
+  // Nouveaux champs pour les détails de la transcription
+  audio_duration?: number; // Durée de l'audio en secondes
+  participants?: number;   // Nombre de participants détectés
+  utterances?: Array<{     // Segments de texte avec timing
+    speaker: string;
+    text: string;
+    start: number;
+    end: number;
+  }>;
 }
 
 export interface TranscriptResponse {
@@ -26,6 +35,8 @@ export interface TranscriptResponse {
     start: number;
     end: number;
   }>;
+  audio_duration?: number; // Durée de l'audio en secondes 
+  participants?: number;   // Nombre de participants détectés
 }
 
 export interface UploadOptions {
@@ -78,10 +89,31 @@ export async function getMeeting(meetingId: string): Promise<Meeting> {
 }
 
 /**
- * Get all meetings for the current user
+ * Get all meetings for the authenticated user
  */
 export async function getAllMeetings(): Promise<Meeting[]> {
-  return apiClient.get<Meeting[]>('/meetings/');
+  try {
+    console.log('Fetching all meetings...');
+    const response = await apiClient.get<Meeting[]>('/meetings');
+    console.log('Meetings data received:', response);
+    
+    // Log detailed information about each meeting's duration fields
+    if (Array.isArray(response)) {
+      response.forEach(meeting => {
+        console.log(`Meeting ${meeting.id} - ${meeting.title}:`, {
+          duration: meeting.duration,
+          duration_type: typeof meeting.duration,
+          audio_duration: meeting.audio_duration,
+          audio_duration_type: typeof meeting.audio_duration
+        });
+      });
+    }
+    
+    return response;
+  } catch (error) {
+    console.error('Error fetching meetings:', error);
+    throw error;
+  }
 }
 
 /**

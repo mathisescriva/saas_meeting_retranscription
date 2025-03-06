@@ -191,8 +191,8 @@ const TranscriptionView = () => {
   return (
     <Box sx={{ p: 3 }}>
       <Box sx={{ mb: 4 }}>
-        <Typography variant="h4" gutterBottom>
-          Meeting Transcriber
+        <Typography variant="h4" component="h1" sx={{ fontWeight: 700, mb: 2 }}>
+          Gilbert
         </Typography>
         <Typography variant="subtitle1" color="text.secondary" gutterBottom>
           Upload an audio file to get started

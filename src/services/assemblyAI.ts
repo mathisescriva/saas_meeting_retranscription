@@ -1,5 +1,4 @@
-const ASSEMBLY_AI_API_KEY = '3419005ee6924e08a14235043cabcd4e';
-const ASSEMBLY_AI_API_URL = 'https://api.assemblyai.com/v2';
+import { uploadMeeting, startTranscription as startApiTranscription, getTranscript, getMeeting, UploadOptions } from './meetingService';
 
 interface Utterance {
   speaker: string;
@@ -20,88 +19,212 @@ interface TranscriptionResponse {
   utterances?: Utterance[];
 }
 
-export async function uploadAudio(audioFile: File): Promise<string> {
-  const formData = new FormData();
-  formData.append('audio', audioFile);
-
-  const response = await fetch(`${ASSEMBLY_AI_API_URL}/upload`, {
-    method: 'POST',
-    headers: {
-      'authorization': ASSEMBLY_AI_API_KEY
-    },
-    body: formData
-  });
-
-  if (!response.ok) {
-    throw new Error('Failed to upload audio file');
-  }
-
-  const { upload_url } = await response.json();
-  return upload_url;
+// Vérifier si l'utilisateur est authentifié en vérifiant la présence du token
+function isAuthenticated(): boolean {
+  return localStorage.getItem('auth_token') !== null;
 }
 
-export async function startTranscription(audioUrl: string): Promise<string> {
-  const response = await fetch(`${ASSEMBLY_AI_API_URL}/transcript`, {
-    method: 'POST',
-    headers: {
-      'authorization': ASSEMBLY_AI_API_KEY,
-      'content-type': 'application/json',
-    },
-    body: JSON.stringify({
-      audio_url: audioUrl,
-      speaker_labels: true,
-      language_code: 'fr',
-      speakers_expected: 2
-    })
-  });
-
-  if (!response.ok) {
-    throw new Error('Failed to start transcription');
-  }
-
-  const { id } = await response.json();
-  return id;
-}
-
-export async function getTranscriptionStatus(transcriptId: string): Promise<TranscriptionResponse> {
-  const response = await fetch(`${ASSEMBLY_AI_API_URL}/transcript/${transcriptId}`, {
-    headers: {
-      'authorization': ASSEMBLY_AI_API_KEY,
-    },
-  });
-
-  if (!response.ok) {
-    throw new Error('Failed to get transcription status');
-  }
-
-  return response.json();
-}
-
-export async function transcribeAudio(file: File): Promise<TranscriptionResponse> {
+export async function transcribeAudio(file: File, options?: UploadOptions): Promise<TranscriptionResponse> {
   try {
-    // Upload the audio file
-    const uploadUrl = await uploadAudio(file);
-    console.log('Audio uploaded successfully');
-
-    // Start the transcription
-    const transcriptId = await startTranscription(uploadUrl);
-    console.log('Transcription started', transcriptId);
-
-    // Poll for completion
-    let result: TranscriptionResponse;
-    do {
-      await new Promise(resolve => setTimeout(resolve, 3000)); // Wait 3 seconds between polls
-      result = await getTranscriptionStatus(transcriptId);
-      console.log('Transcription status:', result.status);
-    } while (result.status === 'queued' || result.status === 'processing');
-
-    if (result.status === 'error') {
-      throw new Error(result.error || 'Transcription failed');
+    // Vérifier si l'utilisateur est authentifié avant de commencer
+    if (!isAuthenticated()) {
+      console.error('Erreur d\'authentification: Aucun token d\'authentification trouvé');
+      throw new Error('Vous devez être connecté pour transcribe un fichier audio. Veuillez vous connecter et réessayer.');
     }
+    
+    // Use a temporary title based on file name, this could be updated later
+    const title = file.name.replace(/\.[^/.]+$/, ""); // Remove file extension
+    
+    console.log('Starting transcription for file:', file.name, 'Size:', Math.round(file.size / 1024), 'KB', 'Options:', JSON.stringify(options || {}));
+    
+    // Upload the audio file and create a meeting
+    try {
+      const meeting = await uploadMeeting(file, title, options);
+      console.log('Audio uploaded successfully, meeting created with ID:', meeting.id);
+      console.log('Meeting details:', JSON.stringify(meeting, null, 2));
+      
+      // Accéder au statut en tenant compte des deux formats possibles
+      const meetingStatus = meeting.transcript_status || meeting.transcription_status;
+      console.log('Meeting status detected:', meetingStatus);
+      
+      // Vérifier si le statut initial indique déjà une erreur
+      if (meetingStatus === 'failed' || meetingStatus === 'error') {
+        console.error(`Transcription failed immediately after upload with status "${meetingStatus}"`);
+        throw new Error(`Transcription failed immediately: The file format or content may not be supported`);
+      }
+      
+      // Start the transcription if needed (in case the API doesn't start it automatically)
+      if (meetingStatus === 'pending') {
+        try {
+          const startResult = await startApiTranscription(meeting.id);
+          console.log('Transcription started for meeting:', meeting.id);
+          console.log('Transcription start result:', JSON.stringify(startResult, null, 2));
+          
+          // Vérifier si le démarrage de la transcription a échoué
+          const startResultStatus = startResult.transcript_status || startResult.transcription_status;
+          if (startResultStatus === 'failed' || startResultStatus === 'error') {
+            console.error('Transcription failed after explicitly starting it');
+            throw new Error(`Failed to process audio file: The file may be corrupt or in an unsupported format`);
+          }
+        } catch (transcriptionError) {
+          console.error('Error starting transcription:', transcriptionError);
+          throw new Error(`Failed to start transcription: ${transcriptionError instanceof Error ? transcriptionError.message : 'Unknown error'}`);
+        }
+      }
+      
+      // Poll for completion
+      let result: TranscriptionResponse = {
+        id: meeting.id,
+        status: mapApiStatusToLocal(meetingStatus),
+      };
+      
+      console.log('Initial transcription status:', result.status, '(API status:', meetingStatus, ')');
+      
+      // Si le statut initial est déjà une erreur, ne pas faire de polling
+      if (result.status === 'error') {
+        console.error('Initial transcription status is already "error"');
+        throw new Error('The audio file could not be processed. Please check the file format and quality.');
+      }
+      
+      const pollInterval = 3000; // 3 seconds
+      let attempts = 0;
+      const maxAttempts = 100; // Prevent infinite polling
+      
+      // Poll until the transcription is completed or failed
+      while ((result.status === 'queued' || result.status === 'processing') && attempts < maxAttempts) {
+        await new Promise(resolve => setTimeout(resolve, pollInterval));
+        
+        try {
+          // Get the latest meeting status
+          const updatedMeeting = await getMeeting(meeting.id);
+          const previousStatus = result.status;
+          
+          // Utiliser le bon champ de statut en fonction de ce qui est disponible
+          const updatedStatus = updatedMeeting.transcript_status || updatedMeeting.transcription_status;
+          result.status = mapApiStatusToLocal(updatedStatus);
+          
+          console.log('Transcription status update:', result.status, 
+            `(API status: ${updatedStatus}, attempt ${attempts + 1}/${maxAttempts})`);
+          
+          // Si le statut a changé, afficher plus de détails
+          if (previousStatus !== result.status) {
+            console.log('Status changed from', previousStatus, 'to', result.status);
+            console.log('Updated meeting details:', JSON.stringify(updatedMeeting, null, 2));
+          }
+        } catch (statusError) {
+          console.error('Error checking meeting status:', statusError);
+          // Continue polling despite the error
+        }
+        
+        attempts++;
+      }
 
-    return result;
+      // Check for timeout condition
+      if (attempts >= maxAttempts) {
+        console.warn('Transcription polling timed out after maximum attempts');
+        result.status = 'error';
+        result.error = 'Transcription process timed out';
+      }
+      
+      // If transcription is complete, get the full transcript
+      if (result.status === 'completed') {
+        try {
+          const transcriptData = await getTranscript(meeting.id);
+          
+          // Map the transcript data to our expected format
+          result.text = transcriptData.transcript_text || transcriptData.transcript;
+          result.utterances = transcriptData.utterances;
+          
+          // Set some approximate duration if available from API, or calculate from utterances
+          if (result.utterances && result.utterances.length > 0) {
+            const lastUtterance = result.utterances[result.utterances.length - 1];
+            result.audio_duration = Math.ceil(lastUtterance.end / 1000); // Convert to seconds and round up
+            
+            // Mettre à jour le meeting avec les informations de durée
+            try {
+              console.log(`Attempting to update meeting ${meeting.id} with duration info:`, {
+                durationInSeconds: result.audio_duration
+              });
+              
+              const apiClient = await import('./apiClient');
+              const updateResponse = await apiClient.default.patch(`/meetings/${meeting.id}`, {
+                duration: result.audio_duration,
+                audio_duration: result.audio_duration,
+              });
+              
+              console.log(`Updated meeting ${meeting.id} with audio duration:`, {
+                sentDuration: result.audio_duration,
+                updateResponse
+              });
+            } catch (updateError) {
+              console.error('Failed to update meeting with audio duration:', updateError);
+            }
+          } else {
+            console.warn(`No utterances found for meeting ${meeting.id}, cannot determine audio duration`);
+          }
+          
+          // Estimate number of speakers
+          if (result.utterances) {
+            const speakerSet = new Set(result.utterances.map(u => u.speaker));
+            result.speakers_expected = speakerSet.size;
+            
+            // Mettre à jour le meeting avec les informations de participants
+            try {
+              const apiClient = await import('./apiClient');
+              await apiClient.default.patch(`/meetings/${meeting.id}`, {
+                participants: result.speakers_expected,
+              });
+              console.log(`Updated meeting ${meeting.id} with participants count:`, result.speakers_expected);
+            } catch (updateError) {
+              console.error('Failed to update meeting with participants count:', updateError);
+            }
+          }
+          
+          console.log('Transcription completed successfully with', 
+            result.utterances?.length || 0, 'utterances and', 
+            result.speakers_expected || 0, 'speakers');
+        } catch (transcriptError) {
+          console.error('Error retrieving transcript:', transcriptError);
+          result.status = 'error';
+          result.error = `Failed to retrieve transcript: ${transcriptError instanceof Error ? transcriptError.message : 'Unknown error'}`;
+        }
+      }
+      
+      if (result.status === 'error') {
+        const errorMessage = result.error || 'Transcription failed with unknown error';
+        console.error('Transcription failed:', errorMessage);
+        throw new Error(errorMessage);
+      }
+      
+      return result;
+    } catch (uploadError) {
+      if (uploadError instanceof Error && uploadError.message.includes('401')) {
+        console.error('Authentication error when uploading audio:', uploadError);
+        throw new Error('Session expirée. Veuillez vous reconnecter et réessayer.');
+      }
+      console.error('Error uploading audio file:', uploadError);
+      throw new Error(`Failed to upload audio: ${uploadError instanceof Error ? uploadError.message : 'Unknown error'}`);
+    }
   } catch (error) {
-    console.error('Transcription error:', error);
+    console.error('Transcription process error:', error);
     throw error;
+  }
+}
+
+// Helper function to map API status to local status
+function mapApiStatusToLocal(apiStatus: string): 'queued' | 'processing' | 'completed' | 'error' {
+  switch (apiStatus) {
+    case 'pending': 
+      return 'queued';
+    case 'processing': 
+      return 'processing';
+    case 'completed': 
+      return 'completed';
+    case 'failed':
+    case 'error':
+      return 'error';
+    default: 
+      console.log('Unknown API status:', apiStatus);
+      return 'error';
   }
 }

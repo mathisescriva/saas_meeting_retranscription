@@ -44,6 +44,7 @@ import {
   Close as CloseIcon,
   Warning as WarningIcon,
   EventNote as EventNoteIcon,
+  Delete as DeleteIcon,
 } from '@mui/icons-material';
 
 import {
@@ -54,7 +55,8 @@ import {
   getAllMeetings, 
   retryTranscription, 
   pollTranscriptionStatus,
-  getTranscript 
+  getTranscript,
+  deleteMeeting
 } from '../services/meetingService';
 
 const features = [
@@ -97,25 +99,35 @@ const features = [
   },
 ];
 
+interface RecentMeeting {
+  id: string;
+  title: string;
+  date: string;
+  duration?: number; // Durée en secondes
+  audio_duration?: number; // Durée audio en secondes
+  participants: number;
+  progress: number;
+}
+
 const recentMeetings = [
   {
     title: 'Weekly Team Sync',
     date: '21 Feb 2025',
-    duration: '45 min',
+    duration: 45 * 60, // 45 minutes
     participants: 8,
     progress: 100,
   },
   {
     title: 'Product Review',
     date: '20 Feb 2025',
-    duration: '60 min',
+    duration: 60 * 60, // 60 minutes
     participants: 12,
     progress: 100,
   },
   {
     title: 'Client Meeting',
     date: '19 Feb 2025',
-    duration: '30 min',
+    duration: 30 * 60, // 30 minutes
     participants: 5,
     progress: 100,
   },
@@ -134,7 +146,8 @@ const Dashboard = () => {
   const [recentMeetings, setRecentMeetings] = useState<RecentMeeting[]>([]);
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [transcript, setTranscript] = useState<string | null>(null);
-  
+  const [isDeleting, setIsDeleting] = useState(false);
+
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const audioChunksRef = useRef<Blob[]>([]);
   const timerRef = useRef<NodeJS.Timeout | null>(null);
@@ -151,16 +164,43 @@ const Dashboard = () => {
       console.log('Fetched meetings:', meetings);
       
       // Convertir au format attendu par le composant
-      const recentMeetings: RecentMeeting[] = meetings.map(meeting => ({
-        title: meeting.title,
-        date: new Date(meeting.created_at).toLocaleDateString(),
-        duration: meeting.duration || '0 min',
-        participants: meeting.participants || 0,
-        progress: meeting.transcript_status === 'completed' || meeting.transcription_status === 'completed' ? 100 : 
-                  meeting.transcript_status === 'error' || meeting.transcription_status === 'failed' ? 0 :
-                  meeting.transcript_status === 'processing' || meeting.transcription_status === 'processing' ? 50 : 25,
-        id: meeting.id
-      }));
+      const recentMeetings: RecentMeeting[] = meetings.map(meeting => {
+        // Débogage des valeurs de durée
+        console.log(`Converting meeting ${meeting.id}:`, {
+          rawDuration: meeting.duration,
+          rawDurationType: typeof meeting.duration,
+          rawAudioDuration: meeting.audio_duration,
+          rawAudioDurationType: typeof meeting.audio_duration
+        });
+        
+        // Convertir les durées en nombres si elles sont des chaînes
+        let durationInSeconds: number | undefined = undefined;
+        
+        if (typeof meeting.audio_duration === 'number') {
+          durationInSeconds = meeting.audio_duration;
+        } else if (typeof meeting.duration === 'number') {
+          durationInSeconds = meeting.duration;
+        } else if (typeof meeting.duration === 'string' && meeting.duration.includes('min')) {
+          // Essayer de convertir un format comme '45 min' en secondes
+          const minutes = parseInt(meeting.duration);
+          if (!isNaN(minutes)) {
+            durationInSeconds = minutes * 60;
+          }
+        }
+        
+        console.log(`Converted duration for ${meeting.id}:`, durationInSeconds);
+        
+        return {
+          title: meeting.title,
+          date: new Date(meeting.created_at).toLocaleDateString(),
+          duration: durationInSeconds,
+          participants: meeting.participants || 0,
+          progress: meeting.transcript_status === 'completed' || meeting.transcription_status === 'completed' ? 100 : 
+                   meeting.transcript_status === 'error' || meeting.transcription_status === 'failed' ? 0 :
+                   meeting.transcript_status === 'processing' || meeting.transcription_status === 'processing' ? 50 : 25,
+          id: meeting.id
+        };
+      });
       
       setRecentMeetings(recentMeetings);
       
@@ -283,6 +323,20 @@ const Dashboard = () => {
     const mins = Math.floor(seconds / 60).toString().padStart(2, '0');
     const secs = (seconds % 60).toString().padStart(2, '0');
     return `${mins}:${secs}`;
+  };
+
+  const formatDuration = (seconds: number | undefined) => {
+    if (!seconds) return '0 min';
+    const minutes = Math.floor(seconds / 60);
+    const remainingSeconds = Math.floor(seconds % 60);
+    
+    if (minutes === 0) {
+      return `${remainingSeconds} sec`;
+    } else if (remainingSeconds === 0) {
+      return `${minutes} min`;
+    } else {
+      return `${minutes} min ${remainingSeconds} sec`;
+    }
   };
 
   // Fonction pour sauvegarder l'enregistrement
@@ -454,6 +508,26 @@ const Dashboard = () => {
       setUploadError(`Échec de la nouvelle tentative: ${error instanceof Error ? error.message : 'Erreur inconnue'}`);
     } finally {
       setRetryingMeetingId(null);
+    }
+  };
+
+  // Fonction pour supprimer un meeting
+  const handleDeleteMeeting = async (meetingId) => {
+    if (!meetingId) return;
+    
+    if (window.confirm('Êtes-vous sûr de vouloir supprimer cette réunion ? Cette action est irréversible.')) {
+      try {
+        setIsDeleting(true);
+        await deleteMeeting(meetingId);
+        console.log(`Meeting ${meetingId} deleted successfully`);
+        // Rafraîchir la liste des réunions
+        fetchMeetings();
+      } catch (error) {
+        console.error('Error deleting meeting:', error);
+        setUploadError(`Erreur lors de la suppression: ${error instanceof Error ? error.message : 'Erreur inconnue'}`);
+      } finally {
+        setIsDeleting(false);
+      }
     }
   };
 
@@ -796,13 +870,13 @@ const Dashboard = () => {
                   </Typography>
                   <Stack direction="row" spacing={2} alignItems="center">
                     <Typography variant="body2" color="text.secondary">
-                      🕒 {meeting.duration}
+                      🕒 {formatDuration(meeting.audio_duration || meeting.duration)}
                     </Typography>
                     <Typography variant="body2" color="text.secondary">
                       📅 {meeting.date}
                     </Typography>
                     <Typography variant="body2" color="text.secondary">
-                      👥 {meeting.participants} participants
+                      👥 {meeting.participants || 0} participants
                     </Typography>
                     {meeting.progress === 100 ? (
                       <Chip
@@ -865,6 +939,14 @@ const Dashboard = () => {
                   </IconButton>
                   <IconButton size="small" sx={{ color: '#6366F1' }}>
                     <ShareIcon />
+                  </IconButton>
+                  <IconButton 
+                    size="small" 
+                    sx={{ color: '#EF4444' }}
+                    onClick={() => handleDeleteMeeting(meeting.id)}
+                    disabled={isDeleting}
+                  >
+                    <DeleteIcon />
                   </IconButton>
                 </Stack>
               </Box>

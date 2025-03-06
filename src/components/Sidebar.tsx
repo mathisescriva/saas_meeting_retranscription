@@ -1,163 +1,304 @@
-import React from 'react';
+import React, { useState } from 'react';
 import {
-  Box,
   Drawer,
+  Box,
   List,
   ListItem,
+  ListItemButton,
   ListItemIcon,
   ListItemText,
   Typography,
-  Button,
+  Divider,
+  Avatar,
+  Menu,
+  MenuItem,
+  IconButton,
   alpha,
-  useTheme,
 } from '@mui/material';
 import {
-  Description as DescriptionIcon,
-  Home as HomeIcon,
-  Share as ShareIcon,
-  Add as AddIcon,
-  MicNone as MicIcon,
+  Dashboard as DashboardIcon,
+  Mic as MicIcon,
+  List as ListIcon,
+  AccountCircle,
+  Logout,
+  Settings,
 } from '@mui/icons-material';
-
-const drawerWidth = 280;
+import { User, logoutUser } from '../services/authService';
 
 interface SidebarProps {
   onViewChange: (view: 'dashboard' | 'transcription' | 'meetings') => void;
+  user: User | null;
 }
 
-const Sidebar: React.FC<SidebarProps> = ({ onViewChange }) => {
-  const theme = useTheme();
+const Sidebar: React.FC<SidebarProps> = ({ onViewChange, user }) => {
+  const [selectedIndex, setSelectedIndex] = useState(0);
+  const [userMenuAnchor, setUserMenuAnchor] = useState<null | HTMLElement>(null);
+
+  const handleListItemClick = (
+    event: React.MouseEvent<HTMLDivElement, MouseEvent>,
+    index: number
+  ) => {
+    setSelectedIndex(index);
+    switch (index) {
+      case 0:
+        onViewChange('dashboard');
+        break;
+      case 1:
+        onViewChange('transcription');
+        break;
+      case 2:
+        onViewChange('meetings');
+        break;
+    }
+  };
+
+  const handleUserMenuClick = (event: React.MouseEvent<HTMLElement>) => {
+    setUserMenuAnchor(event.currentTarget);
+  };
+
+  const handleUserMenuClose = () => {
+    setUserMenuAnchor(null);
+  };
+
+  const handleLogout = () => {
+    logoutUser();
+    window.location.reload(); // Reload page to reset app state
+  };
+
+  const getInitials = (name: string) => {
+    if (!name) return ''; // Gestion du cas où name est undefined ou null
+    
+    return name
+      .split(' ')
+      .map((n) => n[0])
+      .slice(0, 2)
+      .join('')
+      .toUpperCase();
+  };
 
   return (
     <Drawer
       variant="permanent"
       sx={{
-        width: drawerWidth,
+        width: 280,
         flexShrink: 0,
         '& .MuiDrawer-paper': {
-          width: drawerWidth,
+          width: 280,
           boxSizing: 'border-box',
-          bgcolor: theme.palette.primary.main,
-          color: 'white',
-          borderRight: 'none',
+          borderRight: '1px solid rgba(0, 0, 0, 0.08)',
+          bgcolor: '#f8fafc',
         },
       }}
     >
-      <Box
-        sx={{
-          p: 3,
-          display: 'flex',
-          flexDirection: 'column',
-          gap: 2,
-        }}
-      >
-        <Box 
-          sx={{ 
-            display: 'flex', 
-            alignItems: 'center', 
-            gap: 2,
-            mb: 4,
-            px: 3,
-            pt: 2,
-          }}>
-          <MicIcon sx={{ 
-            fontSize: 28,
-            color: 'white',
-          }} />
+      <Box sx={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
+        <Box sx={{ p: 3, display: 'flex', alignItems: 'center' }}>
           <Typography
-            variant="h5"
-            component="div"
-            sx={{ 
-              fontWeight: 600, 
-              letterSpacing: '-0.02em',
-              color: 'white',
-              fontSize: '1.25rem',
+            variant="h6"
+            sx={{
+              fontWeight: 700,
+              background: 'linear-gradient(90deg, #3B82F6 0%, #8B5CF6 100%)',
+              WebkitBackgroundClip: 'text',
+              WebkitTextFillColor: 'transparent',
             }}
           >
-            Meeting
-            <Box component="span" sx={{ opacity: 0.7, color: 'white' }}>
-              {' '}
-              Transcriber
-            </Box>
+            Gilbert
           </Typography>
         </Box>
 
-        <Button
-          variant="contained"
-          startIcon={<AddIcon />}
-          onClick={() => onViewChange('transcription')}
-          fullWidth
-          sx={{
-            background: 'linear-gradient(45deg, #6366F1 30%, #0EA5E9 90%)',
-            color: 'white',
-            py: 1.5,
-            px: 3,
-            fontSize: '0.95rem',
-            fontWeight: 600,
-            boxShadow: '0 4px 12px rgba(99, 102, 241, 0.3)',
-            '&:hover': {
-              background: 'linear-gradient(45deg, #4F46E5 30%, #0284C7 90%)',
-              boxShadow: '0 6px 16px rgba(99, 102, 241, 0.4)',
-              transform: 'translateY(-1px)',
-            },
-          }}
-        >
-          Start New Meeting
-        </Button>
-      </Box>
+        <Divider />
 
-      <List sx={{ px: 3, mt: 2 }}>
-        {[
-          { 
-            text: 'Home', 
-            icon: <HomeIcon />, 
-            count: null,
-            onClick: () => onViewChange('dashboard')
-          },
-          { 
-            text: 'My Meetings', 
-            icon: <DescriptionIcon />, 
-            count: 12,
-            onClick: () => onViewChange('meetings')
-          },
-          { 
-            text: 'Shared With Me', 
-            icon: <ShareIcon />, 
-            count: 3,
-            onClick: () => onViewChange('meetings')
-          },
-        ].map((item) => (
-          <ListItem
-            button
-            key={item.text}
-            onClick={item.onClick}
-            sx={{
-              borderRadius: 1,
-              mb: 0.5,
-              color: 'white',
-              py: 1.5,
-              '&:hover': {
-                bgcolor: 'rgba(255, 255, 255, 0.1)',
-              },
-            }}
-          >
-            <ListItemIcon sx={{ 
-              color: 'white',
-              minWidth: 36,
-              opacity: 0.7
-            }}>
-              {item.icon}
-            </ListItemIcon>
-            <ListItemText
-              primary={item.text}
-              secondary={`${item.count} items`}
-              secondaryTypographyProps={{
-                sx: { color: alpha(theme.palette.common.white, 0.7) },
+        {user && (
+          <Box sx={{ p: 2, display: 'flex', alignItems: 'center', my: 1 }}>
+            <Avatar
+              sx={{
+                bgcolor: 'primary.main',
+                width: 40,
+                height: 40,
+                mr: 2,
+                cursor: 'pointer',
               }}
-            />
+              onClick={handleUserMenuClick}
+            >
+              {user.name ? getInitials(user.name) : (user.email ? user.email.charAt(0).toUpperCase() : 'U')}
+            </Avatar>
+            <Box sx={{ overflow: 'hidden' }}>
+              <Typography
+                variant="subtitle1"
+                sx={{ fontWeight: 600, lineHeight: 1.2 }}
+                noWrap
+              >
+                {user.name || user.email || 'User'}
+              </Typography>
+              <Typography
+                variant="body2"
+                color="text.secondary"
+                sx={{ fontSize: '0.75rem' }}
+                noWrap
+              >
+                {user.email || ''}
+              </Typography>
+            </Box>
+            <IconButton
+              size="small"
+              sx={{ ml: 'auto' }}
+              onClick={handleUserMenuClick}
+            >
+              <AccountCircle />
+            </IconButton>
+            <Menu
+              anchorEl={userMenuAnchor}
+              open={Boolean(userMenuAnchor)}
+              onClose={handleUserMenuClose}
+              PaperProps={{
+                elevation: 0,
+                sx: {
+                  overflow: 'visible',
+                  filter: 'drop-shadow(0px 2px 8px rgba(0,0,0,0.1))',
+                  mt: 1.5,
+                  '& .MuiMenuItem-root': {
+                    px: 2,
+                    py: 1,
+                  },
+                },
+              }}
+              transformOrigin={{ horizontal: 'right', vertical: 'top' }}
+              anchorOrigin={{ horizontal: 'right', vertical: 'bottom' }}
+            >
+              <MenuItem onClick={handleUserMenuClose}>
+                <ListItemIcon>
+                  <AccountCircle fontSize="small" />
+                </ListItemIcon>
+                Profile
+              </MenuItem>
+              <MenuItem onClick={handleUserMenuClose}>
+                <ListItemIcon>
+                  <Settings fontSize="small" />
+                </ListItemIcon>
+                Settings
+              </MenuItem>
+              <Divider />
+              <MenuItem onClick={handleLogout}>
+                <ListItemIcon>
+                  <Logout fontSize="small" />
+                </ListItemIcon>
+                Logout
+              </MenuItem>
+            </Menu>
+          </Box>
+        )}
+
+        <Divider />
+
+        <List sx={{ flexGrow: 1, mt: 2 }}>
+          <ListItem disablePadding>
+            <ListItemButton
+              selected={selectedIndex === 0}
+              onClick={(event) => handleListItemClick(event, 0)}
+              sx={{
+                mb: 1,
+                mx: 1,
+                borderRadius: 1,
+                ...(selectedIndex === 0 && {
+                  bgcolor: (theme) => alpha(theme.palette.primary.main, 0.08),
+                  '&:hover': {
+                    bgcolor: (theme) => alpha(theme.palette.primary.main, 0.15),
+                  },
+                }),
+              }}
+            >
+              <ListItemIcon
+                sx={{
+                  color: selectedIndex === 0 ? 'primary.main' : 'text.secondary',
+                }}
+              >
+                <DashboardIcon />
+              </ListItemIcon>
+              <ListItemText
+                primary="Dashboard"
+                primaryTypographyProps={{
+                  fontWeight: selectedIndex === 0 ? 600 : 400,
+                  color: selectedIndex === 0 ? 'primary.main' : 'text.primary',
+                }}
+              />
+            </ListItemButton>
           </ListItem>
-        ))}
-      </List>
+
+          <ListItem disablePadding>
+            <ListItemButton
+              selected={selectedIndex === 1}
+              onClick={(event) => handleListItemClick(event, 1)}
+              sx={{
+                mb: 1,
+                mx: 1,
+                borderRadius: 1,
+                ...(selectedIndex === 1 && {
+                  bgcolor: (theme) => alpha(theme.palette.primary.main, 0.08),
+                  '&:hover': {
+                    bgcolor: (theme) => alpha(theme.palette.primary.main, 0.15),
+                  },
+                }),
+              }}
+            >
+              <ListItemIcon
+                sx={{
+                  color: selectedIndex === 1 ? 'primary.main' : 'text.secondary',
+                }}
+              >
+                <MicIcon />
+              </ListItemIcon>
+              <ListItemText
+                primary="New Transcription"
+                primaryTypographyProps={{
+                  fontWeight: selectedIndex === 1 ? 600 : 400,
+                  color: selectedIndex === 1 ? 'primary.main' : 'text.primary',
+                }}
+              />
+            </ListItemButton>
+          </ListItem>
+
+          <ListItem disablePadding>
+            <ListItemButton
+              selected={selectedIndex === 2}
+              onClick={(event) => handleListItemClick(event, 2)}
+              sx={{
+                mb: 1,
+                mx: 1,
+                borderRadius: 1,
+                ...(selectedIndex === 2 && {
+                  bgcolor: (theme) => alpha(theme.palette.primary.main, 0.08),
+                  '&:hover': {
+                    bgcolor: (theme) => alpha(theme.palette.primary.main, 0.15),
+                  },
+                }),
+              }}
+            >
+              <ListItemIcon
+                sx={{
+                  color: selectedIndex === 2 ? 'primary.main' : 'text.secondary',
+                }}
+              >
+                <ListIcon />
+              </ListItemIcon>
+              <ListItemText
+                primary="My Meetings"
+                primaryTypographyProps={{
+                  fontWeight: selectedIndex === 2 ? 600 : 400,
+                  color: selectedIndex === 2 ? 'primary.main' : 'text.primary',
+                }}
+              />
+            </ListItemButton>
+          </ListItem>
+        </List>
+
+        <Box sx={{ p: 2, mt: 'auto' }}>
+          <Typography
+            variant="caption"
+            sx={{ color: 'text.secondary', display: 'block', textAlign: 'center' }}
+          >
+            Gilbert v0.1.0
+          </Typography>
+        </Box>
+      </Box>
     </Drawer>
   );
 };

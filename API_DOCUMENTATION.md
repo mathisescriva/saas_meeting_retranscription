@@ -1,4 +1,4 @@
-# Documentation API - Meeting Transcriber
+# Documentation API - Gilbert
 
 ## Table des matières
 
@@ -21,7 +21,7 @@
 
 ## Introduction
 
-L'API Meeting Transcriber permet de gérer des réunions avec transcription automatique d'audio. Elle utilise AssemblyAI pour transcrire les fichiers audio en texte.
+L'API Gilbert permet de gérer des réunions avec transcription automatique d'audio. Elle utilise AssemblyAI pour transcrire les fichiers audio en texte.
 
 **URL de base** : `http://localhost:8000`  
 **Format de réponse** : JSON  
