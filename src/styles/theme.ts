@@ -58,33 +58,12 @@ const theme = createTheme({
       letterSpacing: '-0.01em',
       lineHeight: 1.7,
     },
+    body2: {
+      lineHeight: 1.5,
+    },
     button: {
       fontWeight: 600,
       textTransform: 'none',
-    },
-  },
-  typography: {
-    fontFamily: '"Inter", "Roboto", "Helvetica", "Arial", sans-serif',
-    h1: {
-      fontSize: '2.5rem',
-      fontWeight: 700,
-      letterSpacing: '-0.02em',
-    },
-    h2: {
-      fontSize: '2rem',
-      fontWeight: 600,
-      letterSpacing: '-0.01em',
-    },
-    h5: {
-      fontWeight: 600,
-      letterSpacing: '-0.01em',
-    },
-    body1: {
-      fontSize: '1rem',
-      letterSpacing: '-0.01em',
-    },
-    button: {
-      fontWeight: 500,
     },
   },
   shape: {

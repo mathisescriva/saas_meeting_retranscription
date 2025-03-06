@@ -1,33 +1,61 @@
-import React from 'react';
+import React, { useRef, useState, useEffect } from 'react';
 import {
   Box,
-  Grid,
-  Paper,
-  Typography,
   Button,
   Card,
   CardContent,
   CardActions,
-  IconButton,
+  Container,
+  Dialog,
+  DialogActions,
+  DialogContent,
+  DialogTitle,
   Divider,
+  Grid,
+  IconButton,
   LinearProgress,
+  Paper,
   Stack,
+  TextField,
+  Typography,
+  Alert,
+  MenuItem,
+  Menu,
+  FormControl,
+  InputLabel,
+  Select,
+  FormHelperText,
+  CircularProgress,
   Chip,
+  Tooltip,
   alpha,
 } from '@mui/material';
 import {
-  Timer as TimerIcon,
-  Language as LanguageIcon,
-  Summarize as SummarizeIcon,
-  Psychology as PsychologyIcon,
-  Group as GroupIcon,
   Mic as MicIcon,
+  Stop as StopIcon,
+  Send as SendIcon,
+  Upload as UploadIcon,
+  UploadFile as UploadFileIcon,
   CloudUpload as CloudUploadIcon,
-  Share as ShareIcon,
-  EventNote as EventNoteIcon,
   PlayArrow as PlayArrowIcon,
   Description as DescriptionIcon,
+  Share as ShareIcon,
+  Refresh as RefreshIcon,
+  Close as CloseIcon,
+  Warning as WarningIcon,
+  EventNote as EventNoteIcon,
 } from '@mui/icons-material';
+
+import {
+  transcribeAudio 
+} from '../services/assemblyAI';
+import { 
+  uploadMeeting, 
+  getAllMeetings, 
+  retryTranscription, 
+  pollTranscriptionStatus,
+  getTranscript 
+} from '../services/meetingService';
 
 const features = [
   {
@@ -40,31 +68,31 @@ const features = [
   {
     title: '🌍 Multi-language Support',
     description: 'Support for 100+ languages and dialects',
-    icon: <LanguageIcon sx={{ color: '#10B981' }} />,
+    icon: <UploadFileIcon sx={{ color: '#10B981' }} />,
     action: 'Change Language',
   },
   {
     title: '✨ Smart Summaries',
     description: 'AI-powered meeting summaries and key points',
-    icon: <SummarizeIcon sx={{ color: '#6366F1' }} />,
+    icon: <DescriptionIcon sx={{ color: '#6366F1' }} />,
     action: 'View Demo',
   },
   {
     title: '👥 Speaker Recognition',
     description: 'Automatically identify different speakers',
-    icon: <GroupIcon sx={{ color: '#8B5CF6' }} />,
+    icon: <ShareIcon sx={{ color: '#8B5CF6' }} />,
     action: 'Setup Voices',
   },
   {
     title: 'Sentiment Analysis',
     description: 'Analyze meeting tone and participant engagement',
-    icon: <PsychologyIcon />,
+    icon: <StopIcon />,
     action: 'View Analytics',
   },
   {
     title: 'Meeting Duration',
     description: 'Track and manage meeting length',
-    icon: <TimerIcon />,
+    icon: <RefreshIcon />,
     action: 'View Stats',
   },
 ];
@@ -94,6 +122,419 @@ const recentMeetings = [
 ];
 
 const Dashboard = () => {
+  const [isRecording, setIsRecording] = useState(false);
+  const [recordingTime, setRecordingTime] = useState(0);
+  const [audioBlob, setAudioBlob] = useState<Blob | null>(null);
+  const [recordingName, setRecordingName] = useState('');
+  const [showNameDialog, setShowNameDialog] = useState(false);
+  const [isUploading, setIsUploading] = useState(false);
+  const [uploadProgress, setUploadProgress] = useState(0);
+  const [uploadError, setUploadError] = useState<string | null>(null);
+  const [retryingMeetingId, setRetryingMeetingId] = useState<string | null>(null);
+  const [recentMeetings, setRecentMeetings] = useState<RecentMeeting[]>([]);
+  const [isRefreshing, setIsRefreshing] = useState(false);
+  const [transcript, setTranscript] = useState<string | null>(null);
+  
+  const mediaRecorderRef = useRef<MediaRecorder | null>(null);
+  const audioChunksRef = useRef<Blob[]>([]);
+  const timerRef = useRef<NodeJS.Timeout | null>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    fetchMeetings();
+  }, []);
+
+  const fetchMeetings = async () => {
+    setIsRefreshing(true);
+    try {
+      const meetings = await getAllMeetings();
+      console.log('Fetched meetings:', meetings);
+      
+      // Convertir au format attendu par le composant
+      const recentMeetings: RecentMeeting[] = meetings.map(meeting => ({
+        title: meeting.title,
+        date: new Date(meeting.created_at).toLocaleDateString(),
+        duration: meeting.duration || '0 min',
+        participants: meeting.participants || 0,
+        progress: meeting.transcript_status === 'completed' || meeting.transcription_status === 'completed' ? 100 : 
+                  meeting.transcript_status === 'error' || meeting.transcription_status === 'failed' ? 0 :
+                  meeting.transcript_status === 'processing' || meeting.transcription_status === 'processing' ? 50 : 25,
+        id: meeting.id
+      }));
+      
+      setRecentMeetings(recentMeetings);
+      
+      // Pour les réunions en cours de traitement, démarrer le polling
+      const inProgressMeetings = meetings.filter(meeting => {
+        const status = meeting.transcript_status || meeting.transcription_status;
+        return status === 'processing' || status === 'pending';
+      });
+      
+      if (inProgressMeetings.length > 0) {
+        console.log(`Found ${inProgressMeetings.length} meetings in progress, starting polling`);
+        
+        // Limiter le nombre de polling simultanés à 3 maximum
+        const meetingsToTrack = inProgressMeetings.slice(0, 3);
+        
+        meetingsToTrack.forEach(meeting => {
+          console.log(`Starting polling for in-progress meeting: ${meeting.id}`);
+          // Démarrer le polling pour cette réunion
+          pollTranscriptionStatus(
+            meeting.id,
+            (updatedStatus, updatedMeeting) => {
+              console.log(`Status update for meeting ${meeting.id}: ${updatedStatus}`);
+              
+              // Mettre à jour l'état local immédiatement sans refaire un appel API
+              if (updatedStatus === 'completed' || updatedStatus === 'error' || updatedStatus === 'failed') {
+                console.log('Meeting status changed to final state, updating local state');
+                
+                // Mettre à jour l'état localement
+                setRecentMeetings(prevMeetings => 
+                  prevMeetings.map(m => 
+                    m.id === meeting.id 
+                      ? {
+                          ...m,
+                          progress: updatedStatus === 'completed' ? 100 : 0
+                        } 
+                      : m
+                  )
+                );
+                
+                // Rafraîchir complètement seulement après une courte pause
+                setTimeout(() => {
+                  console.log('Refreshing meetings list after status change');
+                  fetchMeetings();
+                }, 2000);
+              }
+            },
+            5000 // Vérifier toutes les 5 secondes
+          );
+        });
+      }
+    } catch (error) {
+      console.error('Error fetching meetings:', error);
+      
+      // Vérifier si c'est une erreur de connexion au serveur
+      if (error instanceof Error && error.message.includes('Network connection')) {
+        setUploadError(`Le serveur n'est pas accessible. Veuillez vérifier que le backend fonctionne à l'adresse http://localhost:8000`);
+      } else {
+        setUploadError(`Erreur lors de la récupération des réunions: ${error instanceof Error ? error.message : 'Erreur inconnue'}`);
+      }
+    } finally {
+      setIsRefreshing(false);
+    }
+  };
+
+  // Fonction pour démarrer l'enregistrement
+  const startRecording = async () => {
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      const mediaRecorder = new MediaRecorder(stream);
+      mediaRecorderRef.current = mediaRecorder;
+      audioChunksRef.current = [];
+
+      mediaRecorder.ondataavailable = (event) => {
+        if (event.data.size > 0) {
+          audioChunksRef.current.push(event.data);
+        }
+      };
+
+      mediaRecorder.onstop = () => {
+        const audioBlob = new Blob(audioChunksRef.current, { type: 'audio/wav' });
+        setAudioBlob(audioBlob);
+        setShowNameDialog(true);
+      };
+
+      mediaRecorder.start();
+      setIsRecording(true);
+      
+      // Démarrer le chronomètre
+      setRecordingTime(0);
+      timerRef.current = setInterval(() => {
+        setRecordingTime(prev => prev + 1);
+      }, 1000);
+      
+    } catch (error) {
+      console.error('Erreur lors du démarrage de l\'enregistrement:', error);
+      alert('Impossible d\'accéder au microphone. Veuillez vérifier les permissions.');
+    }
+  };
+
+  // Fonction pour arrêter l'enregistrement
+  const stopRecording = () => {
+    if (mediaRecorderRef.current && isRecording) {
+      mediaRecorderRef.current.stop();
+      
+      // Arrêter toutes les pistes audio
+      mediaRecorderRef.current.stream.getTracks().forEach(track => track.stop());
+      
+      // Arrêter le chronomètre
+      if (timerRef.current) {
+        clearInterval(timerRef.current);
+        timerRef.current = null;
+      }
+      
+      setIsRecording(false);
+    }
+  };
+
+  // Fonction pour formater le temps d'enregistrement (secondes -> MM:SS)
+  const formatTime = (seconds: number) => {
+    const mins = Math.floor(seconds / 60).toString().padStart(2, '0');
+    const secs = (seconds % 60).toString().padStart(2, '0');
+    return `${mins}:${secs}`;
+  };
+
+  // Fonction pour sauvegarder l'enregistrement
+  const saveRecording = async () => {
+    if (!audioBlob || !recordingName.trim()) return;
+    
+    setIsUploading(true);
+    setUploadProgress(0);
+    setUploadError(null);
+    
+    try {
+      // Créer un fichier à partir du blob audio avec le nom spécifié
+      const audioFile = new File([audioBlob], `${recordingName.trim()}.wav`, { type: 'audio/wav' });
+      
+      console.log('Saving recording:', recordingName, 'Size:', Math.round(audioBlob.size / 1024), 'KB');
+      
+      // Simuler une progression d'upload
+      const interval = setInterval(() => {
+        setUploadProgress(prev => {
+          if (prev >= 90) {
+            clearInterval(interval);
+            return 90;
+          }
+          return prev + 10;
+        });
+      }, 300);
+      
+      // Uploader le fichier et démarrer la transcription
+      try {
+        await transcribeAudio(audioFile);
+        
+        clearInterval(interval);
+        setUploadProgress(100);
+        
+        // Réinitialiser l'état
+        setTimeout(() => {
+          setShowNameDialog(false);
+          setRecordingName('');
+          setAudioBlob(null);
+          setIsUploading(false);
+          setUploadProgress(0);
+        }, 1000);
+      } catch (transcriptionError) {
+        console.error('Erreur de transcription détaillée:', transcriptionError);
+        clearInterval(interval);
+        setUploadError(`Erreur lors de la transcription: ${transcriptionError instanceof Error ? transcriptionError.message : 'Erreur inconnue'}`);
+        setIsUploading(false);
+      }
+    } catch (error) {
+      console.error('Erreur lors de la création du fichier audio:', error);
+      setUploadError(`Erreur lors de la préparation de l'enregistrement: ${error instanceof Error ? error.message : 'Erreur inconnue'}`);
+      setIsUploading(false);
+    }
+  };
+
+  // Handler for file upload
+  const handleFileUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
+    setUploadError(null);
+    
+    // Get the file object
+    const file = event.target.files?.[0];
+    if (!file) {
+      setUploadError('Aucun fichier sélectionné.');
+      return;
+    }
+    
+    // Vérifier le type de fichier
+    const validAudioTypes = ['audio/mp3', 'audio/mpeg', 'audio/wav', 'audio/x-wav', 'audio/ogg', 'audio/webm'];
+    if (!validAudioTypes.includes(file.type)) {
+      setUploadError(`Type de fichier non pris en charge: ${file.type || 'inconnu'}. Utilisez un fichier MP3, WAV ou OGG.`);
+      return;
+    }
+    
+    // Vérifier la taille du fichier (limite à 100 Mo)
+    const maxSizeInBytes = 100 * 1024 * 1024;
+    if (file.size > maxSizeInBytes) {
+      setUploadError(`Le fichier est trop volumineux (${Math.round(file.size / (1024 * 1024))} Mo). La taille maximale est de 100 Mo.`);
+      return;
+    }
+    
+    setIsUploading(true);
+    setUploadProgress(0);
+    
+    try {
+      // Générer un titre par défaut basé sur le nom du fichier
+      const fileNameWithoutExt = file.name.replace(/\.[^/.]+$/, "");
+      const title = fileNameWithoutExt || 'Nouvel enregistrement';
+      setRecordingName(title);
+      
+      console.log('Uploading file:', file.name, 'Type:', file.type, 'Size:', Math.round(file.size / 1024), 'KB');
+      
+      // Simuler une progression d'upload
+      const interval = setInterval(() => {
+        setUploadProgress(prev => {
+          if (prev >= 90) {
+            clearInterval(interval);
+            return 90;
+          }
+          return prev + 10;
+        });
+      }, 300);
+      
+      // Détecter le format audio en fonction de l'extension si le type MIME est ambigu
+      let format: string | undefined = undefined;
+      const fileExt = file.name.split('.').pop()?.toLowerCase();
+      
+      // Si le type MIME est générique ou vide, utiliser l'extension pour définir le format
+      if (!file.type || file.type === 'audio/octet-stream' || file.type === 'application/octet-stream') {
+        if (fileExt === 'mp3') format = 'mp3';
+        else if (fileExt === 'wav') format = 'wav';
+        else if (fileExt === 'ogg') format = 'ogg';
+        else if (fileExt === 'm4a') format = 'm4a';
+        console.log('Using explicit format based on extension:', format);
+      }
+      
+      // Uploader le fichier et démarrer la transcription
+      try {
+        await transcribeAudio(file, { format });
+        
+        clearInterval(interval);
+        setUploadProgress(100);
+        
+        // Réinitialiser l'état
+        setTimeout(() => {
+          setIsUploading(false);
+          setUploadProgress(0);
+          if (event.target) event.target.value = '';
+        }, 1000);
+      } catch (transcriptionError) {
+        console.error('Erreur de transcription détaillée:', transcriptionError);
+        clearInterval(interval);
+        setUploadError(`Erreur lors de la transcription: ${transcriptionError instanceof Error ? transcriptionError.message : 'Erreur inconnue'}`);
+        setIsUploading(false);
+      }
+    } catch (error) {
+      console.error('Erreur lors de la préparation du fichier:', error);
+      setUploadError(`Erreur lors de la préparation du fichier: ${error instanceof Error ? error.message : 'Erreur inconnue'}`);
+      setIsUploading(false);
+    }
+  };
+
+  // Fonction pour réessayer une transcription échouée
+  const handleRetryTranscription = async (meetingId: string) => {
+    setRetryingMeetingId(meetingId);
+    setUploadError(null);
+    
+    try {
+      // Déterminer le format en fonction du nom de fichier original si disponible
+      let format: string | undefined = undefined;
+      const meeting = recentMeetings.find(m => m.title === meetingId);
+      
+      if (meeting && meeting.date) {
+        const fileUrl = meeting.date;
+        const fileExt = fileUrl.split('.').pop()?.toLowerCase();
+        
+        if (fileExt === 'mp3') format = 'mp3';
+        else if (fileExt === 'wav') format = 'wav';
+        else if (fileExt === 'ogg') format = 'ogg';
+        else if (fileExt === 'm4a') format = 'm4a';
+        
+        console.log('Retrying with format:', format);
+      }
+      
+      // Réessayer la transcription
+      await retryTranscription(meetingId, { format });
+      
+    } catch (error) {
+      console.error('Erreur lors de la nouvelle tentative de transcription:', error);
+      setUploadError(`Échec de la nouvelle tentative: ${error instanceof Error ? error.message : 'Erreur inconnue'}`);
+    } finally {
+      setRetryingMeetingId(null);
+    }
+  };
+
+  // Fonction pour l'upload et la transcription d'un fichier audio
+  const transcribeAudio = async (file: File, options?: any) => {
+    try {
+      console.log('Uploading meeting with file:', file.name);
+      
+      // Upload the meeting and get the initial meeting object
+      const meeting = await uploadMeeting(file, recordingName || file.name, options);
+      console.log('Meeting uploaded successfully:', meeting);
+      
+      // Utiliser le polling pour suivre l'état de la transcription
+      const stopPolling = pollTranscriptionStatus(
+        meeting.id,
+        (status, updatedMeeting) => {
+          console.log(`Transcription status update: ${status}`);
+          
+          // Rafraîchir la liste des réunions pour montrer le statut mis à jour
+          if (status === 'completed') {
+            console.log('Transcription completed successfully!');
+            fetchMeetings();
+          } else if (status === 'error' || status === 'failed') {
+            console.log('Transcription failed:', updatedMeeting);
+            setUploadError(`La transcription a échoué: ${updatedMeeting.error || 'Erreur inconnue'}`);
+            fetchMeetings();
+          }
+        },
+        3000 // Vérifier toutes les 3 secondes
+      );
+      
+      // Rafraîchir la liste des réunions pour montrer la nouvelle réunion
+      await fetchMeetings();
+      
+      return meeting;
+    } catch (error) {
+      console.error('Error in transcribeAudio:', error);
+      if (error instanceof Error) {
+        setUploadError(`Erreur de transcription: ${error.message}`);
+      } else {
+        setUploadError('Une erreur inconnue est survenue pendant la transcription');
+      }
+      throw error;
+    }
+  };
+
+  const handleViewTranscript = async (meetingId: string) => {
+    try {
+      console.log(`Fetching transcript for meeting ID: ${meetingId}`);
+      const transcriptData = await getTranscript(meetingId);
+      console.log('Transcript data:', transcriptData);
+      
+      if (transcriptData && transcriptData.transcript_text) {
+        setTranscript(transcriptData.transcript_text);
+      } else if (transcriptData && transcriptData.error) {
+        setTranscript(transcriptData.error);
+      } else {
+        setTranscript("No transcript available. The transcript may not have been generated yet or the transcription process failed.");
+      }
+      
+      // S'assurer que l'erreur d'upload est réinitialisée
+      setUploadError(null);
+      
+    } catch (error) {
+      console.error('Erreur lors de la récupération de la transcription:', error);
+      
+      // Message d'erreur personnalisé selon le type d'erreur
+      if (error instanceof Error) {
+        if (error.message.includes('Network connection')) {
+          setTranscript("Cannot connect to the server. Please make sure the backend server is running at http://localhost:8000");
+        } else if (error.message.includes('404') || error.message.includes('not found')) {
+          setTranscript("Transcript not found. The transcription process may not have completed yet.");
+        } else {
+          setTranscript(`Error loading transcript: ${error.message}`);
+        }
+      } else {
+        setTranscript("An unknown error occurred while fetching the transcript");
+      }
+    }
+  };
+
   return (
     <Box sx={{ 
       p: 4,
@@ -146,19 +587,43 @@ const Dashboard = () => {
                 <Typography variant="body2" sx={{ mb: 2, opacity: 0.8 }}>
                   Begin recording and transcribing instantly
                 </Typography>
-                <Button
-                  variant="contained"
-                  startIcon={<MicIcon />}
-                  sx={{
-                    bgcolor: 'white',
-                    color: 'primary.main',
-                    '&:hover': {
-                      bgcolor: 'rgba(255, 255, 255, 0.9)',
-                    },
-                  }}
-                >
-                  Start Now
-                </Button>
+                {isRecording ? (
+                  <Box>
+                    <Typography variant="body2" sx={{ mb: 1 }}>
+                      Recording: {formatTime(recordingTime)}
+                    </Typography>
+                    <Button
+                      variant="contained"
+                      startIcon={<StopIcon />}
+                      color="error"
+                      onClick={stopRecording}
+                      sx={{
+                        bgcolor: 'white',
+                        color: 'error.main',
+                        '&:hover': {
+                          bgcolor: 'rgba(255, 255, 255, 0.9)',
+                        },
+                      }}
+                    >
+                      Stop Recording
+                    </Button>
+                  </Box>
+                ) : (
+                  <Button
+                    variant="contained"
+                    startIcon={<MicIcon />}
+                    onClick={startRecording}
+                    sx={{
+                      bgcolor: 'white',
+                      color: 'primary.main',
+                      '&:hover': {
+                        bgcolor: 'rgba(255, 255, 255, 0.9)',
+                      },
+                    }}
+                  >
+                    Start Now
+                  </Button>
+                )}
               </Box>
             </Paper>
           </Grid>
@@ -169,6 +634,13 @@ const Dashboard = () => {
                 display: 'flex',
                 alignItems: 'center',
                 bgcolor: 'background.paper',
+                borderRadius: '16px',
+                boxShadow: '0 4px 12px rgba(0, 0, 0, 0.05)',
+                transition: 'all 0.3s ease-in-out',
+                '&:hover': {
+                  transform: 'translateY(-5px)',
+                  boxShadow: '0 8px 24px rgba(0, 0, 0, 0.1)'
+                }
               }}
             >
               <Box sx={{ flexGrow: 1 }}>
@@ -178,12 +650,37 @@ const Dashboard = () => {
                 <Typography variant="body2" sx={{ mb: 2, color: 'text.secondary' }}>
                   Transcribe existing audio files
                 </Typography>
-                <Button variant="outlined" startIcon={<CloudUploadIcon />}>
-                  Upload File
+                <input
+                  type="file"
+                  accept="audio/*"
+                  style={{ display: 'none' }}
+                  ref={fileInputRef}
+                  onChange={handleFileUpload}
+                />
+                <Button
+                  variant="outlined"
+                  startIcon={isUploading ? <CircularProgress size={20} /> : <CloudUploadIcon />}
+                  onClick={() => fileInputRef.current?.click()}
+                  disabled={isUploading}
+                >
+                  {isUploading ? 'Uploading...' : 'Upload File'}
                 </Button>
+                {uploadProgress > 0 && uploadProgress < 100 && (
+                  <LinearProgress 
+                    variant="determinate" 
+                    value={uploadProgress} 
+                    sx={{ mt: 1, borderRadius: 1 }}
+                  />
+                )}
+                {uploadError && (
+                  <Typography color="error" variant="caption" sx={{ display: 'block', mt: 1 }}>
+                    {uploadError}
+                  </Typography>
+                )}
               </Box>
             </Paper>
           </Grid>
+
           <Grid item xs={12} md={4}>
             <Paper
               sx={{
@@ -279,7 +776,7 @@ const Dashboard = () => {
       </Typography>
       <Grid container spacing={3}>
         {recentMeetings.map((meeting) => (
-          <Grid item xs={12} key={meeting.title}>
+          <Grid item xs={12} key={meeting.id || meeting.title}>
             <Paper
               sx={{
                 p: 3,
@@ -307,15 +804,56 @@ const Dashboard = () => {
                     <Typography variant="body2" color="text.secondary">
                       👥 {meeting.participants} participants
                     </Typography>
-                    <Chip
-                      label="completed"
+                    {meeting.progress === 100 ? (
+                      <Chip
+                        label="completed"
+                        size="small"
+                        sx={{
+                          bgcolor: alpha('#10B981', 0.1),
+                          color: '#10B981',
+                          fontWeight: 500,
+                        }}
+                      />
+                    ) : meeting.progress === 0 ? (
+                      <Chip
+                        label="failed"
+                        size="small"
+                        sx={{
+                          bgcolor: alpha('#EF4444', 0.1),
+                          color: '#EF4444',
+                          fontWeight: 500,
+                        }}
+                      />
+                    ) : (
+                      <Chip
+                        label="processing"
+                        size="small"
+                        sx={{
+                          bgcolor: alpha('#F59E0B', 0.1),
+                          color: '#F59E0B',
+                          fontWeight: 500,
+                        }}
+                      />
+                    )}
+                    {meeting.progress < 100 && meeting.progress > 0 && (
+                      <Button
+                        variant="outlined"
+                        startIcon={<RefreshIcon />}
+                        onClick={() => handleRetryTranscription(meeting.id)}
+                        disabled={retryingMeetingId === meeting.id}
+                        size="small"
+                      >
+                        {retryingMeetingId === meeting.id ? 'Retrying...' : 'Retry'}
+                      </Button>
+                    )}
+                    <Button
+                      variant="outlined"
+                      startIcon={<DescriptionIcon />}
+                      onClick={() => handleViewTranscript(meeting.id)}
                       size="small"
-                      sx={{
-                        bgcolor: alpha('#10B981', 0.1),
-                        color: '#10B981',
-                        fontWeight: 500,
-                      }}
-                    />
+                    >
+                      View Transcript
+                    </Button>
                   </Stack>
                 </Box>
                 <Stack direction="row" spacing={1}>
@@ -333,7 +871,104 @@ const Dashboard = () => {
             </Paper>
           </Grid>
         ))}
+        <Grid item xs={12}>
+          <Button
+            variant="outlined"
+            startIcon={<RefreshIcon />}
+            onClick={fetchMeetings}
+            disabled={isRefreshing}
+          >
+            {isRefreshing ? 'Refreshing...' : 'Refresh Meetings'}
+          </Button>
+        </Grid>
       </Grid>
+
+      {/* Dialogue pour nommer l'enregistrement */}
+      <Dialog open={showNameDialog} onClose={() => !isUploading && setShowNameDialog(false)}>
+        <DialogTitle>Save Recording</DialogTitle>
+        <DialogContent>
+          <Typography variant="body2" sx={{ mb: 2 }}>
+            Please name your recording to save it.
+          </Typography>
+          <TextField
+            autoFocus
+            margin="dense"
+            label="Recording Name"
+            fullWidth
+            variant="outlined"
+            value={recordingName}
+            onChange={(e) => setRecordingName(e.target.value)}
+            disabled={isUploading}
+          />
+          {uploadProgress > 0 && (
+            <Box sx={{ mt: 2 }}>
+              <LinearProgress 
+                variant="determinate" 
+                value={uploadProgress} 
+                sx={{ borderRadius: 1 }}
+              />
+              <Typography variant="caption" sx={{ display: 'block', mt: 1, textAlign: 'center' }}>
+                {uploadProgress < 100 ? 'Uploading and processing...' : 'Complete!'}
+              </Typography>
+            </Box>
+          )}
+          {uploadError && (
+            <Typography color="error" variant="body2" sx={{ mt: 2 }}>
+              {uploadError}
+            </Typography>
+          )}
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setShowNameDialog(false)} disabled={isUploading}>
+            Cancel
+          </Button>
+          <Button 
+            onClick={saveRecording} 
+            variant="contained" 
+            disabled={!recordingName.trim() || isUploading}
+          >
+            {isUploading ? 'Processing...' : 'Save'}
+          </Button>
+        </DialogActions>
+      </Dialog>
+
+      {/* Dialogue pour afficher la transcription */}
+      <Dialog 
+        open={!!transcript} 
+        onClose={() => setTranscript(null)}
+        maxWidth="md"
+        fullWidth
+      >
+        <DialogTitle sx={{ borderBottom: '1px solid #eee', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+          <Typography variant="h6">Transcript</Typography>
+          <IconButton onClick={() => setTranscript(null)}>
+            <CloseIcon />
+          </IconButton>
+        </DialogTitle>
+        <DialogContent sx={{ mt: 2, minHeight: '300px', maxHeight: '60vh', overflowY: 'auto' }}>
+          {transcript && transcript.length > 0 ? (
+            <Typography variant="body1" sx={{ whiteSpace: 'pre-wrap', lineHeight: 1.6 }}>
+              {transcript}
+            </Typography>
+          ) : (
+            <Box sx={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', height: '100%', py: 4 }}>
+              <WarningIcon color="warning" sx={{ fontSize: 48, mb: 2 }} />
+              <Typography variant="h6" color="text.secondary">
+                {transcript}
+              </Typography>
+            </Box>
+          )}
+        </DialogContent>
+        <DialogActions sx={{ borderTop: '1px solid #eee', p: 2 }}>
+          <Button 
+            variant="outlined" 
+            onClick={() => setTranscript(null)}
+            startIcon={<CloseIcon />}
+          >
+            Close
+          </Button>
+        </DialogActions>
+      </Dialog>
     </Box>
   );
 };
