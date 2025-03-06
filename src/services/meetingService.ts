@@ -345,8 +345,12 @@ export function onTranscriptionCompleted(callback: TranscriptionCallback) {
  * @param meeting Meeting qui a été complété
  */
 function notifyTranscriptionCompleted(meeting: Meeting) {
-  transcriptionCompletedListeners.forEach(callback => {
+  console.log(`Notifying ${transcriptionCompletedListeners.length} listeners about transcription completion for meeting:`, 
+    meeting.id, meeting.name || meeting.title);
+  
+  transcriptionCompletedListeners.forEach((callback, index) => {
     try {
+      console.log(`Calling listener #${index + 1} for transcription completion`);
       callback(meeting);
     } catch (error) {
       console.error('Error in transcription completed listener:', error);
@@ -500,6 +504,7 @@ async function processPollingQueue() {
         
         // Notifier les abonnés si la transcription est complétée
         if (status === 'completed') {
+          console.log(`Transcription completed for meeting ${meetingId} - notifying listeners`);
           notifyTranscriptionCompleted(meeting);
         }
       } catch (fetchError) {

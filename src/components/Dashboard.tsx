@@ -164,7 +164,18 @@ const Dashboard = () => {
 
   useEffect(() => {
     fetchMeetings();
+    
+    return () => {
+      // Arrêter tous les pollings en cours
+      cleanupPolling && cleanupPolling();
+    };
+  }, []);
+  
+  // Écouter les événements de transcription terminée dans un useEffect séparé
+  useEffect(() => {
+    console.log("Setting up transcription completed listener");
     const unsubscribe = onTranscriptionCompleted((meeting) => {
+      console.log("Transcription completed event received for:", meeting.name || meeting.title);
       showSuccessPopup(
         "Good news!",
         `The transcription "${meeting.name || meeting.title || 'Untitled meeting'}" has been completed.`
@@ -172,9 +183,8 @@ const Dashboard = () => {
     });
     
     return () => {
+      console.log("Cleaning up transcription completed listener");
       unsubscribe();
-      // Arrêter tous les pollings en cours
-      cleanupPolling && cleanupPolling();
     };
   }, [showSuccessPopup]);
   

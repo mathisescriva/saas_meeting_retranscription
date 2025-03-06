@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import {
   Box,
   Typography,
@@ -48,32 +48,8 @@ const MyMeetings: React.FC = () => {
   const [retryingMeetingId, setRetryingMeetingId] = useState<string | null>(null);
   const [isDeleting, setIsDeleting] = useState(false);
 
-  // Load all meetings on component mount
-  useEffect(() => {
-    fetchMeetings();
-  }, []);
-
-  // Subscribe to transcription completion events
-  useEffect(() => {
-    // Register a listener for transcription completed events
-    const unsubscribe = onTranscriptionCompleted((meeting) => {
-      // Show a success notification when a transcription is completed
-      showSuccessPopup(
-        "Good news!",
-        `The transcription "${meeting.name || meeting.title || 'Untitled meeting'}" has been completed.`
-      );
-      
-      // Refresh meetings list to show the updated status
-      fetchMeetings();
-    });
-    
-    // Cleanup subscription when component unmounts
-    return () => {
-      unsubscribe();
-    };
-  }, [showSuccessPopup]);
-
-  const fetchMeetings = async () => {
+  // Définir fetchMeetings au début avec useCallback
+  const fetchMeetings = useCallback(async () => {
     try {
       setLoading(true);
       setIsRefreshing(true);
@@ -137,7 +113,35 @@ const MyMeetings: React.FC = () => {
       setLoading(false);
       setIsRefreshing(false);
     }
-  };
+  }, []);
+
+  // Load all meetings on component mount
+  useEffect(() => {
+    fetchMeetings();
+  }, [fetchMeetings]);
+
+  // Subscribe to transcription completion events
+  useEffect(() => {
+    console.log("MyMeetings: Setting up transcription completed listener");
+    // Register a listener for transcription completed events
+    const unsubscribe = onTranscriptionCompleted((meeting) => {
+      console.log("MyMeetings: Transcription completed event received for:", meeting.name || meeting.title);
+      // Show a success notification when a transcription is completed
+      showSuccessPopup(
+        "Good news!",
+        `The transcription "${meeting.name || meeting.title || 'Untitled meeting'}" has been completed.`
+      );
+      
+      // Refresh meetings list to show the updated status
+      fetchMeetings();
+    });
+    
+    // Cleanup subscription when component unmounts
+    return () => {
+      console.log("MyMeetings: Cleaning up transcription completed listener");
+      unsubscribe();
+    };
+  }, [showSuccessPopup, fetchMeetings]);
 
   const formatDate = (dateString: string) => {
     return new Date(dateString).toLocaleDateString('fr-FR', {
