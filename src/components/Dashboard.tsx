@@ -57,7 +57,9 @@ import {
   pollTranscriptionStatus,
   getTranscript,
   deleteMeeting,
-  getMeetingDetails
+  getMeetingDetails,
+  syncMeetingsCache,
+  getMeetingsFromCache
 } from '../services/meetingService';
 
 const features = [
@@ -108,6 +110,8 @@ interface RecentMeeting {
   audio_duration?: number; // Durée audio en secondes
   participants: number;
   progress: number;
+  status?: string; // Statut de la transcription
+  error_message?: string; // Message d'erreur éventuel
 }
 
 const recentMeetings = [
@@ -156,11 +160,37 @@ const Dashboard = () => {
 
   useEffect(() => {
     fetchMeetings();
+    
+    // Nettoyage à la sortie du composant
+    return () => {
+      // Arrêter tous les pollings en cours
+      cleanupPolling && cleanupPolling();
+    };
   }, []);
-
+  
+  // Référence pour stocker la fonction de nettoyage du polling
+  const [cleanupPolling, setCleanupPolling] = useState<(() => void) | null>(null);
+  
   const fetchMeetings = async () => {
     setIsRefreshing(true);
     try {
+      // 1. D'abord, récupérer les IDs mis en cache
+      const cachedMeetings = getMeetingsFromCache();
+      const cachedMeetingIds = Object.keys(cachedMeetings);
+      
+      // 2. Synchroniser avec le serveur pour déterminer quels IDs sont toujours valides
+      if (cachedMeetingIds.length > 0) {
+        console.log(`Synchronizing ${cachedMeetingIds.length} cached meeting IDs with server`);
+        try {
+          await syncMeetingsCache(cachedMeetingIds);
+          // La fonction syncMeetingsCache nettoie automatiquement le cache
+        } catch (syncError) {
+          console.error("Error synchronizing meetings cache:", syncError);
+          // Continuer même en cas d'erreur de synchronisation
+        }
+      }
+      
+      // 3. Maintenant récupérer la liste à jour des réunions
       const meetings = await getAllMeetings();
       console.log('Fetched meetings:', meetings);
       
@@ -199,7 +229,9 @@ const Dashboard = () => {
           progress: meeting.transcript_status === 'completed' || meeting.transcription_status === 'completed' ? 100 : 
                    meeting.transcript_status === 'error' || meeting.transcription_status === 'failed' ? 0 :
                    meeting.transcript_status === 'processing' || meeting.transcription_status === 'processing' ? 50 : 25,
-          id: meeting.id
+          id: meeting.id,
+          status: meeting.transcript_status || meeting.transcription_status,
+          error_message: meeting.error_message
         };
       });
       
@@ -211,19 +243,39 @@ const Dashboard = () => {
         return status === 'processing' || status === 'pending';
       });
       
+      // Arrêter les pollings précédents s'il y en a
+      if (cleanupPolling) {
+        console.log('Stopping previous polling sessions');
+        cleanupPolling();
+      }
+      
       if (inProgressMeetings.length > 0) {
         console.log(`Found ${inProgressMeetings.length} meetings in progress, starting polling`);
         
         // Limiter le nombre de polling simultanés à 3 maximum
         const meetingsToTrack = inProgressMeetings.slice(0, 3);
         
+        // Créer un tableau de fonctions de nettoyage
+        const cleanupFunctions: Array<() => void> = [];
+        
         meetingsToTrack.forEach(meeting => {
           console.log(`Starting polling for in-progress meeting: ${meeting.id}`);
           // Démarrer le polling pour cette réunion
-          pollTranscriptionStatus(
+          const stopPolling = pollTranscriptionStatus(
             meeting.id,
             (updatedStatus, updatedMeeting) => {
               console.log(`Status update for meeting ${meeting.id}: ${updatedStatus}`);
+              
+              // Si la réunion a été supprimée (statut 'deleted')
+              if (updatedStatus === 'deleted') {
+                console.log(`Meeting ${meeting.id} has been deleted, stopping polling`);
+                // Trouver et exécuter la fonction de nettoyage spécifique
+                const index = meetingsToTrack.findIndex(m => m.id === meeting.id);
+                if (index >= 0 && cleanupFunctions[index]) {
+                  cleanupFunctions[index]();
+                }
+                return;
+              }
               
               // Mettre à jour l'état local immédiatement sans refaire un appel API
               if (updatedStatus === 'completed' || updatedStatus === 'error' || updatedStatus === 'failed') {
@@ -263,6 +315,16 @@ const Dashboard = () => {
             },
             5000 // Vérifier toutes les 5 secondes
           );
+          
+          // Stocker la fonction de nettoyage
+          cleanupFunctions.push(stopPolling);
+        });
+        
+        // Stocker la fonction de nettoyage globale
+        setCleanupPolling(() => {
+          return () => {
+            cleanupFunctions.forEach(func => func());
+          };
         });
       }
     } catch (error) {
@@ -657,21 +719,42 @@ const Dashboard = () => {
     }
   };
 
-  const handleMeetingClick = (meetingId: string) => {
-    // Mettre à jour les détails avant d'ouvrir
-    updateMeetingDetails(meetingId)
-      .then(meetingDetails => {
-        console.log('Meeting details refreshed before opening:', meetingDetails);
-        // Rediriger vers la page détaillée de la réunion ou ouvrir un modal
-        // window.location.href = `/meetings/${meetingId}`;
-        // ou
-        // setSelectedMeeting(meetingDetails);
-        // setShowMeetingDetails(true);
-      })
-      .catch(error => {
-        console.error('Failed to refresh meeting details:', error);
-        // Gérer l'erreur (par exemple, afficher une notification)
-      });
+  const handleMeetingClick = async (meetingId: string) => {
+    if (!meetingId) return;
+    
+    // Vérifier si la réunion a été supprimée
+    const meeting = recentMeetings.find(m => m.id === meetingId);
+    if (meeting && meeting.status === 'deleted') {
+      alert(meeting.error_message || "Cette réunion n'existe plus sur le serveur.");
+      return;
+    }
+    
+    // Obtenir les détails de la réunion
+    try {
+      setIsLoading(true);
+      // Implémentation future: rediriger vers la page de détails
+      console.log(`Navigating to meeting details: ${meetingId}`);
+      
+      const meetingDetails = await getMeetingDetails(meetingId);
+      console.log('Meeting details:', meetingDetails);
+      
+      // Afficher la transcription si disponible
+      if (meetingDetails.transcript_url) {
+        const transcript = await getTranscript(meetingDetails.transcript_url);
+        setTranscript(transcript);
+        setSelectedMeetingId(meetingId);
+      } else {
+        console.log('No transcript available yet');
+        alert('La transcription n\'est pas encore disponible pour cette réunion.');
+      }
+    } catch (error) {
+      console.error('Error fetching meeting details:', error);
+      if (error instanceof Error) {
+        alert(`Erreur lors de la récupération des détails: ${error.message}`);
+      }
+    } finally {
+      setIsLoading(false);
+    }
   };
 
   return (
@@ -923,16 +1006,40 @@ const Dashboard = () => {
                 boxShadow: '0 4px 12px rgba(0,0,0,0.05)',
                 transition: 'all 0.3s ease-in-out',
                 '&:hover': {
-                  transform: 'translateY(-2px)',
-                  boxShadow: '0 8px 24px rgba(0,0,0,0.1)',
+                  transform: meeting.status !== 'deleted' ? 'translateY(-2px)' : 'none',
+                  boxShadow: meeting.status !== 'deleted' ? '0 8px 24px rgba(0,0,0,0.1)' : '0 4px 12px rgba(0,0,0,0.05)',
                 },
-                cursor: 'pointer'
+                cursor: meeting.status !== 'deleted' ? 'pointer' : 'default',
+                opacity: meeting.status === 'deleted' ? 0.7 : 1,
+                position: 'relative',
+                ...(meeting.status === 'deleted' && {
+                  backgroundColor: alpha('#f5f5f5', 0.7),
+                  border: '1px solid #e0e0e0'
+                })
               }}
               onClick={() => handleMeetingClick(meeting.id)}
             >
+              {meeting.status === 'deleted' && (
+                <Chip
+                  label="Supprimée"
+                  color="error"
+                  size="small"
+                  sx={{
+                    position: 'absolute', 
+                    top: 10, 
+                    right: 10,
+                    fontSize: '0.75rem'
+                  }}
+                />
+              )}
               <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                 <Box>
-                  <Typography variant="h6" sx={{ mb: 1, fontWeight: 600 }}>
+                  <Typography variant="h6" sx={{ 
+                    mb: 1, 
+                    fontWeight: 600,
+                    textDecoration: meeting.status === 'deleted' ? 'line-through' : 'none',
+                    color: meeting.status === 'deleted' ? 'text.disabled' : 'text.primary'
+                  }}>
                     {meeting.title}
                   </Typography>
                   <Stack direction="row" spacing={2} alignItems="center">

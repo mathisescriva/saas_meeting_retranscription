@@ -1,8 +1,23 @@
 import apiClient from './apiClient';
 
+// Clé utilisée pour stocker les meetings dans le cache localStorage
+const MEETINGS_CACHE_KEY = 'meeting-transcriber-meetings-cache';
+
+// Type pour le cache des meetings (map d'ID à meeting object)
+export interface MeetingsCache {
+  [meetingId: string]: Meeting;
+}
+
+// Interface pour la réponse de validation des IDs
+export interface ValidateIdsResponse {
+  valid_ids: string[];   // IDs de réunions qui existent encore
+  invalid_ids: string[]; // IDs de réunions qui n'existent plus
+}
+
 export interface Meeting {
   id: string;
-  title: string;
+  name?: string;
+  title?: string; // Restauration de title pour compatibilité
   file_url?: string;
   transcript_status: 'pending' | 'processing' | 'completed' | 'error';
   transcript_text?: string;
@@ -54,14 +69,14 @@ export interface UploadOptions {
  */
 export async function uploadMeeting(
   audioFile: File, 
-  title: string, 
+  name: string, 
   options?: UploadOptions
 ): Promise<Meeting> {
   const formData = new FormData();
   formData.append('file', audioFile);
   
   // Construire l'URL avec les paramètres
-  let url = `/meetings/upload?title=${encodeURIComponent(title)}`;
+  let url = `/meetings/upload?name=${encodeURIComponent(name)}`;
   
   // Ajouter les options si présentes
   if (options) {
@@ -88,8 +103,38 @@ export async function uploadMeeting(
 /**
  * Get a specific meeting by ID
  */
-export async function getMeeting(meetingId: string): Promise<Meeting> {
-  return apiClient.get<Meeting>(`/meetings/${meetingId}`);
+export async function getMeeting(meetingId: string, signal?: AbortSignal): Promise<Meeting> {
+  try {
+    return await apiClient.get<Meeting>(`/meetings/${meetingId}`, undefined, { signal });
+  } catch (error: any) {
+    // Gérer spécifiquement les erreurs 404 améliorées
+    if (error.status === 404 && isMeetingNotFoundError(error)) {
+      // Retirer la réunion du cache local
+      const cachedMeetings = getMeetingsFromCache();
+      if (cachedMeetings[meetingId]) {
+        delete cachedMeetings[meetingId];
+        saveMeetingsToCache(cachedMeetings);
+      }
+      
+      // Créer un objet Meeting de remplacement avec les infos d'erreur
+      const fallbackMeeting: Meeting = {
+        id: meetingId,
+        name: "Réunion supprimée",
+        title: "Réunion supprimée",
+        created_at: new Date().toISOString(),
+        transcript_status: "deleted",
+        transcription_status: "deleted",
+        user_id: "",
+        audio_url: "",
+        error_message: getMeetingNotFoundMessage(error)
+      };
+      
+      return fallbackMeeting;
+    }
+    
+    // Propager les autres erreurs
+    throw error;
+  }
 }
 
 /**
@@ -112,6 +157,24 @@ export async function getMeetingDetails(meetingId: string): Promise<Meeting> {
     console.log('Retrieved meeting details:', meeting);
     return meeting;
   } catch (error) {
+    // Vérifier si c'est une erreur 404 (ressource non trouvée)
+    if (error instanceof Error && error.message.includes('404')) {
+      console.log(`Meeting with ID ${meetingId} no longer exists or was deleted.`);
+      // Retourner un objet meeting avec des informations minimales plutôt que de propager l'erreur
+      return {
+        id: meetingId,
+        name: 'Réunion indisponible', 
+        created_at: new Date().toISOString(),
+        duration: 0,
+        participants: 0,
+        transcript_status: 'failed',
+        transcription_status: 'failed',
+        // Autres champs requis par l'interface Meeting
+        user_id: '',
+        file_url: '',
+        duration_seconds: 0
+      };
+    }
     console.error(`Error fetching meeting details for ${meetingId}:`, error);
     throw error;
   }
@@ -126,19 +189,33 @@ export async function getAllMeetings(): Promise<Meeting[]> {
     const response = await apiClient.get<Meeting[]>('/meetings');
     console.log('Meetings data received:', response);
     
-    // Log detailed information about each meeting's duration fields
-    if (Array.isArray(response)) {
-      response.forEach(meeting => {
-        console.log(`Meeting ${meeting.id} - ${meeting.title}:`, {
-          duration: meeting.duration,
-          duration_type: typeof meeting.duration,
-          audio_duration: meeting.audio_duration,
-          audio_duration_type: typeof meeting.audio_duration
-        });
+    // Normaliser les données pour assurer la compatibilité
+    const normalizedResponse = Array.isArray(response) ? response.map(meeting => {
+      // Normaliser name et title pour compatibilité
+      const normalizedMeeting = { ...meeting };
+      
+      // Si title existe mais pas name, utiliser title comme name
+      if (normalizedMeeting.title && !normalizedMeeting.name) {
+        normalizedMeeting.name = normalizedMeeting.title;
+      }
+      
+      // Si name existe mais pas title, utiliser name comme title
+      if (normalizedMeeting.name && !normalizedMeeting.title) {
+        normalizedMeeting.title = normalizedMeeting.name;
+      }
+      
+      // Pour le développement: log des champs de durée
+      console.log(`Meeting ${normalizedMeeting.id} - ${normalizedMeeting.name || normalizedMeeting.title}:`, {
+        duration: normalizedMeeting.duration,
+        duration_type: typeof normalizedMeeting.duration,
+        audio_duration: normalizedMeeting.audio_duration,
+        audio_duration_type: typeof normalizedMeeting.audio_duration
       });
-    }
+      
+      return normalizedMeeting;
+    }) : [];
     
-    return response;
+    return normalizedResponse;
   } catch (error) {
     console.error('Error fetching meetings:', error);
     throw error;
@@ -314,6 +391,11 @@ async function processPollingQueue() {
   // Marquer comme actif
   isPolling = true;
   
+  // Variables pour gérer les erreurs réseau
+  let consecutiveNetworkErrors = 0;
+  const maxConsecutiveErrors = 5;
+  let waitTimeAfterError = 2000; // 2 secondes initiales
+  
   // Continuer tant qu'il y a des éléments dans la file d'attente
   while (pollingQueue.length > 0) {
     // Trouver la prochaine réunion à vérifier
@@ -330,32 +412,84 @@ async function processPollingQueue() {
     try {
       console.log(`Processing poll for meeting ${meetingId} from queue`);
       
-      // Requête unique au serveur
-      const meeting = await getMeeting(meetingId);
+      // Si trop d'erreurs consécutives, attendre plus longtemps avant de réessayer
+      if (consecutiveNetworkErrors >= maxConsecutiveErrors) {
+        console.log(`Too many consecutive network errors (${consecutiveNetworkErrors}/${maxConsecutiveErrors}). Pausing polling for ${waitTimeAfterError/1000}s`);
+        await new Promise(resolve => setTimeout(resolve, waitTimeAfterError));
+        // Augmenter le temps d'attente pour la prochaine fois (max 1 minute)
+        waitTimeAfterError = Math.min(waitTimeAfterError * 2, 60000);
+      }
       
-      // Traiter la réponse
-      const status = meeting.transcript_status || meeting.transcription_status || 'unknown';
-      console.log(`Meeting ${meetingId} status: ${status}`);
+      // Vérifier si l'application est en état de ne pas faire de requêtes réseau
+      // (indiqué par une erreur de connexion récente dans localStorage)
+      const lastConnectionErrorTimeStr = localStorage.getItem('lastConnectionErrorTime');
+      if (lastConnectionErrorTimeStr) {
+        const lastErrorTime = parseInt(lastConnectionErrorTimeStr);
+        const now = Date.now();
+        const timeSinceLastError = now - lastErrorTime;
+        
+        // Si l'erreur est très récente (moins de 3 secondes), attendre un peu
+        if (timeSinceLastError < 3000) {
+          console.log(`Skipping poll due to very recent connection error (${Math.round(timeSinceLastError / 1000)}s ago)`);
+          await new Promise(resolve => setTimeout(resolve, 3000));
+          pollingQueue[currentIndex].active = false;
+          continue; // Passer à l'itération suivante
+        }
+      }
       
-      // Appeler le callback
-      callback(status, meeting);
+      // Requête unique au serveur avec timeout court
+      const abortController = new AbortController();
+      const timeoutId = setTimeout(() => abortController.abort(), 8000); // 8 secondes de timeout
       
-      // Si statut final, retirer de la file d'attente
-      if (status === 'completed' || status === 'error' || status === 'failed') {
-        console.log(`Meeting ${meetingId} reached final status: ${status}, removing from queue`);
-        pollingQueue.splice(currentIndex, 1);
-      } else {
-        // Sinon, marquer comme inactif pour le prochain cycle
-        pollingQueue[currentIndex].active = false;
+      try {
+        // Requête avec timeout
+        const meeting = await getMeeting(meetingId, abortController.signal);
+        
+        // Réussi - réinitialiser les compteurs d'erreurs
+        consecutiveNetworkErrors = 0;
+        waitTimeAfterError = 2000;
+        
+        // Traiter la réponse
+        const status = meeting.transcript_status || meeting.transcription_status || 'unknown';
+        console.log(`Meeting ${meetingId} status: ${status}`);
+        
+        // Appeler le callback
+        callback(status, meeting);
+        
+        // Si statut final, retirer de la file d'attente
+        if (status === 'completed' || status === 'error' || status === 'failed') {
+          console.log(`Meeting ${meetingId} reached final status: ${status}, removing from queue`);
+          pollingQueue.splice(currentIndex, 1);
+        } else {
+          // Sinon, marquer comme inactif pour le prochain cycle
+          pollingQueue[currentIndex].active = false;
+        }
+      } catch (fetchError) {
+        // Gérer spécifiquement les erreurs de timeout ou d'abort
+        if (fetchError.name === 'AbortError') {
+          console.warn(`Timeout occurred while polling meeting ${meetingId}`);
+          consecutiveNetworkErrors++;
+        } else {
+          throw fetchError; // Propager les autres erreurs
+        }
+      } finally {
+        clearTimeout(timeoutId);
       }
     } catch (error) {
-      console.error(`Error polling status for meeting ${meetingId}:`, error);
+      const isNetworkError = error instanceof Error && 
+        (error.message.includes('Network connection') || 
+         error.message.includes('Failed to fetch') ||
+         error.message.includes('NetworkError'));
       
-      // En cas d'erreur réseau, attendre plus longtemps
-      if (error instanceof Error && error.message.includes('Network connection')) {
-        console.log(`Network error for meeting ${meetingId}, will wait longer before next poll`);
-        // Augmenter l'intervalle pour cette réunion
-        pollingQueue[currentIndex].interval = Math.min(interval * 2, 30000); // Max 30 secondes
+      if (isNetworkError) {
+        consecutiveNetworkErrors++;
+        console.error(`Network error (${consecutiveNetworkErrors}/${maxConsecutiveErrors}) polling status for meeting ${meetingId}:`, error);
+        
+        // Si c'est une erreur réseau, augmenter l'intervalle mais pas excessivement
+        pollingQueue[currentIndex].interval = Math.min(interval * 1.5, 30000); // Max 30 secondes
+      } else {
+        // Pour les autres types d'erreurs (non réseau)
+        console.error(`Error polling status for meeting ${meetingId}:`, error);
       }
       
       // Marquer comme inactif
@@ -387,4 +521,111 @@ export function pollTranscriptionStatus(
   
   // Utiliser la file d'attente au lieu du polling direct
   return addToPollingQueue(meetingId, callback, interval);
+}
+
+/**
+ * Interface pour le nouveau format d'erreur 404 amélioré
+ */
+interface MeetingNotFoundError {
+  detail: {
+    message: string;
+    meeting_id: string;
+    reason: string;
+    type: string;
+  }
+}
+
+/**
+ * Vérifie quels IDs de réunions sont encore valides sur le serveur
+ * et nettoie le cache local des réunions supprimées
+ * 
+ * @param cachedMeetingIds Liste des IDs de réunions en cache
+ * @returns Liste des IDs de réunions valides
+ */
+export async function syncMeetingsCache(cachedMeetingIds: string[]): Promise<string[]> {
+  if (!cachedMeetingIds || cachedMeetingIds.length === 0) {
+    return [];
+  }
+  
+  try {
+    // Vérifier les IDs stockés en cache local avec le nouvel endpoint
+    const response = await apiClient.post<ValidateIdsResponse>(
+      '/meetings/validate-ids', 
+      { meeting_ids: cachedMeetingIds }
+    );
+    
+    // Supprimer du cache local les réunions qui n'existent plus
+    const { invalid_ids } = response;
+    if (invalid_ids && invalid_ids.length > 0) {
+      console.log(`Removing ${invalid_ids.length} invalid meetings from cache:`, invalid_ids);
+      
+      // Supprimer les réunions invalides du localStorage
+      const cachedMeetings = getMeetingsFromCache();
+      
+      invalid_ids.forEach(id => {
+        // Supprimer du cache
+        if (cachedMeetings[id]) {
+          delete cachedMeetings[id];
+        }
+      });
+      
+      // Mettre à jour le cache
+      saveMeetingsToCache(cachedMeetings);
+    }
+    
+    return response.valid_ids || [];
+  } catch (error) {
+    console.error('Failed to sync meetings cache', error);
+    // En cas d'erreur, on considère que tous les IDs sont potentiellement valides
+    // pour éviter de bloquer l'utilisateur
+    return cachedMeetingIds;
+  }
+}
+
+/**
+ * Vérifie si une erreur est une erreur de réunion non trouvée (404 amélioré)
+ */
+export function isMeetingNotFoundError(error: any): error is MeetingNotFoundError {
+  return error && 
+         error.detail && 
+         error.detail.type === "MEETING_NOT_FOUND" &&
+         error.detail.meeting_id;
+}
+
+/**
+ * Récupère un message utilisateur approprié pour une erreur de réunion non trouvée
+ */
+export function getMeetingNotFoundMessage(error: MeetingNotFoundError): string {
+  if (error && error.detail) {
+    return `${error.detail.message}: ${error.detail.reason}`;
+  }
+  return "La réunion demandée n'existe plus ou a été supprimée.";
+}
+
+/**
+ * Récupère les meetings stockés dans le cache localStorage
+ * @returns Un objet avec les meetings indexés par ID
+ */
+export function getMeetingsFromCache(): MeetingsCache {
+  try {
+    const cachedData = localStorage.getItem(MEETINGS_CACHE_KEY);
+    if (!cachedData) return {};
+    
+    return JSON.parse(cachedData) as MeetingsCache;
+  } catch (error) {
+    console.error('Error reading meetings from cache:', error);
+    return {};
+  }
+}
+
+/**
+ * Sauvegarde les meetings dans le cache localStorage
+ * @param meetings Un objet avec les meetings indexés par ID
+ */
+export function saveMeetingsToCache(meetings: MeetingsCache): void {
+  try {
+    localStorage.setItem(MEETINGS_CACHE_KEY, JSON.stringify(meetings));
+  } catch (error) {
+    console.error('Error saving meetings to cache:', error);
+  }
 }

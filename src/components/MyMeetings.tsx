@@ -209,6 +209,15 @@ const MyMeetings: React.FC = () => {
       // Récupérer les détails complets de la réunion
       const meetingDetails = await getMeetingDetails(meetingId);
       
+      // Si la réunion est marquée comme indisponible (statut 'failed'), mettre à jour l'interface
+      if (meetingDetails.transcript_status === 'failed' && meetingDetails.transcription_status === 'failed') {
+        setMeetings(prevMeetings => 
+          prevMeetings.filter(meeting => meeting.id !== meetingId)
+        );
+        console.log(`Meeting ${meetingId} removed from list as it's no longer available`);
+        return meetingDetails;
+      }
+      
       // Mettre à jour l'interface utilisateur
       setMeetings(prevMeetings => 
         prevMeetings.map(meeting => 
@@ -232,6 +241,24 @@ const MyMeetings: React.FC = () => {
       console.log(`Meeting details updated for ${meetingId} in MyMeetings`);
       return meetingDetails;
     } catch (error) {
+      // Si l'erreur est liée à une réunion non trouvée, supprimer cette réunion de la liste
+      if (error instanceof Error && error.message.includes('404')) {
+        setMeetings(prevMeetings => 
+          prevMeetings.filter(meeting => meeting.id !== meetingId)
+        );
+        console.log(`Meeting ${meetingId} removed from UI due to 404 error`);
+        
+        // Créer un objet meeting minimal pour permettre au code appelant de continuer
+        return {
+          id: meetingId,
+          name: 'Réunion indisponible',
+          title: 'Réunion indisponible',
+          created_at: new Date().toISOString(),
+          transcript_status: 'failed',
+          transcription_status: 'failed'
+        } as Meeting;
+      }
+      
       console.error(`Error updating meeting details for ${meetingId}:`, error);
       throw error;
     }
@@ -242,6 +269,14 @@ const MyMeetings: React.FC = () => {
     updateMeetingDetails(meetingId)
       .then(meetingDetails => {
         console.log('Meeting details refreshed on click:', meetingDetails);
+        
+        // Si la réunion est indisponible, avertir l'utilisateur mais ne pas afficher d'erreur
+        if (meetingDetails.transcript_status === 'failed' && meetingDetails.transcription_status === 'failed') {
+          setError(`La réunion n'est plus disponible et a été retirée de la liste.`);
+          setTimeout(() => setError(null), 5000); // Effacer le message après 5 secondes
+          return;
+        }
+        
         // Ici on pourrait ouvrir une vue détaillée ou effectuer une autre action
       })
       .catch(error => {
@@ -339,7 +374,7 @@ const MyMeetings: React.FC = () => {
                   <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                     <Box>
                       <Typography variant="h6" sx={{ mb: 1, fontWeight: 600 }}>
-                        {meeting.title}
+                        {meeting.name || meeting.title || 'Sans titre'}
                       </Typography>
                       <Stack direction="row" spacing={2} alignItems="center" flexWrap="wrap">
                         <Typography variant="body2" color="text.secondary">

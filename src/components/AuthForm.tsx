@@ -33,6 +33,58 @@ const AuthForm: React.FC<AuthFormProps> = ({ onAuthSuccess }) => {
   const [showPassword, setShowPassword] = useState(false);
   const [showConfirmPassword, setShowConfirmPassword] = useState(false);
   const [appear, setAppear] = useState(false);
+  const [serverStatus, setServerStatus] = useState<'checking' | 'online' | 'offline'>('checking');
+  
+  // Fonction pour vérifier le statut du serveur
+  const checkServerStatus = async () => {
+    try {
+      // On utilise un endpoint plus fiable - la racine de l'API ou un endpoint de health check
+      // avec plusieurs tentatives en cas d'échec
+      let isOnline = false;
+      
+      // Liste des endpoints à tester dans l'ordre
+      const endpointsToTry = [
+        'http://localhost:8000/',     // Racine de l'API
+        'http://localhost:8000/docs', // Documentation (fallback)
+        'http://localhost:8000/api',  // Endpoint API potentiel
+      ];
+      
+      // Essayer chaque endpoint jusqu'à ce qu'un fonctionne
+      for (const endpoint of endpointsToTry) {
+        try {
+          const response = await fetch(endpoint, { 
+            method: 'HEAD',
+            cache: 'no-store',
+            mode: 'cors',
+            // Ajouter un court timeout pour ne pas bloquer trop longtemps
+            signal: AbortSignal.timeout(2000)
+          });
+          
+          if (response.ok || response.status === 404) { // 404 signifie que le serveur répond, même si l'endpoint n'existe pas
+            isOnline = true;
+            console.log(`Server is online, detected via ${endpoint}`);
+            break;
+          }
+        } catch (err) {
+          console.log(`Failed to connect to ${endpoint}:`, err);
+          // Continuer avec le prochain endpoint
+        }
+      }
+      
+      if (isOnline) {
+        setServerStatus('online');
+        // Supprimer toute indication d'erreur précédente
+        localStorage.removeItem('lastConnectionErrorTime');
+      } else {
+        // Toutes les tentatives ont échoué
+        console.warn('All server connectivity checks failed');
+        setServerStatus('offline');
+      }
+    } catch (error) {
+      console.warn('Backend server connectivity check failed:', error);
+      setServerStatus('offline');
+    }
+  };
   
   // Login form state
   const [loginEmail, setLoginEmail] = useState('');
@@ -47,6 +99,15 @@ const AuthForm: React.FC<AuthFormProps> = ({ onAuthSuccess }) => {
   useEffect(() => {
     // Trigger animation on mount
     setAppear(true);
+  }, []);
+
+  useEffect(() => {
+    checkServerStatus();
+    
+    // Vérifier périodiquement le statut du serveur backend (toutes les 15 secondes)
+    const intervalId = setInterval(checkServerStatus, 15000);
+    
+    return () => clearInterval(intervalId);
   }, []);
 
   const handleTabChange = (event: React.SyntheticEvent, newValue: number) => {
@@ -131,9 +192,8 @@ const AuthForm: React.FC<AuthFormProps> = ({ onAuthSuccess }) => {
           sx={{ 
             display: { xs: 'none', md: 'flex' },
             flexDirection: 'column',
-            justifyContent: 'center',
             alignItems: 'center',
-            p: 6,
+            p: 0,
             color: 'white',
             position: 'relative',
             background: 'linear-gradient(135deg, #104084 0%, #1976d2 50%, #0d47a1 100%)',
@@ -159,20 +219,27 @@ const AuthForm: React.FC<AuthFormProps> = ({ onAuthSuccess }) => {
               backgroundImage: 'linear-gradient(to right, rgba(13, 71, 161, 0.9) 0%, rgba(25, 118, 210, 0.4) 100%)',
               opacity: 0.6,
               zIndex: 0,
-            },
-            '& > *': {
-              position: 'relative',
-              zIndex: 1
             }
           }}
         >
-          <Box sx={{ zIndex: 1, textAlign: 'center' }}>
+          {/* Conteneur absolu pour le titre et le sous-titre */}
+          <Box 
+            sx={{ 
+              position: 'absolute',
+              top: '20%',
+              left: 0,
+              width: '100%',
+              textAlign: 'center',
+              zIndex: 1,
+              px: 6
+            }}
+          >
             <Typography 
               variant="h3" 
               component="h1" 
               sx={{ 
                 fontWeight: 700, 
-                mb: 2,
+                mb: 1.5,
                 letterSpacing: '0.5px'
               }}
             >
@@ -183,20 +250,40 @@ const AuthForm: React.FC<AuthFormProps> = ({ onAuthSuccess }) => {
               sx={{ 
                 fontWeight: 400,
                 opacity: 0.9,
-                mb: 4,
+                mb: 3,
                 fontStyle: 'italic'
               }}
             >
               Transcrivez, comprenez, réinventez vos réunions
             </Typography>
-            <Typography variant="body1" sx={{ opacity: 0.7, maxWidth: '80%', mx: 'auto', mb: 4 }}>
+            <Typography 
+              variant="body1" 
+              sx={{ 
+                opacity: 0.7, 
+                maxWidth: '80%', 
+                mx: 'auto' 
+              }}
+            >
               Notre plateforme utilise l'intelligence artificielle avancée pour transformer vos réunions en insights stratégiques.
             </Typography>
+          </Box>
+          
+          {/* Conteneur absolu pour les statistiques */}
+          <Box 
+            sx={{ 
+              position: 'absolute',
+              bottom: '15%',
+              left: 0,
+              width: '100%',
+              zIndex: 1,
+              px: 6
+            }}
+          >
             <Box 
               sx={{ 
                 display: 'flex', 
                 justifyContent: 'center',
-                gap: 2 
+                gap: 2
               }}
             >
               <Box sx={{ textAlign: 'center' }}>
@@ -253,7 +340,7 @@ const AuthForm: React.FC<AuthFormProps> = ({ onAuthSuccess }) => {
                 variant="h4" 
                 sx={{ 
                   fontWeight: 700, 
-                  mb: 1,
+                  mb: 0.75,
                   color: '#2c3e50'
                 }}
               >
@@ -263,7 +350,7 @@ const AuthForm: React.FC<AuthFormProps> = ({ onAuthSuccess }) => {
               <Typography 
                 variant="body1" 
                 sx={{ 
-                  mb: 4, 
+                  mb: 3, 
                   color: 'text.secondary',
                 }}
               >
@@ -276,7 +363,7 @@ const AuthForm: React.FC<AuthFormProps> = ({ onAuthSuccess }) => {
                 value={tabValue}
                 onChange={handleTabChange}
                 sx={{
-                  mb: 4,
+                  mb: 3,
                   borderBottom: 1,
                   borderColor: 'divider',
                   '& .MuiTab-root': {
@@ -305,13 +392,41 @@ const AuthForm: React.FC<AuthFormProps> = ({ onAuthSuccess }) => {
                 </Alert>
               )}
 
+              {serverStatus === 'offline' && (
+                <Alert 
+                  severity="info" 
+                  sx={{ 
+                    mb: 3,
+                    borderRadius: 1,
+                  }}
+                  action={
+                    <Button 
+                      color="inherit" 
+                      size="small"
+                      onClick={() => {
+                        setServerStatus('checking');
+                        localStorage.removeItem('lastConnectionErrorTime');
+                        // Forcer une nouvelle vérification
+                        setTimeout(() => {
+                          checkServerStatus();
+                        }, 100);
+                      }}
+                    >
+                      Réessayer
+                    </Button>
+                  }
+                >
+                  Le serveur backend est actuellement hors ligne. Veuillez réessayer plus tard.
+                </Alert>
+              )}
+
               {tabValue === 0 && (
                 <form onSubmit={handleLogin}>
                   <TextField
                     label="Adresse email"
                     type="email"
                     fullWidth
-                    margin="normal"
+                    margin="dense"
                     variant="outlined"
                     value={loginEmail}
                     onChange={(e) => setLoginEmail(e.target.value)}
@@ -324,7 +439,7 @@ const AuthForm: React.FC<AuthFormProps> = ({ onAuthSuccess }) => {
                       ),
                     }}
                     sx={{
-                      mb: 2,
+                      mb: 1.5,
                       '& .MuiOutlinedInput-root': {
                         borderRadius: 1,
                       },
@@ -334,7 +449,7 @@ const AuthForm: React.FC<AuthFormProps> = ({ onAuthSuccess }) => {
                     label="Mot de passe"
                     type={showPassword ? 'text' : 'password'}
                     fullWidth
-                    margin="normal"
+                    margin="dense"
                     variant="outlined"
                     value={loginPassword}
                     onChange={(e) => setLoginPassword(e.target.value)}
@@ -388,9 +503,10 @@ const AuthForm: React.FC<AuthFormProps> = ({ onAuthSuccess }) => {
                       backgroundColor: '#1976d2',
                       '&:hover': {
                         backgroundColor: '#1565c0',
-                      }
+                      },
+                      mb: 2
                     }}
-                    disabled={isLoading}
+                    disabled={isLoading || serverStatus === 'offline'}
                   >
                     {isLoading ? <CircularProgress size={24} /> : 'Se connecter'}
                   </Button>
@@ -402,7 +518,7 @@ const AuthForm: React.FC<AuthFormProps> = ({ onAuthSuccess }) => {
                   <TextField
                     label="Nom complet"
                     fullWidth
-                    margin="normal"
+                    margin="dense"
                     variant="outlined"
                     value={registerName}
                     onChange={(e) => setRegisterName(e.target.value)}
@@ -415,7 +531,7 @@ const AuthForm: React.FC<AuthFormProps> = ({ onAuthSuccess }) => {
                       ),
                     }}
                     sx={{
-                      mb: 2,
+                      mb: 1.5,
                       '& .MuiOutlinedInput-root': {
                         borderRadius: 1,
                       },
@@ -425,7 +541,7 @@ const AuthForm: React.FC<AuthFormProps> = ({ onAuthSuccess }) => {
                     label="Adresse email"
                     type="email"
                     fullWidth
-                    margin="normal"
+                    margin="dense"
                     variant="outlined"
                     value={registerEmail}
                     onChange={(e) => setRegisterEmail(e.target.value)}
@@ -438,7 +554,7 @@ const AuthForm: React.FC<AuthFormProps> = ({ onAuthSuccess }) => {
                       ),
                     }}
                     sx={{
-                      mb: 2,
+                      mb: 1.5,
                       '& .MuiOutlinedInput-root': {
                         borderRadius: 1,
                       },
@@ -448,7 +564,7 @@ const AuthForm: React.FC<AuthFormProps> = ({ onAuthSuccess }) => {
                     label="Mot de passe"
                     type={showPassword ? 'text' : 'password'}
                     fullWidth
-                    margin="normal"
+                    margin="dense"
                     variant="outlined"
                     value={registerPassword}
                     onChange={(e) => setRegisterPassword(e.target.value)}
@@ -472,7 +588,7 @@ const AuthForm: React.FC<AuthFormProps> = ({ onAuthSuccess }) => {
                       ),
                     }}
                     sx={{
-                      mb: 2,
+                      mb: 1.5,
                       '& .MuiOutlinedInput-root': {
                         borderRadius: 1,
                       },
@@ -482,7 +598,7 @@ const AuthForm: React.FC<AuthFormProps> = ({ onAuthSuccess }) => {
                     label="Confirmer le mot de passe"
                     type={showConfirmPassword ? 'text' : 'password'}
                     fullWidth
-                    margin="normal"
+                    margin="dense"
                     variant="outlined"
                     value={registerPasswordConfirm}
                     onChange={(e) => setRegisterPasswordConfirm(e.target.value)}
@@ -506,7 +622,7 @@ const AuthForm: React.FC<AuthFormProps> = ({ onAuthSuccess }) => {
                       ),
                     }}
                     sx={{
-                      mb: 3,
+                      mb: 2,
                       '& .MuiOutlinedInput-root': {
                         borderRadius: 1,
                       },
@@ -522,16 +638,17 @@ const AuthForm: React.FC<AuthFormProps> = ({ onAuthSuccess }) => {
                       backgroundColor: '#1976d2',
                       '&:hover': {
                         backgroundColor: '#1565c0',
-                      }
+                      },
+                      mb: 2
                     }}
-                    disabled={isLoading}
+                    disabled={isLoading || serverStatus === 'offline'}
                   >
-                    {isLoading ? <CircularProgress size={24} /> : "Créer un compte"}
+                    {isLoading ? <CircularProgress size={24} /> : "S'inscrire"}
                   </Button>
                 </form>
               )}
               
-              <Typography variant="caption" align="center" sx={{ mt: 4, mb: 0, display: 'block', color: 'text.secondary' }}>
+              <Typography variant="caption" align="center" sx={{ mt: 3, mb: 0, display: 'block', color: 'text.secondary' }}>
                 En utilisant ce service, vous acceptez nos{' '}
                 <Link href="#" underline="hover">
                   Conditions d'utilisation

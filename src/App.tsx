@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { ThemeProvider } from '@mui/material/styles';
-import { Box, CssBaseline, Snackbar, Alert, Typography } from '@mui/material';
+import { Box, CssBaseline, Snackbar, Alert, Typography, Grid } from '@mui/material';
 import theme from './styles/theme';
 import Sidebar from './components/Sidebar';
 import MainContent from './components/MainContent';
@@ -48,15 +48,19 @@ function App() {
     const checkAuth = async () => {
       try {
         if (isAuthenticated()) {
-          const user = await getUserProfile();
-          setCurrentUser(user);
-          setIsLoggedIn(true);
+          try {
+            const user = await getUserProfile();
+            setCurrentUser(user);
+            setIsLoggedIn(true);
+          } catch (error) {
+            console.warn('Failed to get user profile, defaulting to not logged in:', error);
+            logoutUser();
+          }
         }
       } catch (error) {
-        console.error('Authentication error:', error);
+        console.error('Authentication check failed:', error);
         // If there's an issue with the token, clear it
         logoutUser();
-        setAuthError('Authentification échouée. Veuillez vous reconnecter.');
       } finally {
         setIsLoading(false);
       }
@@ -86,62 +90,32 @@ function App() {
   };
 
   if (isLoading) {
-    // You could add a loading spinner here
-    return null;
+    return (
+      <Box sx={{ display: 'flex', justifyContent: 'center', alignItems: 'center', height: '100vh' }}>
+        <Typography variant="h6">Chargement...</Typography>
+      </Box>
+    );
   }
 
   return (
     <ThemeProvider theme={theme}>
       <CssBaseline />
       {isLoggedIn ? (
-        <Box sx={{ display: 'flex', height: '100vh', flexDirection: 'column' }}>
-          <Box sx={{ display: 'flex', flex: 1, overflow: 'hidden', paddingBottom: '40px' }}>
+        <Grid container sx={{ height: '100vh', overflow: 'hidden' }}>
+          {/* Colonne de la sidebar - largeur fixe */}
+          <Grid item sx={{ width: '280px', height: '100%', position: 'relative' }}>
             <Sidebar onViewChange={handleViewChange} user={currentUser} />
+          </Grid>
+          
+          {/* Colonne du contenu principal - prend le reste de l'espace */}
+          <Grid item sx={{ width: 'calc(100% - 280px)', height: '100%', overflow: 'auto' }}>
             <MainContent currentView={currentView} />
-          </Box>
-          <Box 
-            component="footer" 
-            sx={{ 
-              py: 1, 
-              textAlign: 'center', 
-              borderTop: '1px solid', 
-              borderColor: 'divider', 
-              bgcolor: 'background.paper',
-              position: 'fixed',
-              bottom: 0,
-              left: 0,
-              right: 0,
-              zIndex: 1000
-            }}
-          >
-            <Typography variant="caption" color="text.secondary">
-              powered by Lexia France
-            </Typography>
-          </Box>
-        </Box>
+          </Grid>
+        </Grid>
       ) : (
         <Box sx={{ height: '100vh', display: 'flex', flexDirection: 'column' }}>
-          <Box sx={{ flex: 1, paddingBottom: '40px' }}>
+          <Box sx={{ flex: 1 }}>
             <AuthForm onAuthSuccess={handleAuthSuccess} />
-          </Box>
-          <Box 
-            component="footer" 
-            sx={{ 
-              py: 1, 
-              textAlign: 'center', 
-              borderTop: '1px solid', 
-              borderColor: 'divider', 
-              bgcolor: 'background.paper',
-              position: 'fixed',
-              bottom: 0,
-              left: 0,
-              right: 0,
-              zIndex: 1000
-            }}
-          >
-            <Typography variant="caption" color="text.secondary">
-              powered by Lexia France
-            </Typography>
           </Box>
         </Box>
       )}

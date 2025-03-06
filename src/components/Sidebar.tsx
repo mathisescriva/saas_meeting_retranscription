@@ -1,6 +1,5 @@
 import React, { useState } from 'react';
 import {
-  Drawer,
   Box,
   List,
   ListItem,
@@ -77,17 +76,13 @@ const Sidebar: React.FC<SidebarProps> = ({ onViewChange, user }) => {
   };
 
   return (
-    <Drawer
-      variant="permanent"
-      sx={{
-        width: 280,
-        flexShrink: 0,
-        '& .MuiDrawer-paper': {
-          width: 280,
-          boxSizing: 'border-box',
-          borderRight: '1px solid rgba(0, 0, 0, 0.08)',
-          bgcolor: '#f8fafc',
-        },
+    <Box 
+      sx={{ 
+        width: '100%', 
+        height: '100%', 
+        bgcolor: '#f8fafc', 
+        borderRight: '1px solid rgba(0, 0, 0, 0.08)',
+        overflow: 'auto'
       }}
     >
       <Box sx={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
@@ -107,119 +102,84 @@ const Sidebar: React.FC<SidebarProps> = ({ onViewChange, user }) => {
 
         <Divider />
 
-        {user && (
-          <Box sx={{ p: 2, display: 'flex', alignItems: 'center', my: 1 }}>
+        <Box sx={{ p: 2 }}>
+          <Box
+            sx={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: 1,
+              p: 1,
+              borderRadius: 1,
+              cursor: 'pointer',
+              '&:hover': {
+                bgcolor: alpha('#3B82F6', 0.08),
+              },
+            }}
+            onClick={handleUserMenuClick}
+          >
             <Avatar
               sx={{
-                bgcolor: 'primary.main',
-                width: 40,
-                height: 40,
-                mr: 2,
-                cursor: 'pointer',
+                bgcolor: alpha('#3B82F6', 0.1),
+                color: '#3B82F6',
+                fontWeight: 600,
               }}
-              onClick={handleUserMenuClick}
             >
-              {user.name ? getInitials(user.name) : (user.email ? user.email.charAt(0).toUpperCase() : 'U')}
+              {user ? getInitials(user.name || 'User') : 'U'}
             </Avatar>
-            <Box sx={{ overflow: 'hidden' }}>
+            <Box sx={{ ml: 1, overflow: 'hidden' }}>
               <Typography
-                variant="subtitle1"
-                sx={{ fontWeight: 600, lineHeight: 1.2 }}
-                noWrap
+                variant="subtitle2"
+                sx={{
+                  fontWeight: 600,
+                  whiteSpace: 'nowrap',
+                  overflow: 'hidden',
+                  textOverflow: 'ellipsis',
+                }}
               >
-                {user.name || user.email || 'User'}
+                {user?.name || 'User'}
               </Typography>
               <Typography
-                variant="body2"
-                color="text.secondary"
-                sx={{ fontSize: '0.75rem' }}
-                noWrap
+                variant="caption"
+                sx={{
+                  color: 'text.secondary',
+                  display: 'block',
+                  whiteSpace: 'nowrap',
+                  overflow: 'hidden',
+                  textOverflow: 'ellipsis',
+                }}
               >
-                {user.email || ''}
+                {user?.email || 'user@example.com'}
               </Typography>
             </Box>
-            <IconButton
-              size="small"
-              sx={{ ml: 'auto' }}
-              onClick={handleUserMenuClick}
-            >
-              <AccountCircle />
-            </IconButton>
-            <Menu
-              anchorEl={userMenuAnchor}
-              open={Boolean(userMenuAnchor)}
-              onClose={handleUserMenuClose}
-              PaperProps={{
-                elevation: 0,
-                sx: {
-                  overflow: 'visible',
-                  filter: 'drop-shadow(0px 2px 8px rgba(0,0,0,0.1))',
-                  mt: 1.5,
-                  '& .MuiMenuItem-root': {
-                    px: 2,
-                    py: 1,
-                  },
-                },
-              }}
-              transformOrigin={{ horizontal: 'right', vertical: 'top' }}
-              anchorOrigin={{ horizontal: 'right', vertical: 'bottom' }}
-            >
-              <MenuItem onClick={handleUserMenuClose}>
-                <ListItemIcon>
-                  <AccountCircle fontSize="small" />
-                </ListItemIcon>
-                Profile
-              </MenuItem>
-              <MenuItem onClick={handleUserMenuClose}>
-                <ListItemIcon>
-                  <Settings fontSize="small" />
-                </ListItemIcon>
-                Settings
-              </MenuItem>
-              <Divider />
-              <MenuItem onClick={handleLogout}>
-                <ListItemIcon>
-                  <Logout fontSize="small" />
-                </ListItemIcon>
-                Logout
-              </MenuItem>
-            </Menu>
           </Box>
-        )}
+        </Box>
 
         <Divider />
 
-        <List sx={{ flexGrow: 1, mt: 2 }}>
+        <List component="nav" sx={{ p: 2, flexGrow: 1 }}>
           <ListItem disablePadding>
             <ListItemButton
               selected={selectedIndex === 0}
               onClick={(event) => handleListItemClick(event, 0)}
               sx={{
-                mb: 1,
-                mx: 1,
                 borderRadius: 1,
-                ...(selectedIndex === 0 && {
-                  bgcolor: (theme) => alpha(theme.palette.primary.main, 0.08),
+                mb: 1,
+                '&.Mui-selected': {
+                  bgcolor: alpha('#3B82F6', 0.08),
+                  color: '#3B82F6',
                   '&:hover': {
-                    bgcolor: (theme) => alpha(theme.palette.primary.main, 0.15),
+                    bgcolor: alpha('#3B82F6', 0.12),
                   },
-                }),
+                  '& .MuiListItemIcon-root': {
+                    color: '#3B82F6',
+                  },
+                },
               }}
             >
-              <ListItemIcon
-                sx={{
-                  color: selectedIndex === 0 ? 'primary.main' : 'text.secondary',
-                }}
-              >
+              <ListItemIcon sx={{ minWidth: 40 }}>
                 <DashboardIcon />
               </ListItemIcon>
-              <ListItemText
-                primary="Dashboard"
-                primaryTypographyProps={{
-                  fontWeight: selectedIndex === 0 ? 600 : 400,
-                  color: selectedIndex === 0 ? 'primary.main' : 'text.primary',
-                }}
-              />
+              <ListItemText primary="Dashboard" />
             </ListItemButton>
           </ListItem>
 
@@ -228,31 +188,24 @@ const Sidebar: React.FC<SidebarProps> = ({ onViewChange, user }) => {
               selected={selectedIndex === 1}
               onClick={(event) => handleListItemClick(event, 1)}
               sx={{
-                mb: 1,
-                mx: 1,
                 borderRadius: 1,
-                ...(selectedIndex === 1 && {
-                  bgcolor: (theme) => alpha(theme.palette.primary.main, 0.08),
+                mb: 1,
+                '&.Mui-selected': {
+                  bgcolor: alpha('#3B82F6', 0.08),
+                  color: '#3B82F6',
                   '&:hover': {
-                    bgcolor: (theme) => alpha(theme.palette.primary.main, 0.15),
+                    bgcolor: alpha('#3B82F6', 0.12),
                   },
-                }),
+                  '& .MuiListItemIcon-root': {
+                    color: '#3B82F6',
+                  },
+                },
               }}
             >
-              <ListItemIcon
-                sx={{
-                  color: selectedIndex === 1 ? 'primary.main' : 'text.secondary',
-                }}
-              >
+              <ListItemIcon sx={{ minWidth: 40 }}>
                 <MicIcon />
               </ListItemIcon>
-              <ListItemText
-                primary="New Transcription"
-                primaryTypographyProps={{
-                  fontWeight: selectedIndex === 1 ? 600 : 400,
-                  color: selectedIndex === 1 ? 'primary.main' : 'text.primary',
-                }}
-              />
+              <ListItemText primary="New Transcription" />
             </ListItemButton>
           </ListItem>
 
@@ -261,31 +214,23 @@ const Sidebar: React.FC<SidebarProps> = ({ onViewChange, user }) => {
               selected={selectedIndex === 2}
               onClick={(event) => handleListItemClick(event, 2)}
               sx={{
-                mb: 1,
-                mx: 1,
                 borderRadius: 1,
-                ...(selectedIndex === 2 && {
-                  bgcolor: (theme) => alpha(theme.palette.primary.main, 0.08),
+                '&.Mui-selected': {
+                  bgcolor: alpha('#3B82F6', 0.08),
+                  color: '#3B82F6',
                   '&:hover': {
-                    bgcolor: (theme) => alpha(theme.palette.primary.main, 0.15),
+                    bgcolor: alpha('#3B82F6', 0.12),
                   },
-                }),
+                  '& .MuiListItemIcon-root': {
+                    color: '#3B82F6',
+                  },
+                },
               }}
             >
-              <ListItemIcon
-                sx={{
-                  color: selectedIndex === 2 ? 'primary.main' : 'text.secondary',
-                }}
-              >
+              <ListItemIcon sx={{ minWidth: 40 }}>
                 <ListIcon />
               </ListItemIcon>
-              <ListItemText
-                primary="My Meetings"
-                primaryTypographyProps={{
-                  fontWeight: selectedIndex === 2 ? 600 : 400,
-                  color: selectedIndex === 2 ? 'primary.main' : 'text.primary',
-                }}
-              />
+              <ListItemText primary="My Meetings" />
             </ListItemButton>
           </ListItem>
         </List>
@@ -298,8 +243,41 @@ const Sidebar: React.FC<SidebarProps> = ({ onViewChange, user }) => {
             Gilbert v0.1.0
           </Typography>
         </Box>
+
+        <Menu
+          anchorEl={userMenuAnchor}
+          open={Boolean(userMenuAnchor)}
+          onClose={handleUserMenuClose}
+          PaperProps={{
+            sx: {
+              mt: 1,
+              width: 200,
+              boxShadow: '0 4px 20px rgba(0,0,0,0.1)',
+            },
+          }}
+        >
+          <MenuItem onClick={handleUserMenuClose}>
+            <ListItemIcon>
+              <AccountCircle fontSize="small" />
+            </ListItemIcon>
+            <ListItemText primary="Mon Profil" />
+          </MenuItem>
+          <MenuItem onClick={handleUserMenuClose}>
+            <ListItemIcon>
+              <Settings fontSize="small" />
+            </ListItemIcon>
+            <ListItemText primary="Paramètres" />
+          </MenuItem>
+          <Divider />
+          <MenuItem onClick={handleLogout}>
+            <ListItemIcon>
+              <Logout fontSize="small" />
+            </ListItemIcon>
+            <ListItemText primary="Déconnexion" />
+          </MenuItem>
+        </Menu>
       </Box>
-    </Drawer>
+    </Box>
   );
 };
 

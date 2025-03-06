@@ -46,19 +46,31 @@ export async function registerUser(params: RegisterParams): Promise<AuthResponse
  * Login an existing user
  */
 export async function loginUser(params: LoginParams): Promise<AuthResponse> {
-  const response = await apiClient.post<AuthResponse>(
-    '/auth/login/json',  
-    params,
-    false,
-    false
-  );
-  
-  // Store the token
-  if (response.access_token) {
-    localStorage.setItem('auth_token', response.access_token);
+  try {
+    const response = await apiClient.post<AuthResponse>(
+      '/auth/login/json',  
+      params,
+      false,
+      false
+    );
+    
+    // Store the token
+    if (response.access_token) {
+      localStorage.setItem('auth_token', response.access_token);
+    }
+    
+    return response;
+  } catch (error) {
+    // Gérer spécifiquement les erreurs de connexion réseau
+    if (error instanceof Error && error.name === 'NetworkConnectionError') {
+      console.warn('Login failed due to backend connection error');
+      // Retirer toute erreur de connexion précédente après 30 secondes
+      setTimeout(() => {
+        localStorage.removeItem('lastConnectionErrorTime');
+      }, 30000);
+    }
+    throw error;
   }
-  
-  return response;
 }
 
 /**
