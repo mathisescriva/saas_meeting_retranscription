@@ -626,6 +626,12 @@ const Dashboard = () => {
       const meeting = await uploadMeeting(file, recordingName || file.name, options);
       console.log('Meeting uploaded successfully:', meeting);
       
+      // Afficher un message de succès après l'upload
+      showSuccessPopup(
+        "Upload successful!",
+        `Your meeting "${recordingName || file.name}" has been uploaded. You can find it in "My Recent Meetings".`
+      );
+      
       // Utiliser le polling pour suivre l'état de la transcription
       const stopPolling = pollTranscriptionStatus(
         meeting.id,
