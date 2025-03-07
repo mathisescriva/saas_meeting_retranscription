@@ -60,6 +60,7 @@ import {
   getAllMeetings, 
   retryTranscription, 
   pollTranscriptionStatus,
+  watchTranscriptionStatus,
   getTranscript,
   deleteMeeting,
   getMeetingDetails,
@@ -206,169 +207,72 @@ const Dashboard: React.FC<DashboardProps> = ({ user }) => {
   
   const fetchMeetings = async () => {
     setIsLoading(true);
+    setErrorState(null);
+    
     try {
-      // 1. D'abord, récupérer les IDs mis en cache
-      const cachedMeetings = getMeetingsFromCache();
-      const cachedMeetingIds = Object.keys(cachedMeetings);
+      console.log('Fetching meetings...');
       
-      // 2. Synchroniser avec le serveur pour déterminer quels IDs sont toujours valides
-      if (cachedMeetingIds.length > 0) {
-        console.log(`Synchronizing ${cachedMeetingIds.length} cached meeting IDs with server`);
-        try {
-          await syncMeetingsCache(cachedMeetingIds);
-          // La fonction syncMeetingsCache nettoie automatiquement le cache
-        } catch (syncError) {
-          console.error("Error synchronizing meetings cache:", syncError);
-          // Continuer même en cas d'erreur de synchronisation
-        }
+      // Récupérer les réunions depuis l'API
+      const fetchedMeetings = await getAllMeetings();
+      console.log('Meetings fetched:', fetchedMeetings);
+      
+      if (!fetchedMeetings || !Array.isArray(fetchedMeetings)) {
+        throw new Error('Invalid response format when fetching meetings');
       }
       
-      // 3. Maintenant récupérer la liste à jour des réunions
-      const meetings = await getAllMeetings();
-      console.log('Fetched meetings:', meetings);
+      // Transformer les données pour l'affichage
+      const processedMeetings = fetchedMeetings.map(meeting => ({
+        id: meeting.id,
+        title: meeting.name || meeting.title || `Meeting ${meeting.id.substring(0, 8)}`,
+        date: meeting.created_at ? new Date(meeting.created_at).toLocaleDateString() : 'Unknown date',
+        transcript_url: meeting.transcript_url || '',
+        // Prendre en charge les deux formats de statut (transcript_status et transcription_status)
+        status: meeting.transcript_status || meeting.transcription_status || 'unknown',
+        error_message: meeting.error_message || '',
+        // Ces champs peuvent être undefined, c'est normal
+        duration: meeting.duration_seconds || meeting.audio_duration,
+        participants: meeting.speakers_count
+      }));
       
-      // Convertir au format attendu par le composant
-      const recentMeetings: RecentMeeting[] = meetings.map(meeting => {
-        // Débogage des valeurs de durée
-        console.log(`Converting meeting ${meeting.id}:`, {
-          rawDuration: meeting.duration,
-          rawDurationType: typeof meeting.duration,
-          rawAudioDuration: meeting.audio_duration,
-          rawAudioDurationType: typeof meeting.audio_duration
-        });
-        
-        // Convertir les durées en nombres si elles sont des chaînes
-        let durationInSeconds: number | undefined = undefined;
-        
-        if (typeof meeting.audio_duration === 'number') {
-          durationInSeconds = meeting.audio_duration;
-        } else if (typeof meeting.duration === 'number') {
-          durationInSeconds = meeting.duration;
-        } else if (typeof meeting.duration === 'string' && meeting.duration.includes('min')) {
-          // Essayer de convertir un format comme '45 min' en secondes
-          const minutes = parseInt(meeting.duration);
-          if (!isNaN(minutes)) {
-            durationInSeconds = minutes * 60;
-          }
-        }
-        
-        console.log(`Converted duration for ${meeting.id}:`, durationInSeconds);
-        
-        return {
-          title: meeting.title,
-          date: new Date(meeting.created_at).toLocaleDateString(),
-          duration: durationInSeconds,
-          participants: meeting.participants || meeting.speakers_count || 0,
-          progress: meeting.transcript_status === 'completed' || meeting.transcription_status === 'completed' ? 100 : 
-                   meeting.transcript_status === 'error' || meeting.transcription_status === 'failed' ? 0 :
-                   meeting.transcript_status === 'processing' || meeting.transcription_status === 'processing' ? 50 : 25,
-          id: meeting.id,
-          status: meeting.transcript_status || meeting.transcription_status,
-          error_message: meeting.error_message
-        };
-      });
+      console.log('Processed meetings:', processedMeetings);
       
-      setMeetingsList(recentMeetings);
+      // Mettre à jour l'état avec les réunions traitées
+      setMeetingsList(processedMeetings);
       
-      // Pour les réunions en cours de traitement, démarrer le polling
-      const inProgressMeetings = meetings.filter(meeting => {
-        const status = meeting.transcript_status || meeting.transcription_status;
-        return status === 'processing' || status === 'pending';
-      });
-      
-      // Arrêter les pollings précédents s'il y en a
-      if (cleanupPolling) {
-        console.log('Stopping previous polling sessions');
-        cleanupPolling();
-      }
-      
-      if (inProgressMeetings.length > 0) {
-        console.log(`Found ${inProgressMeetings.length} meetings in progress, starting polling`);
-        
-        // Limiter le nombre de polling simultanés à 3 maximum
-        const meetingsToTrack = inProgressMeetings.slice(0, 3);
-        
-        // Créer un tableau de fonctions de nettoyage
-        const cleanupFunctions: Array<() => void> = [];
-        
-        meetingsToTrack.forEach(meeting => {
-          console.log(`Starting polling for in-progress meeting: ${meeting.id}`);
-          // Démarrer le polling pour cette réunion
-          const stopPolling = pollTranscriptionStatus(
+      // Vérifier s'il y a des réunions en cours de transcription pour démarrer le polling
+      processedMeetings.forEach(meeting => {
+        if (meeting.status === 'pending' || meeting.status === 'processing') {
+          console.log(`Starting polling for meeting in progress: ${meeting.id} (${meeting.status})`);
+          pollTranscriptionStatus(
             meeting.id,
-            (updatedStatus, updatedMeeting) => {
-              console.log(`Status update for meeting ${meeting.id}: ${updatedStatus}`);
+            (newStatus, updatedMeeting) => {
+              console.log(`Status update for ${meeting.id}: ${newStatus}`);
               
-              // Si la réunion a été supprimée (statut 'deleted')
-              if (updatedStatus === 'deleted') {
-                console.log(`Meeting ${meeting.id} has been deleted, stopping polling`);
-                // Trouver et exécuter la fonction de nettoyage spécifique
-                const index = meetingsToTrack.findIndex(m => m.id === meeting.id);
-                if (index >= 0 && cleanupFunctions[index]) {
-                  cleanupFunctions[index]();
-                }
-                return;
-              }
-              
-              // Mettre à jour l'état local immédiatement sans refaire un appel API
-              if (updatedStatus === 'completed' || updatedStatus === 'error' || updatedStatus === 'failed') {
-                console.log('Meeting status changed to final state, updating local state');
-                
-                // Mettre à jour l'état localement
-                setMeetingsList(prevMeetings => 
-                  prevMeetings.map(m => 
-                    m.id === meeting.id 
-                      ? {
-                          ...m,
-                          progress: updatedStatus === 'completed' ? 100 : 0
-                        } 
-                      : m
-                  )
-                );
-                
-                // Si la transcription est terminée avec succès, mettre à jour les détails
-                if (updatedStatus === 'completed') {
-                  console.log('Transcription completed, updating meeting details');
-                  // Mettre à jour les détails de la réunion (durée, participants)
-                  updateMeetingDetails(meeting.id)
-                    .then(details => {
-                      console.log('Meeting details updated successfully:', details);
-                    })
-                    .catch(error => {
-                      console.error('Failed to update meeting details:', error);
-                    });
-                }
-                
-                // Rafraîchir complètement seulement après une courte pause
-                setTimeout(() => {
-                  console.log('Refreshing meetings list after status change');
-                  fetchMeetings();
-                }, 2000);
+              // Si le statut a changé, rafraîchir les données
+              if (newStatus === 'completed' || newStatus === 'error' || newStatus === 'failed') {
+                console.log(`Meeting ${meeting.id} reached final status: ${newStatus}, refreshing data`);
+                fetchMeetings();
               }
             },
-            5000 // Vérifier toutes les 5 secondes
+            5000
           );
-          
-          // Stocker la fonction de nettoyage
-          cleanupFunctions.push(stopPolling);
-        });
-        
-        // Stocker la fonction de nettoyage globale
-        setCleanupPolling(() => {
-          return () => {
-            cleanupFunctions.forEach(func => func());
-          };
-        });
-      }
+        }
+      });
+      
     } catch (error) {
       console.error('Error fetching meetings:', error);
+      let errorMessage = 'Failed to load meetings';
       
-      // Vérifier si c'est une erreur de connexion au serveur
-      if (error instanceof Error && error.message.includes('Network connection')) {
-        setErrorState({ message: `Le serveur n'est pas accessible. Veuillez vérifier que le backend fonctionne à l'adresse http://localhost:8000` });
-      } else {
-        setErrorState({ message: `Erreur lors de la récupération des réunions: ${error instanceof Error ? error.message : 'Erreur inconnue'}` });
+      if (error instanceof Error) {
+        // Message d'erreur plus précis selon le type d'erreur
+        if (error.message.includes('Network connection')) {
+          errorMessage = "Cannot connect to the server. Please make sure the backend server is running at http://localhost:8000";
+        } else {
+          errorMessage = `Error: ${error.message}`;
+        }
       }
+      
+      setErrorState({ message: errorMessage });
     } finally {
       setIsLoading(false);
     }
@@ -501,7 +405,7 @@ const Dashboard: React.FC<DashboardProps> = ({ user }) => {
       
       // Uploader le fichier et démarrer la transcription
       try {
-        await transcribeAudio(audioFile);
+        await transcribeAudio(audioFile, titleInput);
         
         clearInterval(interval);
         setUploadProgress(100);
@@ -529,87 +433,71 @@ const Dashboard: React.FC<DashboardProps> = ({ user }) => {
 
   // Handler for file upload
   const handleFileUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
-    setErrorState(null);
-    
-    // Get the file object
-    const file = event.target.files?.[0];
-    if (!file) {
-      setErrorState({ message: 'Aucun fichier sélectionné.' });
+    if (!event.target.files || event.target.files.length === 0) {
       return;
     }
     
-    // Vérifier le type de fichier
-    const validAudioTypes = ['audio/mp3', 'audio/mpeg', 'audio/wav', 'audio/x-wav', 'audio/ogg', 'audio/webm'];
-    if (!validAudioTypes.includes(file.type)) {
-      setErrorState({ message: `Type de fichier non pris en charge: ${file.type || 'inconnu'}. Utilisez un fichier MP3, WAV ou OGG.` });
+    // Récupérer le fichier
+    const audioFile = event.target.files[0];
+    
+    // Vérifier que le fichier est un audio
+    if (!audioFile.type.startsWith('audio/') && !audioFile.name.endsWith('.mp3') && !audioFile.name.endsWith('.wav')) {
+      showSuccessPopup(
+        "Fichier non supporté",
+        "Veuillez sélectionner un fichier audio (MP3 ou WAV).",
+        'error'
+      );
       return;
     }
     
-    // Vérifier la taille du fichier (limite à 100 Mo)
-    const maxSizeInBytes = 100 * 1024 * 1024;
-    if (file.size > maxSizeInBytes) {
-      setErrorState({ message: `Le fichier est trop volumineux (${Math.round(file.size / (1024 * 1024))} Mo). La taille maximale est de 100 Mo.` });
-      return;
-    }
+    const interval = setInterval(() => {
+      setUploadProgress((prev) => {
+        // Simuler une progression d'upload plus réaliste
+        if (prev < 90) {
+          const increment = Math.random() * 5 + 1;
+          return Math.min(prev + increment, 90);
+        }
+        return prev;
+      });
+    }, 300);
     
-    setIsUploading(true);
-    setUploadProgress(0);
+    // Utiliser le titre saisi ou le nom du fichier par défaut
+    const title = titleInput || audioFile.name.replace(/\.[^/.]+$/, "");
     
+    // Uploader le fichier et démarrer la transcription
     try {
-      // Générer un titre par défaut basé sur le nom du fichier
-      const fileNameWithoutExt = file.name.replace(/\.[^/.]+$/, "");
-      const title = fileNameWithoutExt || 'Nouvel enregistrement';
-      setTitleInput(title);
+      await transcribeAudio(audioFile, title);
       
-      console.log('Uploading file:', file.name, 'Type:', file.type, 'Size:', Math.round(file.size / 1024), 'KB');
+      clearInterval(interval);
+      setUploadProgress(100);
       
-      // Simuler une progression d'upload
-      const interval = setInterval(() => {
-        setUploadProgress(prev => {
-          if (prev >= 90) {
-            clearInterval(interval);
-            return 90;
-          }
-          return prev + 10;
-        });
-      }, 300);
+      // Réinitialiser les états
+      setTitleInput('');
+      setErrorState(null);
+      fileInputRef.current!.value = '';
       
-      // Détecter le format audio en fonction de l'extension si le type MIME est ambigu
-      let format: string | undefined = undefined;
-      const fileExt = file.name.split('.').pop()?.toLowerCase();
+      // Cacher la modal après un court délai
+      setTimeout(() => {
+        setShowDialog(false);
+        setUploadProgress(0);
+      }, 1000);
       
-      // Si le type MIME est générique ou vide, utiliser l'extension pour définir le format
-      if (!file.type || file.type === 'audio/octet-stream' || file.type === 'application/octet-stream') {
-        if (fileExt === 'mp3') format = 'mp3';
-        else if (fileExt === 'wav') format = 'wav';
-        else if (fileExt === 'ogg') format = 'ogg';
-        else if (fileExt === 'm4a') format = 'm4a';
-        console.log('Using explicit format based on extension:', format);
-      }
-      
-      // Uploader le fichier et démarrer la transcription
-      try {
-        await transcribeAudio(file, { format });
-        
-        clearInterval(interval);
-        setUploadProgress(100);
-        
-        // Réinitialiser l'état
-        setTimeout(() => {
-          setIsUploading(false);
-          setUploadProgress(0);
-          if (event.target) event.target.value = '';
-        }, 1000);
-      } catch (transcriptionError) {
-        console.error('Erreur de transcription détaillée:', transcriptionError);
-        clearInterval(interval);
-        setErrorState({ message: `Erreur lors de la transcription: ${transcriptionError instanceof Error ? transcriptionError.message : 'Erreur inconnue'}` });
-        setIsUploading(false);
-      }
     } catch (error) {
-      console.error('Erreur lors de la préparation du fichier:', error);
-      setErrorState({ message: `Erreur lors de la préparation du fichier: ${error instanceof Error ? error.message : 'Erreur inconnue'}` });
-      setIsUploading(false);
+      clearInterval(interval);
+      setUploadProgress(0);
+      console.error('Error uploading file:', error);
+      
+      // Montrer le message d'erreur
+      let errorMessage = "Une erreur s'est produite lors de l'upload";
+      if (error instanceof Error) {
+        errorMessage = error.message;
+      }
+      
+      showSuccessPopup(
+        "Erreur d'upload",
+        errorMessage,
+        'error'
+      );
     }
   };
 
@@ -664,54 +552,95 @@ const Dashboard: React.FC<DashboardProps> = ({ user }) => {
   };
 
   // Fonction pour l'upload et la transcription d'un fichier audio
-  const transcribeAudio = async (file: File, options?: any) => {
+  const transcribeAudio = async (file: File, title: string) => {
+    setIsUploading(true);
+    setUploadProgress(0);
+    
     try {
-      console.log('Uploading meeting with file:', file.name);
+      console.log(`Uploading file "${title}" (${file.type}, ${(file.size / 1024 / 1024).toFixed(2)} MB)...`);
       
-      // Upload the meeting and get the initial meeting object
-      const meeting = await uploadMeeting(file, titleInput || file.name, options);
-      console.log('Meeting uploaded successfully:', meeting);
+      // Uploader la réunion
+      const meeting = await uploadMeeting(file, title, {
+        onProgress: (progress) => {
+          setUploadProgress(progress);
+        }
+      });
       
-      // Afficher un message de succès après l'upload
+      // Vérifier que l'upload a réussi et que nous avons un ID valide
+      if (!meeting || !meeting.id) {
+        throw new Error("L'upload a réussi mais aucun ID de réunion n'a été retourné par le serveur");
+      }
+      
+      console.log(`Meeting uploaded successfully with ID: ${meeting.id}`);
+      
+      // Afficher un message de succès
       showSuccessPopup(
         "Upload successful!",
-        `Your meeting "${titleInput || file.name}" has been uploaded. You can find it in "My Recent Meetings".`
+        `Your meeting "${title}" has been uploaded with ID ${meeting.id}. You can find it in "My Recent Meetings".`
       );
       
-      // Utiliser le polling pour suivre l'état de la transcription
-      const stopPolling = pollTranscriptionStatus(
+      // Commencer à surveiller le statut de la transcription
+      const stopPolling = watchTranscriptionStatus(
         meeting.id,
         (status, updatedMeeting) => {
           console.log(`Transcription status update: ${status}`);
           
-          // Rafraîchir la liste des réunions pour montrer le statut mis à jour
+          // Mettre à jour les réunions avec la dernière version
           if (status === 'completed') {
-            console.log('Transcription completed successfully!');
-            fetchMeetings();
+            setMeetingsList(prev => {
+              // Créer une copie pour éviter de modifier l'état directement
+              const updated = [...prev];
+              // Trouver l'index de la réunion mise à jour
+              const index = updated.findIndex(m => m.id === updatedMeeting.id);
+              // Remplacer ou ajouter
+              if (index >= 0) {
+                updated[index] = updatedMeeting;
+              } else {
+                updated.unshift(updatedMeeting);
+              }
+              return updated;
+            });
+            
+            // Afficher une notification de succès
+            showSuccessPopup(
+              "Transcription terminée !",
+              `La transcription de "${updatedMeeting.title || updatedMeeting.name}" est prête.`,
+              'success'
+            );
           } else if (status === 'error' || status === 'failed') {
-            console.log('Transcription failed:', updatedMeeting);
-            setErrorState({ message: `La transcription a échoué: ${updatedMeeting.error || 'Erreur inconnue'}` });
-            fetchMeetings();
+            // Notification d'erreur
+            showSuccessPopup(
+              "Erreur de transcription",
+              updatedMeeting.error_message || "Une erreur est survenue pendant la transcription.",
+              'error'
+            );
           }
-        },
-        3000 // Vérifier toutes les 3 secondes
+        }
       );
       
-      // Rafraîchir la liste des réunions pour montrer la nouvelle réunion
-      await fetchMeetings();
+      // Mise à jour immédiate de la liste sans attendre la prochaine requête
+      setMeetingsList(prev => [meeting, ...prev]);
       
-      return meeting;
     } catch (error) {
-      console.error('Error in transcribeAudio:', error);
+      console.error('Error during upload/transcription:', error);
+      let errorMessage = "Une erreur est survenue pendant l'upload ou la transcription.";
+      
       if (error instanceof Error) {
-        setErrorState({ message: `Erreur de transcription: ${error.message}` });
-      } else {
-        setErrorState({ message: 'Une erreur inconnue est survenue pendant la transcription' });
+        errorMessage = error.message;
       }
-      throw error;
+      
+      showSuccessPopup(
+        "Erreur",
+        errorMessage,
+        'error'
+      );
+    } finally {
+      setIsUploading(false);
+      setUploadProgress(0);
     }
   };
 
+  // Fonction pour afficher la transcription
   const handleViewTranscript = async (meetingId: string) => {
     try {
       console.log(`Fetching transcript for meeting ID: ${meetingId}`);

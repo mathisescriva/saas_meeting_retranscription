@@ -20,9 +20,10 @@
    - [Mettre à jour le profil](#mettre-à-jour-le-profil)
    - [Télécharger une photo de profil](#télécharger-une-photo-de-profil)
    - [Changer le mot de passe](#changer-le-mot-de-passe)
-5. [Formats et structures de données](#formats-et-structures-de-données)
-6. [Codes d'erreur](#codes-derreur)
-7. [Bonnes pratiques](#bonnes-pratiques)
+5. [API Simplifiée](#api-simplifiée)
+6. [Formats et structures de données](#formats-et-structures-de-données)
+7. [Codes d'erreur](#codes-derreur)
+8. [Bonnes pratiques](#bonnes-pratiques)
 
 ## Introduction
 
@@ -31,6 +32,23 @@ L'API Meeting Transcriber permet de gérer des réunions avec transcription auto
 **URL de base** : `http://localhost:8000`  
 **Format de réponse** : JSON  
 **Authentification** : JWT (JSON Web Token)
+
+## API Simplifiée
+
+L'API propose désormais des endpoints simplifiés pour faciliter l'intégration. Ces endpoints sont préfixés par `/simple/` et offrent une structure de données plus cohérente.
+
+### Endpoints simplifiés disponibles
+
+| Ancien endpoint | Nouvel endpoint simplifié |
+|----------------|---------------------------|
+| `/meetings/` | `/simple/meetings/` |
+| `/meetings/{meeting_id}` | `/simple/meetings/{meeting_id}` |
+| `/meetings/upload` | `/simple/meetings/upload` |
+| `/meetings/{meeting_id}/start-transcription` | `/simple/meetings/{meeting_id}/transcribe` |
+| `/meetings/{meeting_id}/retry-transcription` | `/simple/meetings/{meeting_id}/retry-transcription` |
+| `/meetings/validate` | `/simple/meetings/validate-ids` |
+
+**Note importante**: Les endpoints simplifiés nécessitent la même authentification que les endpoints standard. Assurez-vous d'inclure le token JWT dans l'en-tête `Authorization` avec le format `Bearer {token}`.
 
 ## Authentification
 

@@ -93,3 +93,37 @@ export function logoutUser(): void {
 export function isAuthenticated(): boolean {
   return !!localStorage.getItem('auth_token');
 }
+
+/**
+ * Verify token validity by making a test request to a protected endpoint
+ * This helps diagnose authentication issues with the API
+ */
+export async function verifyTokenValidity(): Promise<boolean> {
+  try {
+    if (!isAuthenticated()) {
+      console.warn('Cannot verify token: No token available');
+      return false;
+    }
+    
+    // Attempt to get user profile which requires authentication
+    await apiClient.get('/auth/me');
+    
+    // If we get here, the token is valid
+    console.log('Authentication token verified successfully');
+    return true;
+  } catch (error) {
+    if (error instanceof Error) {
+      if (error.message.includes('401')) {
+        console.error('Authentication token is invalid or expired', error);
+        // Logout user as token is invalid
+        logoutUser();
+        return false;
+      }
+      
+      // Log other errors but don't invalidate token for network issues
+      console.warn('Token verification failed but might still be valid', error);
+      return true; // Assume token might still be valid
+    }
+    return false;
+  }
+}

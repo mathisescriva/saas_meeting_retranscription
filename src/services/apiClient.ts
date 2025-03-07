@@ -7,6 +7,7 @@ export const API_BASE_URL = 'http://localhost:8000';
 function getAuthToken() {
   const token = localStorage.getItem('auth_token');
   console.log('Using token:', token ? `${token.substring(0, 10)}...` : 'No token found');
+  console.log('Token details:', token ? `Type: ${typeof token}, Length: ${token.length}` : 'No token found');
   return token;
 }
 
@@ -67,7 +68,16 @@ async function request<T>(
     if (withAuth) {
       const token = getAuthToken();
       if (token) {
-        headers['Authorization'] = `Bearer ${token}`;
+        // Test both authorization header formats
+        if (endpoint.startsWith('/simple/')) {
+          console.log('Using /simple/ endpoint with token');
+          // Try the format expected by the new simplified API
+          headers['Authorization'] = `Bearer ${token}`;
+          // Log the full header for debugging purposes
+          console.log('Authorization header:', `Bearer ${token}`);
+        } else {
+          headers['Authorization'] = `Bearer ${token}`;
+        }
       } else {
         console.warn('Authentication token is missing but required for this request');
       }
@@ -219,9 +229,25 @@ async function request<T>(
       
       // Check if this is an authentication error
       if (error instanceof Error && error.message.includes('401')) {
+        // Log detailed authentication error
+        console.error('Authentication Error (401):', {
+          endpoint,
+          method,
+          hasToken: !!getAuthToken(),
+          isSimpleEndpoint: endpoint.startsWith('/simple/'),
+          tokenLength: getAuthToken()?.length || 0
+        });
+        
         // Handle session expiration
+        console.warn('Session expired or invalid authentication. Logging out user...');
         logoutUser();
-        window.dispatchEvent(new ErrorEvent('error', { error: new Error('Session expired. Please log in again.') }));
+        
+        // Wait a moment to ensure logout is complete before dispatching event
+        setTimeout(() => {
+          window.dispatchEvent(new ErrorEvent('error', { 
+            error: new Error('Session expired. Please log in again.') 
+          }));
+        }, 100);
       }
       
       throw error;
