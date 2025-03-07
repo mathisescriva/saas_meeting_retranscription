@@ -1,7 +1,7 @@
 import { logoutUser } from './authService';
 
 // Base URL for API calls
-const API_BASE_URL = 'http://localhost:8000';
+export const API_BASE_URL = 'http://localhost:8000';
 
 // Fonction pour récupérer le token d'authentification
 function getAuthToken() {
@@ -74,6 +74,7 @@ async function request<T>(
     }
   
     // Set content type header based on whether we're sending multipart form data
+    // IMPORTANT: NE PAS définir Content-Type pour FormData, fetch le fera automatiquement avec le boundary
     if (!withMultipart && data && !(data instanceof FormData)) {
       headers['Content-Type'] = 'application/json';
     }
@@ -87,7 +88,8 @@ async function request<T>(
       withAuth,
       hasToken: !!getAuthToken(),
       headers: Object.keys(headers),
-      dataType: data instanceof FormData ? 'FormData' : typeof data
+      dataType: data instanceof FormData ? 'FormData' : typeof data,
+      isMultipart: withMultipart
     });
   
     // Pour chaque requête, on combine les headers et options
@@ -104,7 +106,23 @@ async function request<T>(
     };
   
     // Log avant d'exécuter la requête
-    console.log(`Executing fetch to: ${url}`, { method, headers: Object.keys(headers) });
+    console.log(`Executing fetch to: ${url}`, { 
+      method, 
+      headers: Object.keys(headers),
+      isFormData: data instanceof FormData
+    });
+    
+    if (data instanceof FormData) {
+      console.log('FormData contents:');
+      for (const pair of data.entries()) {
+        if (pair[1] instanceof File) {
+          const file = pair[1] as File;
+          console.log(`${pair[0]}: File - ${file.name}, type: ${file.type}, size: ${file.size} bytes`);
+        } else {
+          console.log(`${pair[0]}: ${pair[1]}`);
+        }
+      }
+    }
   
     let timeoutId: number | undefined;
     
@@ -123,31 +141,19 @@ async function request<T>(
         clearTimeout(timeoutId);
       }
       
-      // Log après avoir reçu la réponse
-      console.log(`API Response received: Status ${response.status} from ${url}`);
-  
-      // Handle non-200 responses
+      // À des fins de débogage, loguer la réponse
+      console.log(`API Response: ${response.status} ${response.statusText}`, {
+        contentType: response.headers.get('content-type'),
+        contentLength: response.headers.get('content-length')
+      });
+      
+      // Cette vérification devrait être suffisante pour la plupart des cas d'erreur
       if (!response.ok) {
-        // Log more details about the error
-        console.log('API Request Failed:', {
-          url,
-          method,
-          statusCode: response.status,
-          statusText: response.statusText
-        });
-  
-        // Traiter spécifiquement les erreurs d'authentification
-        if (response.status === 401) {
-          console.error('Authentication error: Token missing or invalid');
-          throw new Error('Authentication error: Please log in again (401 Unauthorized)');
-        }
-  
         try {
+          // Try to get the error message from the response
           const errorData = await response.json();
-          console.log('API Error Response Data:', errorData);
-          throw new Error(
-            errorData?.detail || errorData?.message || `Request failed with status ${response.status}`
-          );
+          console.log('API Error Response:', errorData);
+          throw new Error(errorData.detail || errorData.message || `Request failed with status ${response.status}`);
         } catch (parseError) {
           console.log('Could not parse error response as JSON');
           // Try to get the response as text instead
@@ -226,26 +232,23 @@ async function request<T>(
 }
 
 // Create API client with the request function
-const apiClient: ApiClient = {
-  get: <T>(endpoint: string, withAuth = true, options?: RequestOptions): Promise<T> => {
+const apiClient: ApiClient & { baseUrl: string } = {
+  get<T>(endpoint: string, withAuth = true, options?: RequestOptions): Promise<T> {
     return request<T>(endpoint, 'GET', undefined, false, withAuth, options);
   },
-  
-  post: <T>(endpoint: string, data?: any, withMultipart = false, withAuth = true, options?: RequestOptions): Promise<T> => {
+  post<T>(endpoint: string, data?: any, withMultipart = false, withAuth = true, options?: RequestOptions): Promise<T> {
     return request<T>(endpoint, 'POST', data, withMultipart, withAuth, options);
   },
-  
-  put: <T>(endpoint: string, data?: any, withAuth = true, options?: RequestOptions): Promise<T> => {
+  put<T>(endpoint: string, data?: any, withAuth = true, options?: RequestOptions): Promise<T> {
     return request<T>(endpoint, 'PUT', data, false, withAuth, options);
   },
-  
-  patch: <T>(endpoint: string, data?: any, withAuth = true, options?: RequestOptions): Promise<T> => {
+  patch<T>(endpoint: string, data?: any, withAuth = true, options?: RequestOptions): Promise<T> {
     return request<T>(endpoint, 'PATCH', data, false, withAuth, options);
   },
-  
-  delete: <T>(endpoint: string, withAuth = true, options?: RequestOptions): Promise<T> => {
+  delete<T>(endpoint: string, withAuth = true, options?: RequestOptions): Promise<T> {
     return request<T>(endpoint, 'DELETE', undefined, false, withAuth, options);
-  }
+  },
+  baseUrl: API_BASE_URL
 };
 
 export default apiClient;

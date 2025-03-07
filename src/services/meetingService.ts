@@ -321,6 +321,44 @@ export async function deleteMeeting(meetingId: string): Promise<void> {
   return apiClient.delete<void>(`/meetings/${meetingId}`);
 }
 
+/**
+ * Get the audio file for a meeting
+ * @param meetingId The ID of the meeting
+ * @returns A URL to the audio file that can be used in an audio player
+ */
+export async function getMeetingAudio(meetingId: string): Promise<string> {
+  try {
+    console.log(`Fetching audio for meeting ${meetingId}`);
+    
+    // Récupérer le token pour l'authentification
+    const token = localStorage.getItem('auth_token');
+    
+    // Faire une requête pour récupérer le blob audio avec les headers d'authentification
+    const response = await fetch(`${apiClient.baseUrl}/meetings/${meetingId}/audio`, {
+      headers: {
+        'Authorization': token ? `Bearer ${token}` : ''
+      },
+      method: 'GET'
+    });
+    
+    if (!response.ok) {
+      console.error(`Error fetching audio: ${response.status} ${response.statusText}`);
+      throw new Error(`Failed to retrieve audio: ${response.status} ${response.statusText}`);
+    }
+    
+    // Récupérer le blob audio
+    const audioBlob = await response.blob();
+    console.log('Audio blob retrieved:', audioBlob.type, audioBlob.size);
+    
+    // Créer une URL pour ce blob que le navigateur peut utiliser
+    const audioUrl = URL.createObjectURL(audioBlob);
+    return audioUrl;
+  } catch (error) {
+    console.error(`Error getting audio for meeting ${meetingId}:`, error);
+    throw error;
+  }
+}
+
 // Event emitter pour les notifications de transcription
 type TranscriptionCallback = (meeting: Meeting) => void;
 const transcriptionCompletedListeners: TranscriptionCallback[] = [];

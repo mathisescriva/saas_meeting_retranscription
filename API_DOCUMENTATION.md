@@ -1,4 +1,4 @@
-# Documentation API - Gilbert
+# Documentation API - Meeting Transcriber
 
 ## Table des matières
 
@@ -15,13 +15,18 @@
    - [Supprimer une réunion](#supprimer-une-réunion)
    - [Relancer une transcription](#relancer-une-transcription)
    - [Récupérer uniquement la transcription](#récupérer-uniquement-la-transcription)
-4. [Formats et structures de données](#formats-et-structures-de-données)
-5. [Codes d'erreur](#codes-derreur)
-6. [Bonnes pratiques](#bonnes-pratiques)
+4. [Gestion du profil utilisateur](#gestion-du-profil-utilisateur)
+   - [Obtenir les informations de profil](#obtenir-les-informations-de-profil)
+   - [Mettre à jour le profil](#mettre-à-jour-le-profil)
+   - [Télécharger une photo de profil](#télécharger-une-photo-de-profil)
+   - [Changer le mot de passe](#changer-le-mot-de-passe)
+5. [Formats et structures de données](#formats-et-structures-de-données)
+6. [Codes d'erreur](#codes-derreur)
+7. [Bonnes pratiques](#bonnes-pratiques)
 
 ## Introduction
 
-L'API Gilbert permet de gérer des réunions avec transcription automatique d'audio. Elle utilise AssemblyAI pour transcrire les fichiers audio en texte.
+L'API Meeting Transcriber permet de gérer des réunions avec transcription automatique d'audio. Elle utilise AssemblyAI pour transcrire les fichiers audio en texte.
 
 **URL de base** : `http://localhost:8000`  
 **Format de réponse** : JSON  
@@ -137,7 +142,9 @@ Liste toutes les réunions de l'utilisateur connecté.
     "file_url": "/uploads/2dafc076-4cbe-4000-b62e-60b8935746c4/20250306_101833_tmp3k1mtfw1.wav",
     "transcript_text": null,
     "transcript_status": "completed",
-    "created_at": "2025-03-06T09:18:33.313872"
+    "created_at": "2025-03-06T09:18:33.313872",
+    "duration_seconds": 300,
+    "speakers_count": 2
   }
 ]
 ```
@@ -160,7 +167,9 @@ Récupère les détails d'une réunion, y compris sa transcription.
   "file_url": "/uploads/2dafc076-4cbe-4000-b62e-60b8935746c4/20250306_101833_tmp3k1mtfw1.wav",
   "transcript_text": "Bonjour à tous, aujourd'hui nous allons discuter du projet X...",
   "transcript_status": "completed",
-  "created_at": "2025-03-06T09:18:33.313872"
+  "created_at": "2025-03-06T09:18:33.313872",
+  "duration_seconds": 300,
+  "speakers_count": 2
 }
 ```
 
@@ -186,7 +195,9 @@ Télécharge un fichier audio et lance sa transcription.
   "file_url": "/uploads/2dafc076-4cbe-4000-b62e-60b8935746c4/20250306_101833_tmp3k1mtfw1.wav",
   "transcript_text": null,
   "transcript_status": "pending",
-  "created_at": "2025-03-06T09:18:33.313872"
+  "created_at": "2025-03-06T09:18:33.313872",
+  "duration_seconds": null,
+  "speakers_count": null
 }
 ```
 
@@ -215,7 +226,9 @@ Met à jour les métadonnées d'une réunion.
   "file_url": "/uploads/2dafc076-4cbe-4000-b62e-60b8935746c4/20250306_101833_tmp3k1mtfw1.wav",
   "transcript_text": "Bonjour à tous, aujourd'hui nous allons discuter du projet X...",
   "transcript_status": "completed",
-  "created_at": "2025-03-06T09:18:33.313872"
+  "created_at": "2025-03-06T09:18:33.313872",
+  "duration_seconds": 300,
+  "speakers_count": 2
 }
 ```
 
@@ -266,7 +279,142 @@ Récupère uniquement la transcription d'une réunion.
 {
   "transcript_text": "Bonjour à tous, aujourd'hui nous allons discuter du projet X...",
   "transcript_status": "completed",
-  "meeting_id": "198868c7-ba07-402c-bbba-519f376b2471"
+  "duration_seconds": 300,
+  "speakers_count": 2
+}
+```
+
+## Gestion du profil utilisateur
+
+### Obtenir les informations de profil
+
+Récupère les informations complètes du profil de l'utilisateur connecté.
+
+**URL** : `/profile/me`
+
+**Méthode** : `GET`
+
+**Authentification** : Requise
+
+**Headers** :
+
+```
+Authorization: Bearer votre_token_jwt
+```
+
+**Exemple de réponse réussie** :
+
+```json
+{
+  "id": "550e8400-e29b-41d4-a716-446655440000",
+  "email": "utilisateur@example.com",
+  "full_name": "Nom Complet",
+  "profile_picture_url": "/uploads/profile_pictures/550e8400-e29b-41d4-a716-446655440000/profile_12345678.jpg",
+  "created_at": "2025-03-06T10:30:22.123456"
+}
+```
+
+### Mettre à jour le profil
+
+Met à jour les informations du profil de l'utilisateur connecté.
+
+**URL** : `/profile/update`
+
+**Méthode** : `PUT`
+
+**Authentification** : Requise
+
+**Headers** :
+
+```
+Authorization: Bearer votre_token_jwt
+```
+
+**Données de la requête** :
+
+```json
+{
+  "full_name": "Nouveau Nom Complet",
+  "email": "nouvel.email@example.com"
+}
+```
+
+Tous les champs sont optionnels. Seuls les champs fournis seront mis à jour.
+
+**Exemple de réponse réussie** :
+
+```json
+{
+  "id": "550e8400-e29b-41d4-a716-446655440000",
+  "email": "nouvel.email@example.com",
+  "full_name": "Nouveau Nom Complet",
+  "profile_picture_url": "/uploads/profile_pictures/550e8400-e29b-41d4-a716-446655440000/profile_12345678.jpg",
+  "created_at": "2025-03-06T10:30:22.123456"
+}
+```
+
+### Télécharger une photo de profil
+
+Télécharge et met à jour la photo de profil de l'utilisateur connecté.
+
+**URL** : `/profile/upload-picture`
+
+**Méthode** : `POST`
+
+**Authentification** : Requise
+
+**Headers** :
+
+```
+Authorization: Bearer votre_token_jwt
+Content-Type: multipart/form-data
+```
+
+**Corps de la requête** :
+- `file` : Fichier image (JPEG, PNG, GIF, WEBP) de taille inférieure à 5MB
+
+**Exemple de réponse réussie** :
+
+```json
+{
+  "id": "550e8400-e29b-41d4-a716-446655440000",
+  "email": "utilisateur@example.com",
+  "full_name": "Nom Complet",
+  "profile_picture_url": "/uploads/profile_pictures/550e8400-e29b-41d4-a716-446655440000/profile_87654321.jpg",
+  "created_at": "2025-03-06T10:30:22.123456"
+}
+```
+
+### Changer le mot de passe
+
+Change le mot de passe de l'utilisateur connecté.
+
+**URL** : `/profile/change-password`
+
+**Méthode** : `PUT`
+
+**Authentification** : Requise
+
+**Headers** :
+
+```
+Authorization: Bearer votre_token_jwt
+```
+
+**Données de la requête** :
+
+```json
+{
+  "current_password": "mot_de_passe_actuel",
+  "new_password": "nouveau_mot_de_passe"
+}
+```
+
+**Exemple de réponse réussie** :
+
+```json
+{
+  "message": "Mot de passe mis à jour avec succès"
 }
 ```
 
@@ -290,7 +438,9 @@ Les statuts possibles pour une transcription sont :
   "file_url": "Chemin vers le fichier audio",
   "transcript_text": "Texte de la transcription (null si non terminée)",
   "transcript_status": "État de la transcription",
-  "created_at": "Date et heure de création"
+  "created_at": "Date et heure de création",
+  "duration_seconds": "Durée de la réunion en secondes",
+  "speakers_count": "Nombre de locuteurs"
 }
 ```
 

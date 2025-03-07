@@ -27,8 +27,9 @@ import {
   EventNote as EventNoteIcon,
   Delete as DeleteIcon,
 } from '@mui/icons-material';
-import { getAllMeetings, getTranscript, deleteMeeting, Meeting as ApiMeeting, getMeetingDetails, onTranscriptionCompleted } from '../services/meetingService';
+import { getAllMeetings, getTranscript, deleteMeeting, Meeting as ApiMeeting, getMeetingDetails, onTranscriptionCompleted, getMeetingAudio } from '../services/meetingService';
 import { useNotification } from '../contexts/NotificationContext';
+import MeetingAudioPlayer from './MeetingAudioPlayer';
 
 interface Meeting extends ApiMeeting {
   summary?: {
@@ -47,6 +48,9 @@ const MyMeetings: React.FC = () => {
   const [transcript, setTranscript] = useState<string | null>(null);
   const [retryingMeetingId, setRetryingMeetingId] = useState<string | null>(null);
   const [isDeleting, setIsDeleting] = useState(false);
+  const [audioDialogOpen, setAudioDialogOpen] = useState(false);
+  const [currentAudioUrl, setCurrentAudioUrl] = useState<string | null>(null);
+  const [currentAudioTitle, setCurrentAudioTitle] = useState<string | null>(null);
 
   // Définir fetchMeetings au début avec useCallback
   const fetchMeetings = useCallback(async () => {
@@ -311,6 +315,38 @@ const MyMeetings: React.FC = () => {
       });
   };
 
+  const handlePlayAudio = async (meetingId: string, title: string) => {
+    try {
+      // Prévenir les clics multiples
+      if (audioDialogOpen) return;
+      
+      // Ouvrir d'abord le dialogue pour montrer un état de chargement
+      setCurrentAudioTitle(title);
+      setAudioDialogOpen(true);
+      setCurrentAudioUrl(null); // Réinitialiser l'URL précédente
+      
+      console.log(`Getting audio URL for meeting ${meetingId}`);
+      
+      // Récupérer l'URL de l'audio
+      const audioUrl = await getMeetingAudio(meetingId);
+      console.log(`Received audio URL: ${audioUrl.substring(0, 100)}...`);
+      
+      // Mettre à jour l'URL audio
+      setCurrentAudioUrl(audioUrl);
+    } catch (error) {
+      console.error('Error getting audio URL:', error);
+      setError(`Erreur lors de la récupération de l'audio: ${error instanceof Error ? error.message : 'Erreur inconnue'}`);
+      // Fermer le dialogue si une erreur survient
+      setAudioDialogOpen(false);
+    }
+  };
+  
+  const handleCloseAudioDialog = () => {
+    setAudioDialogOpen(false);
+    // Ne pas effacer l'URL ici - le composant MeetingAudioPlayer va s'en charger
+    // avec son effet de nettoyage lorsque le composant sera démonté
+  };
+
   return (
     <>
       <Box sx={{ 
@@ -463,7 +499,10 @@ const MyMeetings: React.FC = () => {
                         <Button
                           variant="outlined"
                           startIcon={<DescriptionIcon />}
-                          onClick={() => handleViewTranscript(meeting.id)}
+                          onClick={(e) => {
+                            e.stopPropagation(); // Empêcher le onclick du Paper parent
+                            handleViewTranscript(meeting.id);
+                          }}
                           size="small"
                         >
                           View Transcript
@@ -471,10 +510,24 @@ const MyMeetings: React.FC = () => {
                       </Stack>
                     </Box>
                     <Stack direction="row" spacing={1}>
-                      <IconButton size="small" sx={{ color: '#3B82F6' }}>
+                      <IconButton 
+                        size="small" 
+                        sx={{ color: '#3B82F6' }}
+                        onClick={(e) => {
+                          e.stopPropagation(); // Empêcher le onclick du Paper parent
+                          handlePlayAudio(meeting.id, meeting.name || meeting.title || 'Réunion sans titre');
+                        }}
+                      >
                         <PlayArrowIcon />
                       </IconButton>
-                      <IconButton size="small" sx={{ color: '#10B981' }}>
+                      <IconButton 
+                        size="small" 
+                        sx={{ color: '#10B981' }}
+                        onClick={(e) => {
+                          e.stopPropagation(); // Empêcher le onclick du Paper parent
+                          handleViewTranscript(meeting.id);
+                        }}
+                      >
                         <DescriptionIcon />
                       </IconButton>
                       <IconButton size="small" sx={{ color: '#6366F1' }}>
@@ -507,6 +560,16 @@ const MyMeetings: React.FC = () => {
         )}
       </Box>
 
+      {/* Dialogue pour la lecture audio */}
+      {currentAudioUrl && (
+        <MeetingAudioPlayer
+          audioUrl={currentAudioUrl}
+          title={currentAudioTitle || "Écouter l'enregistrement"}
+          open={audioDialogOpen}
+          onClose={handleCloseAudioDialog}
+        />
+      )}
+      
       {/* Dialogue pour afficher la transcription */}
       <Dialog 
         open={!!transcript} 
