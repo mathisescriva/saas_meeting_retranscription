@@ -44,6 +44,7 @@ import {
 } from '../services/meetingService';
 import { useNotification } from '../contexts/NotificationContext';
 import MeetingAudioPlayer from './MeetingAudioPlayer';
+import ReactMarkdown from 'react-markdown';
 
 interface Meeting extends ApiMeeting {
   summary?: {
@@ -70,6 +71,51 @@ const MyMeetings: React.FC = () => {
   const [refreshingMetadataId, setRefreshingMetadataId] = useState<string | null>(null);
   const [generatingSummaryId, setGeneratingSummaryId] = useState<string | null>(null);
   const [summaryWatchers, setSummaryWatchers] = useState<Record<string, () => void>>({});
+
+  // CSS styles for Markdown content
+  const markdownStyles = `
+    .markdown-content h1 {
+      font-size: 1.8rem;
+      margin-top: 1.5rem;
+      margin-bottom: 1rem;
+      font-weight: 600;
+    }
+    .markdown-content h2 {
+      font-size: 1.5rem;
+      margin-top: 1.2rem;
+      margin-bottom: 0.8rem;
+      font-weight: 600;
+    }
+    .markdown-content h3 {
+      font-size: 1.3rem;
+      margin-top: 1rem;
+      margin-bottom: 0.6rem;
+      font-weight: 600;
+    }
+    .markdown-content p {
+      margin-bottom: 1rem;
+      line-height: 1.6;
+    }
+    .markdown-content ul, .markdown-content ol {
+      margin-left: 1.5rem;
+      margin-bottom: 1rem;
+    }
+    .markdown-content li {
+      margin-bottom: 0.5rem;
+    }
+    .markdown-content code {
+      background-color: #f0f0f0;
+      padding: 0.2rem 0.4rem;
+      border-radius: 3px;
+      font-family: monospace;
+    }
+    .markdown-content blockquote {
+      border-left: 4px solid #ddd;
+      padding-left: 1rem;
+      margin-left: 0;
+      color: #666;
+    }
+  `;
 
   // Définir fetchMeetings au début avec useCallback
   const fetchMeetings = useCallback(async () => {
@@ -774,6 +820,7 @@ const MyMeetings: React.FC = () => {
 
   return (
     <>
+      <style jsx global>{markdownStyles}</style>
       <Box sx={{ 
         p: 4,
         background: 'linear-gradient(145deg, rgba(255,255,255,0.9) 0%, rgba(249,250,251,0.9) 100%)',
@@ -1139,16 +1186,101 @@ const MyMeetings: React.FC = () => {
               return (
                 <Box 
                   sx={{ 
-                    whiteSpace: 'pre-wrap', 
-                    fontFamily: 'inherit', 
-                    backgroundColor: '#f9f9f9', 
-                    padding: 2,
+                    fontFamily: 'inherit',
+                    padding: 3,
                     borderRadius: 1,
                     fontSize: '1rem',
-                    overflow: 'auto'
+                    overflow: 'auto',
+                    backgroundColor: 'white'
                   }}
+                  className="markdown-content"
                 >
-                  {meeting.summary_text}
+                  <style jsx global>{`
+                    .markdown-content h1 {
+                      font-size: 1.8rem;
+                      margin-top: 1.5rem;
+                      margin-bottom: 1rem;
+                      font-weight: 600;
+                      color: #333;
+                    }
+                    .markdown-content h2 {
+                      font-size: 1.5rem;
+                      margin-top: 1.2rem;
+                      margin-bottom: 0.8rem;
+                      font-weight: 600;
+                      color: #333;
+                    }
+                    .markdown-content h3 {
+                      font-size: 1.3rem;
+                      margin-top: 1rem;
+                      margin-bottom: 0.6rem;
+                      font-weight: 600;
+                      color: #333;
+                    }
+                    .markdown-content p {
+                      margin-bottom: 1rem;
+                      line-height: 1.6;
+                    }
+                    .markdown-content ul {
+                      margin-left: 1.5rem;
+                      margin-bottom: 1rem;
+                      list-style-type: disc;
+                    }
+                    .markdown-content ol {
+                      margin-left: 1.5rem;
+                      margin-bottom: 1rem;
+                    }
+                    .markdown-content li {
+                      margin-bottom: 0.5rem;
+                      padding-left: 0.5rem;
+                    }
+                    .markdown-content li > ul, .markdown-content li > ol {
+                      margin-top: 0.5rem;
+                      margin-bottom: 0;
+                    }
+                    .markdown-content code {
+                      background-color: #f0f0f0;
+                      padding: 0.2rem 0.4rem;
+                      border-radius: 3px;
+                      font-family: monospace;
+                    }
+                    .markdown-content blockquote {
+                      border-left: 4px solid #3B82F6;
+                      padding-left: 1rem;
+                      margin-left: 0;
+                      color: #4B5563;
+                      font-style: italic;
+                      background-color: #F3F4F6;
+                      padding: 0.5rem 1rem;
+                      border-radius: 0 4px 4px 0;
+                    }
+                    .markdown-content strong {
+                      font-weight: 600;
+                      color: #111;
+                    }
+                    .markdown-content a {
+                      color: #3B82F6;
+                      text-decoration: none;
+                    }
+                    .markdown-content a:hover {
+                      text-decoration: underline;
+                    }
+                    .markdown-content table {
+                      border-collapse: collapse;
+                      width: 100%;
+                      margin-bottom: 1rem;
+                    }
+                    .markdown-content th, .markdown-content td {
+                      border: 1px solid #e5e7eb;
+                      padding: 0.5rem;
+                      text-align: left;
+                    }
+                    .markdown-content th {
+                      background-color: #f9fafb;
+                      font-weight: 600;
+                    }
+                  `}</style>
+                  <ReactMarkdown>{meeting.summary_text}</ReactMarkdown>
                 </Box>
               );
             }
