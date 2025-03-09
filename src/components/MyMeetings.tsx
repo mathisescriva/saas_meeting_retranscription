@@ -60,6 +60,8 @@ const MyMeetings: React.FC = () => {
   const [error, setError] = useState<string | null>(null);
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [transcript, setTranscript] = useState<string | null>(null);
+  const [formattedTranscript, setFormattedTranscript] = useState<Array<{speaker: string; text: string; timestamp?: string}> | null>(null);
+  const [transcriptDialogOpen, setTranscriptDialogOpen] = useState<boolean>(false);
   const [retryingMeetingId, setRetryingMeetingId] = useState<string | null>(null);
   const [isDeleting, setIsDeleting] = useState(false);
   const [audioDialogOpen, setAudioDialogOpen] = useState(false);
@@ -195,6 +197,8 @@ const MyMeetings: React.FC = () => {
   };
 
   const handleViewTranscript = async (meetingId: string) => {
+    // Ouvrir le dialogue immédiatement pour montrer que quelque chose se passe
+    setTranscriptDialogOpen(true);
     try {
       console.log(`Fetching transcript for meeting ID: ${meetingId}`);
       
@@ -202,15 +206,36 @@ const MyMeetings: React.FC = () => {
       const token = localStorage.getItem('auth_token');
       console.log('Using auth token:', token ? `${token.substring(0, 10)}...` : 'No token found');
       
+      // Trouver la réunion correspondante dans notre état local
+      const meeting = meetings.find(m => m.id === meetingId);
+      if (!meeting) {
+        console.error(`Meeting with ID ${meetingId} not found in local state`);
+        throw new Error(`Meeting not found: ${meetingId}`);
+      }
+      
+      console.log('Meeting status:', {
+        transcript_status: meeting.transcript_status,
+        transcription_status: meeting.transcription_status
+      });
+      
+      // Vérifier si la transcription est terminée
+      const isCompleted = meeting.transcript_status === 'completed' || meeting.transcription_status === 'completed';
+      if (!isCompleted) {
+        console.warn('Transcription not completed yet');
+        setFormattedTranscript(null);
+        return;
+      }
+      
       // Essayer les deux endpoints possibles pour voir lequel fonctionne
       let response;
       let endpoint;
       let error404 = false;
+      const baseUrl = 'http://localhost:8000'; // Pourrait être extrait en variable d'environnement
       
       // Premier essai: utiliser l'endpoint direct
       try {
-        endpoint = `http://localhost:8000/${meetingId}`;
-        console.log(`Trying direct endpoint: ${endpoint}`);
+        endpoint = `${baseUrl}/meetings/${meetingId}`;
+        console.log(`Trying endpoint: ${endpoint}`);
         
         response = await fetch(endpoint, {
           method: 'GET',
@@ -221,16 +246,29 @@ const MyMeetings: React.FC = () => {
         
         if (response.status === 404) {
           error404 = true;
-          console.log('Direct endpoint returned 404, will try with /simple/ endpoint');
+          console.log('Endpoint returned 404, will try alternative endpoint');
         }
       } catch (err) {
-        console.error('Error with direct endpoint:', err);
+        console.error('Error with first endpoint:', err);
       }
       
-      // Deuxième essai si le premier a échoué avec 404: utiliser l'endpoint /simple/
+      // Deuxième essai si le premier a échoué avec 404: utiliser l'endpoint alternatif
       if (error404 || !response || !response.ok) {
-        endpoint = `http://localhost:8000/simple/meetings/${meetingId}`;
-        console.log(`Trying with /simple/ endpoint: ${endpoint}`);
+        endpoint = `${baseUrl}/simple/meetings/${meetingId}`;
+        console.log(`Trying alternative endpoint: ${endpoint}`);
+        
+        response = await fetch(endpoint, {
+          method: 'GET',
+          headers: {
+            'Authorization': `Bearer ${token}`
+          }
+        });
+      }
+      
+      // Troixième essai: essayer avec l'ID directement (certaines API sont configurées ainsi)
+      if (!response || !response.ok) {
+        endpoint = `${baseUrl}/${meetingId}`;
+        console.log(`Trying direct ID endpoint: ${endpoint}`);
         
         response = await fetch(endpoint, {
           method: 'GET',
@@ -248,15 +286,137 @@ const MyMeetings: React.FC = () => {
       const rawData = await response.json();
       console.log(`Raw data from ${endpoint}:`, rawData);
       
-      // Afficher les données brutes formatées en JSON pour une meilleure lisibilité
+      // Stocker les données brutes pour débogage si nécessaire
       setTranscript(JSON.stringify(rawData, null, 2));
+      
+      // Vérifier si nous avons des données de transcription
+      const hasUtterances = rawData.utterances && Array.isArray(rawData.utterances) && rawData.utterances.length > 0;
+      const hasTranscriptText = Boolean(rawData.transcript_text || rawData.text);
+      
+      console.log('Transcript data check:', { hasUtterances, hasTranscriptText });
+      
+      if (hasUtterances) {
+        // 1. Format avec utterances (format structuré)
+        console.log(`Processing ${rawData.utterances.length} utterances`);
+        
+        const formattedData = rawData.utterances.map((utterance: any) => ({
+          speaker: utterance.speaker || 'Speaker',
+          text: utterance.text || '',
+          timestamp: utterance.start ? new Date(Math.floor(utterance.start * 1000)).toISOString().substr(14, 5) : undefined
+        }));
+        
+        console.log('Formatted utterances:', formattedData);
+        setFormattedTranscript(formattedData);
+      } else if (hasTranscriptText) {
+        // 2. Format avec texte complet (format non structuré)
+        const text = rawData.transcript_text || rawData.text || '';
+        console.log('Processing full text transcript, length:', text.length);
+        
+        if (!text || text.trim() === '') {
+          console.warn('Transcript text is empty');
+          setFormattedTranscript(null);
+          return;
+        }
+        
+        try {
+          // Utiliser une approche par regex pour extraire correctement les paires speaker-texte
+          const fullText = text;
+          const speakerMatches = [];
+          
+          // Trouver tous les indices où un speaker commence - pattern plus flexible
+          // Prend en charge: Speaker 1:, Speaker A:, Speaker John:, etc.
+          const speakerRegex = /(Speaker \d+|Speaker [A-Z]|Speaker [A-Za-z]+):/g;
+          let match;
+          
+          console.log('Searching for speaker patterns in text');
+          while ((match = speakerRegex.exec(fullText)) !== null) {
+            speakerMatches.push({
+              speaker: match[1],
+              index: match.index
+            });
+          }
+          
+          console.log(`Found ${speakerMatches.length} speaker matches`);
+          
+          // Si aucun speaker n'est trouvé, essayer d'autres formats courants
+          if (speakerMatches.length === 0) {
+            const alternativeSpeakerRegex = /([A-Za-z]+ ?[A-Za-z]*?):\s/g;
+            while ((match = alternativeSpeakerRegex.exec(fullText)) !== null) {
+              speakerMatches.push({
+                speaker: match[1],
+                index: match.index
+              });
+            }
+            console.log(`Found ${speakerMatches.length} alternative speaker matches`);
+          }
+          
+          // Maintenant, extraire le texte entre chaque speaker
+          const formattedData = [];
+          
+          if (speakerMatches.length > 0) {
+            for (let i = 0; i < speakerMatches.length; i++) {
+              const currentSpeaker = speakerMatches[i];
+              const nextSpeaker = speakerMatches[i + 1];
+              
+              // Déterminer où se termine le texte de ce speaker
+              const endIndex = nextSpeaker ? nextSpeaker.index : fullText.length;
+              
+              // Extraire le texte (en sautant le nom du speaker et les ':')
+              const speakerTextStart = currentSpeaker.index + currentSpeaker.speaker.length + 1;
+              let speakerText = fullText.substring(speakerTextStart, endIndex).trim();
+              
+              console.log(`Speaker: ${currentSpeaker.speaker}, Text length: ${speakerText.length}`);
+              
+              // Ajouter cette paire speaker-texte aux données formatées
+              formattedData.push({
+                speaker: currentSpeaker.speaker,
+                text: speakerText
+              });
+            }
+          } else {
+            // Aucun format de speaker détecté, afficher le texte complet
+            console.log('No speaker format detected, displaying full text');
+            formattedData.push({
+              speaker: 'Transcript',
+              text: fullText
+            });
+          }
+          
+          console.log(`Final formatted data has ${formattedData.length} entries`);
+          setFormattedTranscript(formattedData);
+        } catch (parseError) {
+          console.error('Error parsing transcript:', parseError);
+          // Fallback: afficher le texte complet sans speakers
+          setFormattedTranscript([{
+            speaker: 'Transcript',
+            text: text
+          }]);
+        }
+      } else if (rawData.transcript) {
+        // 3. Format avec transcript comme objet
+        console.log('Found transcript object format');
+        
+        // Essayer d'extraire le texte de l'objet transcript
+        const transcriptText = typeof rawData.transcript === 'string' 
+          ? rawData.transcript 
+          : (rawData.transcript.text || JSON.stringify(rawData.transcript));
+        
+        setFormattedTranscript([{
+          speaker: 'Transcript',
+          text: transcriptText
+        }]);
+      } else {
+        // 4. Aucun format reconnu
+        console.error('No recognized transcript format in data:', Object.keys(rawData));
+        setFormattedTranscript(null);
+      }
     } catch (error) {
-      console.error('Erreur lors de la récupération de la transcription:', error);
+      console.error('Error retrieving transcript:', error);
       
       // Message d'erreur personnalisé selon le type d'erreur
       if (error instanceof Error) {
-        if (error.message.includes('Network connection')) {
-          setTranscript("Cannot connect to the server. Please make sure the backend server is running at http://localhost:8000");
+        if (error.message.includes('Network') || error.message.includes('Failed to fetch')) {
+          setTranscript("Cannot connect to the server. Please check your network connection and make sure the backend server is running.");
         } else if (error.message.includes('404') || error.message.includes('not found')) {
           setTranscript("Transcript not found. The transcription process may not have completed yet.");
         } else {
@@ -265,6 +425,8 @@ const MyMeetings: React.FC = () => {
       } else {
         setTranscript("An unknown error occurred while fetching the transcript");
       }
+      
+      setFormattedTranscript(null);
     }
   };
 
@@ -583,13 +745,19 @@ const MyMeetings: React.FC = () => {
   const handleViewSummary = (meetingId: string) => {
     // Trouver la réunion concernée
     const meeting = meetings.find(m => m.id === meetingId);
-    if (!meeting || !meeting.summary_text) {
+    if (!meeting) {
+      showErrorPopup('Erreur', 'Réunion non trouvée');
+      return;
+    }
+    
+    if (!meeting.summary_text && meeting.summary_status !== 'completed') {
       showErrorPopup('Erreur', 'Le compte rendu n\'est pas disponible');
       return;
     }
     
-    // Afficher le compte rendu dans une boîte de dialogue
-    setTranscript(meeting.summary_text);
+    // Ouvrir le dialogue du résumé en définissant l'ID de la réunion
+    console.log('Opening summary dialog for meeting:', meetingId);
+    setGeneratingSummaryId(meetingId);
   };
 
   // Nettoyer les watchers lors du démontage du composant
@@ -872,32 +1040,63 @@ const MyMeetings: React.FC = () => {
       
       {/* Dialogue pour afficher la transcription */}
       <Dialog 
-        open={!!transcript} 
-        onClose={() => setTranscript(null)}
+        open={transcriptDialogOpen} 
+        onClose={() => {
+          setTranscriptDialogOpen(false);
+          setTranscript(null);
+          setFormattedTranscript(null);
+        }}
         maxWidth="md"
         fullWidth
       >
         <DialogTitle sx={{ borderBottom: '1px solid #eee', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
           <Typography variant="h6">Transcript</Typography>
-          <IconButton onClick={() => setTranscript(null)}>
+          <IconButton onClick={() => {
+            setTranscriptDialogOpen(false);
+            setTranscript(null);
+            setFormattedTranscript(null);
+          }}>
             <CloseIcon />
           </IconButton>
         </DialogTitle>
         <DialogContent sx={{ mt: 2, minHeight: '300px', maxHeight: '60vh', overflowY: 'auto' }}>
-          {transcript && transcript.length > 0 ? (
-            <Box 
-              component="pre" 
-              sx={{ 
-                whiteSpace: 'pre-wrap', 
-                fontFamily: 'monospace', 
-                backgroundColor: '#f5f5f5', 
-                padding: 2,
-                borderRadius: 1,
-                fontSize: '0.85rem',
-                overflow: 'auto'
-              }}
-            >
-              {transcript}
+          {formattedTranscript && formattedTranscript.length > 0 ? (
+            <Box sx={{ padding: 2 }}>
+              {formattedTranscript.map((utterance, index) => (
+                <Box key={index} sx={{ mb: 3 }}>
+                  <Typography
+                    variant="subtitle1"
+                    sx={{
+                      fontWeight: 600,
+                      color: '#3B82F6',
+                      display: 'flex',
+                      alignItems: 'center',
+                      mb: 0.5
+                    }}
+                  >
+                    {utterance.speaker}
+                    {utterance.timestamp && (
+                      <Typography
+                        component="span"
+                        variant="caption"
+                        sx={{ ml: 1, color: 'text.secondary' }}
+                      >
+                        {utterance.timestamp}
+                      </Typography>
+                    )}
+                  </Typography>
+                  <Typography
+                    variant="body1"
+                    sx={{
+                      pl: 1,
+                      borderLeft: '2px solid #e0e0e0',
+                      lineHeight: 1.6
+                    }}
+                  >
+                    {utterance.text}
+                  </Typography>
+                </Box>
+              ))}
             </Box>
           ) : (
             <Box sx={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', height: '100%', py: 4 }}>
@@ -910,13 +1109,17 @@ const MyMeetings: React.FC = () => {
           )}
         </DialogContent>
         <DialogActions>
-          <Button onClick={() => setTranscript(null)}>Close</Button>
+          <Button onClick={() => {
+            setTranscriptDialogOpen(false);
+            setTranscript(null);
+            setFormattedTranscript(null);
+          }}>Close</Button>
         </DialogActions>
       </Dialog>
 
       {/* Dialogue pour afficher le compte rendu */}
       <Dialog 
-        open={!!meetings.find(m => m.id === generatingSummaryId && m.summary_status === 'completed' && m.summary_text)} 
+        open={!!generatingSummaryId} 
         onClose={() => setGeneratingSummaryId(null)}
         maxWidth="md"
         fullWidth
@@ -928,29 +1131,72 @@ const MyMeetings: React.FC = () => {
           </IconButton>
         </DialogTitle>
         <DialogContent sx={{ mt: 2, minHeight: '300px', maxHeight: '60vh', overflowY: 'auto' }}>
-          {meetings.find(m => m.id === generatingSummaryId)?.summary_text ? (
-            <Box 
-              sx={{ 
-                whiteSpace: 'pre-wrap', 
-                fontFamily: 'inherit', 
-                backgroundColor: '#f9f9f9', 
-                padding: 2,
-                borderRadius: 1,
-                fontSize: '1rem',
-                overflow: 'auto'
-              }}
-            >
-              {meetings.find(m => m.id === generatingSummaryId)?.summary_text}
-            </Box>
-          ) : (
-            <Box sx={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', height: '100%', py: 4 }}>
-              <WarningIcon color="warning" sx={{ fontSize: 48, mb: 2 }} />
-              <Typography variant="h6" sx={{ mb: 1 }}>No Summary Available</Typography>
-              <Typography variant="body2" color="text.secondary" sx={{ textAlign: 'center' }}>
-                The summary for this meeting has not been generated yet or the generation process failed.
-              </Typography>
-            </Box>
-          )}
+          {(() => {
+            const meeting = meetings.find(m => m.id === generatingSummaryId);
+            
+            // Si le résumé est complété et contient du texte
+            if (meeting?.summary_status === 'completed' && meeting?.summary_text) {
+              return (
+                <Box 
+                  sx={{ 
+                    whiteSpace: 'pre-wrap', 
+                    fontFamily: 'inherit', 
+                    backgroundColor: '#f9f9f9', 
+                    padding: 2,
+                    borderRadius: 1,
+                    fontSize: '1rem',
+                    overflow: 'auto'
+                  }}
+                >
+                  {meeting.summary_text}
+                </Box>
+              );
+            }
+            
+            // Si le résumé est en cours de génération
+            else if (meeting?.summary_status === 'processing' || meeting?.summary?.status === 'in_progress') {
+              return (
+                <Box sx={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', height: '100%', py: 4 }}>
+                  <CircularProgress sx={{ mb: 2 }} />
+                  <Typography variant="h6" sx={{ mb: 1 }}>Generating Summary...</Typography>
+                  <Typography variant="body2" color="text.secondary" sx={{ textAlign: 'center' }}>
+                    Please wait while we generate the summary for this meeting.
+                  </Typography>
+                </Box>
+              );
+            }
+            
+            // Si le résumé a échoué ou n'existe pas
+            else {
+              return (
+                <Box sx={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', height: '100%', py: 4 }}>
+                  <WarningIcon color="warning" sx={{ fontSize: 48, mb: 2 }} />
+                  <Typography variant="h6" sx={{ mb: 1 }}>No Summary Available</Typography>
+                  <Typography variant="body2" color="text.secondary" sx={{ textAlign: 'center' }}>
+                    {meeting?.summary_status === 'error' || meeting?.summary?.status === 'not_generated'
+                      ? 'An error occurred while generating the summary for this meeting.' 
+                      : 'The summary for this meeting has not been generated yet.'}
+                  </Typography>
+                  {(meeting?.summary_status !== 'processing' && meeting?.summary?.status !== 'in_progress' && meeting?.summary_status !== 'completed') && (
+                    <Button 
+                      variant="contained" 
+                      color="primary" 
+                      sx={{ mt: 2 }}
+                      onClick={() => {
+                        // Ici, vous pourriez ajouter la logique pour générer le résumé
+                        // Appeler la fonction pour générer le résumé
+                        if (meeting?.id) {
+                          handleGenerateSummary(meeting.id);
+                        }
+                      }}
+                    >
+                      Generate Summary
+                    </Button>
+                  )}
+                </Box>
+              );
+            }
+          })()}
         </DialogContent>
         <DialogActions>
           <Button onClick={() => setGeneratingSummaryId(null)}>Close</Button>
