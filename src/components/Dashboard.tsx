@@ -167,27 +167,14 @@ const Dashboard: React.FC<DashboardProps> = ({ user }) => {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isProcessing, setIsProcessing] = useState(false);
   const [showDialog, setShowDialog] = useState(false);
-  const [showConfirmDeleteDialog, setShowConfirmDeleteDialog] = useState(false);
-  const [selectedMeeting, setSelectedMeeting] = useState<RecentMeeting | null>(null);
   const [showDemoDialog, setShowDemoDialog] = useState(false);
-  const [meetingsList, setMeetingsList] = useState<RecentMeeting[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const [errorState, setErrorState] = useState<{message: string} | null>(null);
   
   const [userProfile, setUserProfile] = useState<any>(null);
 
   useEffect(() => {
-    fetchMeetings();
-    
-    return () => {
-      // Arrêter tous les pollings en cours
-      cleanupPolling && cleanupPolling();
-    };
-  }, []);
-
-  // Écouter les événements de transcription terminée dans un useEffect séparé
-  useEffect(() => {
-    console.log("Setting up transcription completed listener");
+    // Écouter les événements de transcription terminée
     const unsubscribe = onTranscriptionCompleted((meeting) => {
       console.log("Transcription completed event received for:", meeting.name || meeting.title);
       showSuccessPopup(
@@ -201,7 +188,7 @@ const Dashboard: React.FC<DashboardProps> = ({ user }) => {
       unsubscribe();
     };
   }, [showSuccessPopup]);
-  
+
   // Référence pour stocker la fonction de nettoyage du polling
   const [cleanupPolling, setCleanupPolling] = useState<(() => void) | null>(null);
   
@@ -976,171 +963,16 @@ const Dashboard: React.FC<DashboardProps> = ({ user }) => {
                 </Typography>
               </CardContent>
               <CardActions>
-                <Button size="small">{feature.action}</Button>
+                <Button 
+                  size="small"
+                  onClick={feature.action === 'Start Recording' ? startRecording : undefined}
+                >
+                  {feature.action}
+                </Button>
               </CardActions>
             </Card>
           </Grid>
         ))}
-      </Grid>
-
-      {/* Recent Meetings */}
-      <Typography
-        variant="h5"
-        sx={{
-          mb: 3,
-          fontWeight: 700,
-          background: 'linear-gradient(90deg, #3B82F6 0%, #8B5CF6 100%)',
-          WebkitBackgroundClip: 'text',
-          WebkitTextFillColor: 'transparent',
-          letterSpacing: '-0.5px',
-          display: 'flex',
-          alignItems: 'center',
-          gap: 1
-        }}
-      >
-        <EventNoteIcon sx={{ fontSize: 28, color: '#3B82F6' }} /> Recent Meetings
-      </Typography>
-      <Grid container spacing={3}>
-        {meetingsList.map((meeting) => (
-          <Grid item xs={12} key={meeting.id || meeting.title}>
-            <Paper
-              sx={{
-                p: 3,
-                borderRadius: '16px',
-                boxShadow: '0 4px 12px rgba(0,0,0,0.05)',
-                transition: 'all 0.3s ease-in-out',
-                '&:hover': {
-                  transform: meeting.status !== 'deleted' ? 'translateY(-2px)' : 'none',
-                  boxShadow: meeting.status !== 'deleted' ? '0 8px 24px rgba(0,0,0,0.1)' : '0 4px 12px rgba(0,0,0,0.05)',
-                },
-                cursor: meeting.status !== 'deleted' ? 'pointer' : 'default',
-                opacity: meeting.status === 'deleted' ? 0.7 : 1,
-                position: 'relative',
-                ...(meeting.status === 'deleted' && {
-                  backgroundColor: alpha('#f5f5f5', 0.7),
-                  border: '1px solid #e0e0e0'
-                })
-              }}
-              onClick={() => handleMeetingClick(meeting.id)}
-            >
-              {meeting.status === 'deleted' && (
-                <Chip
-                  label="Supprimée"
-                  color="error"
-                  size="small"
-                  sx={{
-                    position: 'absolute', 
-                    top: 10, 
-                    right: 10,
-                    fontSize: '0.75rem'
-                  }}
-                />
-              )}
-              <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                <Box>
-                  <Typography variant="h6" sx={{ 
-                    mb: 1, 
-                    fontWeight: 600,
-                    textDecoration: meeting.status === 'deleted' ? 'line-through' : 'none',
-                    color: meeting.status === 'deleted' ? 'text.disabled' : 'text.primary'
-                  }}>
-                    {meeting.title}
-                  </Typography>
-                  <Stack direction="row" spacing={2} alignItems="center">
-                    <Typography variant="body2" color="text.secondary">
-                      🕒 {formatDuration(meeting.audio_duration || meeting.duration)}
-                    </Typography>
-                    <Typography variant="body2" color="text.secondary">
-                      📅 {meeting.date}
-                    </Typography>
-                    <Typography variant="body2" color="text.secondary">
-                      👥 {meeting.participants || 0} participants
-                    </Typography>
-                    {meeting.progress === 100 ? (
-                      <Chip
-                        label="completed"
-                        size="small"
-                        sx={{
-                          bgcolor: alpha('#10B981', 0.1),
-                          color: '#10B981',
-                          fontWeight: 500,
-                        }}
-                      />
-                    ) : meeting.progress === 0 ? (
-                      <Chip
-                        label="failed"
-                        size="small"
-                        sx={{
-                          bgcolor: alpha('#EF4444', 0.1),
-                          color: '#EF4444',
-                          fontWeight: 500,
-                        }}
-                      />
-                    ) : (
-                      <Chip
-                        label="processing"
-                        size="small"
-                        sx={{
-                          bgcolor: alpha('#F59E0B', 0.1),
-                          color: '#F59E0B',
-                          fontWeight: 500,
-                        }}
-                      />
-                    )}
-                    {meeting.progress < 100 && meeting.progress > 0 && (
-                      <Button
-                        variant="outlined"
-                        startIcon={<RefreshIcon />}
-                        onClick={() => handleRetryTranscription(meeting.id)}
-                        disabled={false}
-                        size="small"
-                      >
-                        Retry
-                      </Button>
-                    )}
-                    <Button
-                      variant="outlined"
-                      startIcon={<DescriptionIcon />}
-                      onClick={() => handleViewTranscript(meeting.id)}
-                      size="small"
-                    >
-                      View Transcript
-                    </Button>
-                  </Stack>
-                </Box>
-                <Stack direction="row" spacing={1}>
-                  <IconButton size="small" sx={{ color: '#3B82F6' }}>
-                    <PlayArrowIcon />
-                  </IconButton>
-                  <IconButton size="small" sx={{ color: '#10B981' }}>
-                    <DescriptionIcon />
-                  </IconButton>
-                  <IconButton size="small" sx={{ color: '#6366F1' }}>
-                    <ShareIcon />
-                  </IconButton>
-                  <IconButton 
-                    size="small" 
-                    sx={{ color: '#EF4444' }}
-                    onClick={() => handleDeleteMeeting(meeting.id)}
-                    disabled={false}
-                  >
-                    <DeleteIcon />
-                  </IconButton>
-                </Stack>
-              </Box>
-            </Paper>
-          </Grid>
-        ))}
-        <Grid item xs={12}>
-          <Button
-            variant="outlined"
-            startIcon={<RefreshIcon />}
-            onClick={fetchMeetings}
-            disabled={isLoading}
-          >
-            {isLoading ? 'Refreshing...' : 'Refresh Meetings'}
-          </Button>
-        </Grid>
       </Grid>
 
       {/* Dialogue pour nommer l'enregistrement */}

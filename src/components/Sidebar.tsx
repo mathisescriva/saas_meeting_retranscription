@@ -395,6 +395,12 @@ const Sidebar: React.FC<SidebarProps> = ({ onViewChange, user }) => {
           >
             Gilbert v0.1.0
           </Typography>
+          <Typography
+            variant="caption"
+            sx={{ color: 'text.secondary', display: 'block', textAlign: 'center', mt: 0.5 }}
+          >
+            Powered by Lexia France
+          </Typography>
         </Box>
 
         <Menu
