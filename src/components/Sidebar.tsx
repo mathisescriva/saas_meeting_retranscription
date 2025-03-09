@@ -35,6 +35,7 @@ import {
 import { User, logoutUser } from '../services/authService';
 import { useNotification } from '../contexts/NotificationContext';
 import { getUserProfile, updateUserProfile, uploadProfilePicture, ProfileData } from '../services/profileService';
+import SettingsDialog from './SettingsDialog';
 
 // Interface pour les données de profil
 interface ProfileData {
@@ -54,6 +55,7 @@ const Sidebar: React.FC<SidebarProps> = ({ onViewChange, user }) => {
   const [selectedIndex, setSelectedIndex] = useState(0);
   const [userMenuAnchor, setUserMenuAnchor] = useState<null | HTMLElement>(null);
   const [showProfileEditor, setShowProfileEditor] = useState(false);
+  const [showSettingsDialog, setShowSettingsDialog] = useState(false);
   const [userProfile, setUserProfile] = useState<ProfileData | null>(null);
   const [fullName, setFullName] = useState('');
   const [email, setEmail] = useState('');
@@ -262,6 +264,15 @@ const Sidebar: React.FC<SidebarProps> = ({ onViewChange, user }) => {
     }
   };
 
+  const handleOpenSettings = () => {
+    setShowSettingsDialog(true);
+    handleUserMenuClose();
+  };
+
+  const handleCloseSettings = () => {
+    setShowSettingsDialog(false);
+  };
+
   return (
     <Box 
       sx={{ 
@@ -421,7 +432,7 @@ const Sidebar: React.FC<SidebarProps> = ({ onViewChange, user }) => {
             </ListItemIcon>
             <ListItemText primary="Mon Profil" />
           </MenuItem>
-          <MenuItem onClick={handleUserMenuClose}>
+          <MenuItem onClick={handleOpenSettings}>
             <ListItemIcon>
               <Settings fontSize="small" />
             </ListItemIcon>
@@ -577,6 +588,12 @@ const Sidebar: React.FC<SidebarProps> = ({ onViewChange, user }) => {
             </Button>
           </DialogActions>
         </Dialog>
+
+        {/* Dialogue des paramètres */}
+        <SettingsDialog 
+          open={showSettingsDialog}
+          onClose={handleCloseSettings}
+        />
       </Box>
     </Box>
   );
