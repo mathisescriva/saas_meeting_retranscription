@@ -15,6 +15,7 @@
    - [Supprimer une réunion](#supprimer-une-réunion)
    - [Relancer une transcription](#relancer-une-transcription)
    - [Récupérer uniquement la transcription](#récupérer-uniquement-la-transcription)
+   - [Mettre à jour les métadonnées d'une réunion](#mettre-à-jour-les-métadonnées-dune-réunion)
 4. [Gestion du profil utilisateur](#gestion-du-profil-utilisateur)
    - [Obtenir les informations de profil](#obtenir-les-informations-de-profil)
    - [Mettre à jour le profil](#mettre-à-jour-le-profil)
@@ -47,6 +48,7 @@ L'API propose désormais des endpoints simplifiés pour faciliter l'intégration
 | `/meetings/{meeting_id}/start-transcription` | `/simple/meetings/{meeting_id}/transcribe` |
 | `/meetings/{meeting_id}/retry-transcription` | `/simple/meetings/{meeting_id}/retry-transcription` |
 | `/meetings/validate` | `/simple/meetings/validate-ids` |
+| N/A | `/simple/meetings/{meeting_id}/update-metadata` |
 
 **Note importante**: Les endpoints simplifiés nécessitent la même authentification que les endpoints standard. Assurez-vous d'inclure le token JWT dans l'en-tête `Authorization` avec le format `Bearer {token}`.
 
@@ -301,6 +303,33 @@ Récupère uniquement la transcription d'une réunion.
   "speakers_count": 2
 }
 ```
+
+### Mettre à jour les métadonnées d'une réunion
+
+Met à jour spécifiquement les métadonnées de durée et de nombre de participants pour une réunion existante en utilisant le script utilitaire `transcribe_direct.py`.
+
+**URL** : `/simple/meetings/{meeting_id}/update-metadata`  
+**Méthode** : `POST`  
+**Authentification requise** : Oui  
+
+Cette fonctionnalité est particulièrement utile pour corriger ou récupérer les métadonnées d'une réunion lorsqu'elles sont manquantes ou incorrectes. Le script `transcribe_direct.py` est utilisé en arrière-plan pour analyser l'audio et déterminer précisément la durée et le nombre de locuteurs.
+
+**Exemple de réponse réussie** :
+
+```json
+{
+  "id": "198868c7-ba07-402c-bbba-519f376b2471",
+  "title": "Réunion de projet",
+  "transcript_status": "completed",
+  "audio_duration": 300,
+  "speaker_count": 2
+}
+```
+
+**Codes d'état possibles** :
+- `200 OK` - Les métadonnées ont été mises à jour avec succès
+- `404 Not Found` - La réunion spécifiée n'existe pas
+- `500 Internal Server Error` - Erreur lors de l'exécution du script de mise à jour
 
 ## Gestion du profil utilisateur
 

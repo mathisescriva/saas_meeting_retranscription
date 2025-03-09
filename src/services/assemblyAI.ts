@@ -135,6 +135,51 @@ export async function transcribeAudio(file: File, options?: UploadOptions): Prom
           result.text = transcriptData.transcript_text || transcriptData.transcript;
           result.utterances = transcriptData.utterances;
           
+          // Si nous avons des utterances mais pas de transcript formaté avec les noms de locuteurs,
+          // nous allons le générer manuellement
+          if (result.utterances && result.utterances.length > 0) {
+            // Vérifier si le transcript_text inclut déjà des identifiants de locuteurs
+            const hasFormattedSpeakers = result.text && 
+                                        (result.text.includes("Speaker A:") || 
+                                         result.text.includes("Speaker ") || 
+                                         /Speaker \w+:/.test(result.text));
+            
+            if (!hasFormattedSpeakers) {
+              console.log("Transcription does not contain formatted speaker labels, generating them manually");
+              
+              // Créer un mapping d'ID de locuteurs vers des lettres (A, B, C, etc.)
+              const speakerIds = [...new Set(result.utterances.map(u => u.speaker))];
+              const speakerMap = Object.fromEntries(
+                speakerIds.map((id, index) => [
+                  id, 
+                  String.fromCharCode(65 + index) // A, B, C, etc.
+                ])
+              );
+              
+              // Générer un transcript formaté
+              const formattedTranscript = result.utterances
+                .map(u => `Speaker ${speakerMap[u.speaker]}: ${u.text}`)
+                .join("\n");
+              
+              // Remplacer le transcript par notre version formatée
+              result.text = formattedTranscript;
+              
+              // Tenter de mettre à jour le meeting avec la transcription formatée
+              try {
+                console.log(`Updating meeting ${meeting.id} with formatted transcript`);
+                
+                const apiClient = await import('./apiClient');
+                await apiClient.default.patch(`/meetings/${meeting.id}`, {
+                  transcript_text: formattedTranscript
+                });
+                
+                console.log(`Successfully updated meeting ${meeting.id} with formatted transcript`);
+              } catch (updateError) {
+                console.error('Failed to update meeting with formatted transcript:', updateError);
+              }
+            }
+          }
+          
           // Set some approximate duration if available from API, or calculate from utterances
           if (result.utterances && result.utterances.length > 0) {
             const lastUtterance = result.utterances[result.utterances.length - 1];

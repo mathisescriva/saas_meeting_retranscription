@@ -41,6 +41,9 @@ export interface Meeting {
     start: number;
     end: number;
   }>;
+  // Champs pour le compte rendu
+  summary_status?: 'not_generated' | 'processing' | 'completed' | 'error';
+  summary_text?: string;
 }
 
 export interface TranscriptResponse {
@@ -58,6 +61,8 @@ export interface TranscriptResponse {
   participants?: number;   // Nombre de participants détectés
   duration_seconds?: number; // Durée alternative en secondes
   speakers_count?: number;   // Nombre de locuteurs alternatif
+  summary_status?: 'not_generated' | 'processing' | 'completed' | 'error';
+  summary_text?: string;
 }
 
 export interface UploadOptions {
@@ -251,53 +256,86 @@ export async function getAllMeetings(): Promise<Meeting[]> {
 }
 
 /**
+ * Récupère directement la transcription avec diarization depuis l'API
+ * @param meetingId ID de la réunion
+ * @returns Transcription avec identifiants de locuteurs
+ */
+export async function getTranscriptionWithDiarization(meetingId: string): Promise<any> {
+  try {
+    console.log(`Fetching transcription with diarization for meeting ID: ${meetingId}`);
+    
+    // Utiliser l'endpoint direct qui retourne la transcription avec diarization
+    const response = await apiClient.get<any>(
+      `/${meetingId}`,
+      true  // withAuth = true
+    );
+    
+    console.log(`Got transcription with diarization for meeting ID ${meetingId}`);
+    return response;
+  } catch (error) {
+    console.error(`Error getting transcription with diarization for meeting ${meetingId}:`, error);
+    throw error;
+  }
+}
+
+/**
  * Get the transcript for a meeting
  */
 export async function getTranscript(meetingId: string): Promise<TranscriptResponse> {
   try {
     console.log(`Getting transcript for meeting ${meetingId}`);
     
-    // Récupérer les détails complets de la réunion, le transcript est inclus dans les détails
-    const meeting = await getMeeting(meetingId);
+    // Récupérer directement la transcription depuis l'API
+    const response = await apiClient.get<any>(
+      `/${meetingId}`,
+      true  // withAuth = true
+    );
     
-    if (!meeting) {
-      throw new Error(`Meeting with ID ${meetingId} not found`);
-    }
+    console.log(`Got transcript for meeting ID ${meetingId}`);
     
     // Convertir en format TranscriptResponse
-    const response: TranscriptResponse = {
-      meeting_id: meeting.id,
-      transcript_text: meeting.transcript_text || '',
-      transcript_status: meeting.transcript_status,
-      utterances: meeting.utterances,
-      audio_duration: meeting.audio_duration,
-      participants: meeting.participants,
-      duration_seconds: meeting.duration_seconds,
-      speakers_count: meeting.speakers_count
+    const transcriptResponse: TranscriptResponse = {
+      meeting_id: response.id || meetingId,
+      transcript_text: response.transcript_text || '',
+      transcript_status: response.transcript_status || response.transcription_status || 'completed',
+      utterances: response.utterances || [],
+      audio_duration: response.audio_duration || 0,
+      participants: response.participants || response.speakers_count || 0,
+      duration_seconds: response.duration_seconds || 0,
+      speakers_count: response.speakers_count || 0
     };
     
-    return response;
+    return transcriptResponse;
   } catch (error) {
     console.error(`Error getting transcript for meeting ${meetingId}:`, error);
-    throw error;
-  }
-}
-
-/**
- * Update a list of meetings in the cache
- * @param meetings List of meetings to update in the cache
- */
-function updateMeetingsCache(meetings: Meeting[]): void {
-  const meetingsCache = getMeetingsFromCache();
-  
-  meetings.forEach(meeting => {
-    if (meeting.id) {
-      meetingsCache[meeting.id] = meeting;
+    
+    // Tenter de récupérer via l'autre endpoint en cas d'échec
+    try {
+      console.log(`Falling back to standard method for meeting ${meetingId}`);
+      const meeting = await getMeeting(meetingId);
+      
+      if (!meeting) {
+        throw new Error(`Meeting with ID ${meetingId} not found`);
+      }
+      
+      // Convertir en format TranscriptResponse
+      const response: TranscriptResponse = {
+        meeting_id: meeting.id,
+        transcript_text: meeting.transcript_text || '',
+        transcript_status: meeting.transcript_status,
+        utterances: meeting.utterances,
+        audio_duration: meeting.audio_duration,
+        participants: meeting.participants,
+        duration_seconds: meeting.duration_seconds,
+        speakers_count: meeting.speakers_count
+      };
+      
+      return response;
+    } catch (fallbackError) {
+      console.error(`Fallback method also failed for meeting ${meetingId}:`, fallbackError);
+      throw error; // Throw the original error
     }
-  });
-  
-  saveMeetingsCache(meetingsCache);
-  console.log(`Updated ${meetings.length} meetings in cache`);
+  }
 }
 
 /**
@@ -334,24 +372,49 @@ export function saveMeetingsCache(meetings: MeetingsCache): void {
  * @param meeting La réunion à normaliser
  * @returns La réunion avec les champs standardisés
  */
-function normalizeMeeting(meeting: Meeting): Meeting {
+export function normalizeMeeting(meeting: Meeting): Meeting {
   if (!meeting) return meeting;
   
-  const normalizedMeeting = { ...meeting };
+  // Création d'une copie pour éviter de modifier l'original
+  const normalizedMeeting: Meeting = { ...meeting };
   
-  // Standardiser le statut de transcription
-  if (normalizedMeeting.transcription_status && !normalizedMeeting.transcript_status) {
-    normalizedMeeting.transcript_status = normalizedMeeting.transcription_status;
-  } else if (normalizedMeeting.transcript_status && !normalizedMeeting.transcription_status) {
+  // Normalisation du statut de transcription (plusieurs variations possibles)
+  if (normalizedMeeting.transcript_status && !normalizedMeeting.transcription_status) {
     normalizedMeeting.transcription_status = normalizedMeeting.transcript_status;
+  } else if (normalizedMeeting.transcription_status && !normalizedMeeting.transcript_status) {
+    normalizedMeeting.transcript_status = normalizedMeeting.transcription_status;
   }
   
-  // Pour la rétrocompatibilité (certaines réunions utilisent name au lieu de title)
+  // Normalisation du titre/nom (plusieurs variations possibles)
   if (normalizedMeeting.name && !normalizedMeeting.title) {
     normalizedMeeting.title = normalizedMeeting.name;
   } else if (normalizedMeeting.title && !normalizedMeeting.name) {
     normalizedMeeting.name = normalizedMeeting.title;
   }
+  
+  // Déterminer la durée en secondes (en priorité audio_duration)
+  normalizedMeeting.duration_seconds = 
+    normalizedMeeting.audio_duration || 
+    normalizedMeeting.duration_seconds || 
+    normalizedMeeting.duration || 
+    0;
+  
+  // S'assurer que nous avons aussi une durée en général
+  normalizedMeeting.duration = normalizedMeeting.duration_seconds;
+  // Conserver audio_duration pour les API qui s'attendent à ce champ
+  normalizedMeeting.audio_duration = normalizedMeeting.duration_seconds;
+  
+  // Nombre de participants/locuteurs (en priorité speaker_count)
+  normalizedMeeting.speakers_count = 
+    normalizedMeeting.speaker_count || 
+    normalizedMeeting.speakers_count || 
+    normalizedMeeting.participants || 
+    0;
+  
+  // Assurez-vous que participants est également défini (pour la rétrocompatibilité)
+  normalizedMeeting.participants = normalizedMeeting.speakers_count;
+  // Conserver speaker_count pour les API qui s'attendent à ce champ
+  normalizedMeeting.speaker_count = normalizedMeeting.speakers_count;
   
   return normalizedMeeting;
 }
@@ -374,6 +437,23 @@ function updateMeetingCache(meeting: Meeting): void {
 }
 
 /**
+ * Update a list of meetings in the cache
+ * @param meetings List of meetings to update in the cache
+ */
+function updateMeetingsCache(meetings: Meeting[]): void {
+  const meetingsCache = getMeetingsFromCache();
+  
+  meetings.forEach(meeting => {
+    if (meeting.id) {
+      meetingsCache[meeting.id] = meeting;
+    }
+  });
+  
+  saveMeetingsCache(meetingsCache);
+  console.log(`Updated ${meetings.length} meetings in cache`);
+}
+
+/**
  * Start a transcription process for a meeting
  */
 export async function startTranscription(meetingId: string): Promise<Meeting> {
@@ -383,7 +463,14 @@ export async function startTranscription(meetingId: string): Promise<Meeting> {
     // Utiliser le nouvel endpoint simplifié
     const result = await apiClient.post<Meeting>(`/simple/meetings/${meetingId}/transcribe`);
     console.log('Transcription started successfully:', result);
-    return result;
+    
+    // Normaliser le résultat pour la compatibilité
+    const normalizedResult = normalizeMeeting(result);
+    
+    // Mettre à jour le cache avec les données normalisées
+    updateMeetingCache(normalizedResult);
+    
+    return normalizedResult;
   } catch (error) {
     console.error('Failed to start transcription:', error);
     
@@ -407,12 +494,138 @@ export async function retryTranscription(
     console.log(`Retrying transcription for meeting ${meetingId}`);
     
     // Utiliser le nouvel endpoint simplifié
-    const result = await apiClient.post<Meeting>(`/simple/meetings/${meetingId}/transcribe`);
-    console.log('Transcription retry started successfully:', result);
-    return result;
+    const result = await apiClient.post<Meeting>(`/simple/meetings/${meetingId}/retry-transcription`);
+    console.log('Transcription retry initiated successfully:', result);
+    
+    // Normaliser le résultat pour la compatibilité
+    const normalizedResult = normalizeMeeting(result);
+    
+    // Mettre à jour le cache avec les données normalisées
+    updateMeetingCache(normalizedResult);
+    
+    // Appeler le callback de succès si présent
+    if (options?.onSuccess) {
+      options.onSuccess(normalizedResult);
+    }
+    
+    return normalizedResult;
   } catch (error) {
     console.error('Failed to retry transcription:', error);
+    
+    // Appeler le callback d'erreur si présent
+    if (options?.onError && error instanceof Error) {
+      options.onError(error);
+    }
+    
     throw error;
+  }
+}
+
+/**
+ * Function to extract audio duration and participants count from a meeting object
+ * Essaie de récupérer les informations même si elles sont dans des champs différents
+ */
+function extractAudioMetrics(meeting: Meeting): { duration: number, participants: number } {
+  // Extraire la durée avec priorité (audio_duration > duration_seconds > duration)
+  const duration = meeting.audio_duration || meeting.duration_seconds || meeting.duration || 0;
+  
+  // Extraire le nombre de participants (speaker_count > speakers_count > participants)
+  const participants = meeting.speaker_count || meeting.speakers_count || meeting.participants || 0;
+  
+  console.log(`Extracted metrics for meeting ${meeting.id}: Duration=${duration}s, Participants=${participants}`);
+  
+  return { duration, participants };
+}
+
+/**
+ * Check and update meeting metadata (duration, participants) if missing
+ */
+export async function updateMeetingMetadata(meetingId: string): Promise<Meeting | null> {
+  try {
+    console.log(`Checking and updating metadata for meeting ${meetingId}`);
+    
+    // Récupérer les données actuelles de la réunion
+    const meeting = await getMeeting(meetingId);
+    if (!meeting) return null;
+    
+    // Vérifier si les métadonnées sont déjà complètes
+    const { duration, participants } = extractAudioMetrics(meeting);
+    if (duration > 0 && participants > 0) {
+      console.log(`Meeting ${meetingId} already has complete metadata`, { duration, participants });
+      return meeting;
+    }
+    
+    // Si la transcription est complète mais les métadonnées sont manquantes
+    if ((meeting.transcript_status === 'completed' || meeting.transcription_status === 'completed') && 
+        (duration === 0 || participants === 0)) {
+      
+      console.log(`Meeting ${meetingId} is complete but missing metadata, requesting update with direct script`);
+      
+      // Essayer d'abord avec la nouvelle fonction qui utilise transcribe_direct.py
+      try {
+        const updatedMeeting = await updateMeetingParticipantsAndDuration(meetingId);
+        if (updatedMeeting) {
+          console.log('Successfully updated metadata using direct script');
+          return updatedMeeting;
+        }
+      } catch (directUpdateError) {
+        console.warn('Error with direct script update, falling back to standard method:', directUpdateError);
+      }
+      
+      // Utiliser l'endpoint standard si la méthode directe échoue
+      console.log('Falling back to standard method for metadata update');
+      const refreshedMeeting = await getMeetingDetails(meetingId);
+      
+      // Normaliser et mettre à jour le cache
+      const normalizedMeeting = normalizeMeeting(refreshedMeeting);
+      updateMeetingCache(normalizedMeeting);
+      
+      return normalizedMeeting;
+    }
+    
+    return meeting;
+  } catch (error) {
+    console.error(`Error updating meeting metadata for ${meetingId}:`, error);
+    return null;
+  }
+}
+
+/**
+ * Mettre à jour spécifiquement les métadonnées (durée et nombre de participants) d'une réunion
+ * en utilisant le script backend transcribe_direct.py
+ * 
+ * @param meetingId ID de la réunion à mettre à jour
+ * @returns La réunion mise à jour ou null en cas d'erreur
+ */
+export async function updateMeetingParticipantsAndDuration(meetingId: string): Promise<Meeting | null> {
+  try {
+    if (!meetingId) {
+      console.error('Cannot update meeting metadata: no meeting ID provided');
+      return null;
+    }
+    
+    console.log(`Requesting metadata update for meeting ${meetingId} using direct script`);
+    
+    // Utiliser le nouvel endpoint simplifié qui appellera transcribe_direct.py en mode update
+    const result = await apiClient.post<Meeting>(`/simple/meetings/${meetingId}/update-metadata`);
+    
+    if (!result) {
+      console.error(`Failed to update metadata for meeting ${meetingId}: No result returned`);
+      return null;
+    }
+    
+    // Normaliser et mettre en cache le résultat
+    const normalizedMeeting = normalizeMeeting(result);
+    updateMeetingCache(normalizedMeeting);
+    
+    // Extraire et afficher les métadonnées mises à jour
+    const { duration, participants } = extractAudioMetrics(normalizedMeeting);
+    console.log(`Meeting ${meetingId} metadata updated: Duration=${duration}s, Participants=${participants}`);
+    
+    return normalizedMeeting;
+  } catch (error) {
+    console.error(`Error updating meeting metadata for ${meetingId}:`, error);
+    return null;
   }
 }
 
@@ -603,13 +816,46 @@ export function watchTranscriptionStatus(
       // Si le statut est final, arrêter le polling
       if (status === 'completed' || status === 'error' || status === 'failed' || status === 'deleted') {
         console.log(`Meeting ${meetingId} reached final status: ${status}, stopping polling`);
-        stopPolling = true;
         
-        // Notifier les abonnés si la transcription est complétée
+        // Si la transcription est complétée, vérifier et mettre à jour les métadonnées
         if (status === 'completed') {
+          console.log('Transcription completed, checking for metadata');
+          
+          try {
+            // Extraire les métadonnées actuelles
+            const { duration, participants } = extractAudioMetrics(meeting);
+            
+            // Si les métadonnées sont manquantes, essayer de les mettre à jour
+            if (duration === 0 || participants === 0) {
+              console.log('Missing metadata, requesting update...');
+              const updatedMeeting = await updateMeetingMetadata(meetingId);
+              
+              // Si on a réussi à récupérer des métadonnées, utiliser cette version mise à jour
+              if (updatedMeeting) {
+                const updatedMetrics = extractAudioMetrics(updatedMeeting);
+                console.log('Metadata updated successfully:', {
+                  duration: updatedMetrics.duration,
+                  participants: updatedMetrics.participants
+                });
+                
+                // Notifier avec les données mises à jour
+                notifyTranscriptionCompleted(updatedMeeting);
+                stopPolling = true;
+                return;
+              }
+            } else {
+              console.log('Metadata already present:', { duration, participants });
+            }
+          } catch (metadataError) {
+            console.error('Error updating metadata:', metadataError);
+            // Continuer avec les données disponibles même en cas d'erreur de métadonnées
+          }
+          
+          // Notifier avec les données disponibles
           notifyTranscriptionCompleted(meeting);
         }
         
+        stopPolling = true;
         return;
       }
       
@@ -751,4 +997,182 @@ export async function syncMeetingsCache(cachedMeetingIds: string[]): Promise<str
     // pour éviter de bloquer l'utilisateur
     return cachedMeetingIds;
   }
+}
+
+/**
+ * Post-traite une transcription brute pour tenter d'identifier les différents locuteurs
+ * Utilise des heuristiques simples pour segmenter le texte par locuteur
+ * @param text Le texte brut de la transcription
+ * @returns Le texte formaté avec des identifiants de locuteurs estimés
+ */
+function attemptDiarizationOnRawText(text: string): string {
+  if (!text) return '';
+
+  // Si le texte contient déjà des identifiants de locuteurs, on le retourne tel quel
+  if (text.includes('Speaker ') && /Speaker [A-Z]:/.test(text)) {
+    return text;
+  }
+
+  console.log('Attempting to identify speakers in raw transcript text');
+
+  // Diviser le texte en paragraphes (possibles interventions)
+  const paragraphs = text.split(/\n\n+/).filter(p => p.trim().length > 0);
+
+  // Heuristiques pour détection de changement de locuteur:
+  // 1. Phrases commençant par "Bonjour", "Merci", "Je", etc.
+  // 2. Questions
+  // 3. Citations et dialogues
+  const speakerChangePatterns = [
+    /^(Bonjour|Merci|Alors|Je vous|Donc|Bien|Oui|Non|En fait|Et bien|Vous|Nous)/i,
+    /^([A-Z][^.!?]*\?)/,
+    /^"[^"]+"/,
+    /^[A-Z][^.!?]{15,}\./  // Longue première phrase commençant par majuscule
+  ];
+
+  let currentSpeaker = 0;
+  const speakerLetters = ['A', 'B', 'C', 'D', 'E', 'F'];
+  let formattedText = '';
+  let lastSpeaker = -1;
+
+  paragraphs.forEach((paragraph, index) => {
+    // Détecter si ce paragraphe semble être un nouveau locuteur
+    let isSpeakerChange = (index === 0); // Premier paragraphe = premier locuteur
+
+    if (!isSpeakerChange && index > 0) {
+      // Vérifier les patterns de changement de locuteur
+      for (const pattern of speakerChangePatterns) {
+        if (pattern.test(paragraph)) {
+          isSpeakerChange = true;
+          break;
+        }
+      }
+
+      // Vérifier aussi la longueur - un long silence suivi d'une intervention
+      // indique probablement un changement de locuteur
+      if (paragraph.length > 100) {
+        isSpeakerChange = true;
+      }
+    }
+
+    if (isSpeakerChange) {
+      currentSpeaker = (lastSpeaker + 1) % speakerLetters.length;
+      lastSpeaker = currentSpeaker;
+    }
+
+    formattedText += `Speaker ${speakerLetters[currentSpeaker]}: ${paragraph}\n\n`;
+  });
+
+  return formattedText.trim();
+}
+
+/**
+ * Génère un compte rendu pour une réunion spécifique
+ * @param meetingId ID de la réunion pour laquelle générer un compte rendu
+ * @returns La réunion mise à jour avec le statut du compte rendu
+ */
+export async function generateMeetingSummary(meetingId: string): Promise<Meeting> {
+  try {
+    console.log(`Generating summary for meeting ID: ${meetingId}`);
+    
+    // Récupérer le token d'authentification
+    const token = localStorage.getItem('auth_token');
+    if (!token) {
+      throw new Error('Authentication token not found');
+    }
+    
+    // Appeler l'API pour générer le compte rendu
+    const response = await fetch(`http://localhost:8000/meetings/${meetingId}/generate-summary`, {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${token}`
+      }
+    });
+    
+    if (!response.ok) {
+      throw new Error(`Error generating summary: ${response.status} ${response.statusText}`);
+    }
+    
+    const data = await response.json();
+    console.log(`Summary generation initiated for meeting ${meetingId}:`, data);
+    
+    // Mettre à jour le cache avec le statut de génération du compte rendu
+    const meetingsCache = getMeetingsFromCache();
+    if (meetingsCache[meetingId]) {
+      meetingsCache[meetingId].summary_status = 'processing';
+      saveMeetingsCache(meetingsCache);
+    }
+    
+    // Récupérer les détails mis à jour de la réunion
+    return await getMeetingDetails(meetingId);
+  } catch (error) {
+    console.error(`Error generating summary for meeting ${meetingId}:`, error);
+    throw error;
+  }
+}
+
+/**
+ * Surveille le statut de génération du compte rendu
+ * @param meetingId ID de la réunion
+ * @param onUpdate Callback pour les mises à jour de statut
+ * @returns Fonction pour arrêter la surveillance
+ */
+export function watchSummaryStatus(
+  meetingId: string,
+  onUpdate?: (status: string, meeting: Meeting) => void
+): () => void {
+  console.log(`Starting to watch summary status for meeting ${meetingId}`);
+  
+  let isActive = true;
+  let timeoutId: NodeJS.Timeout | null = null;
+  
+  const checkStatus = async () => {
+    if (!isActive) return;
+    
+    try {
+      // Récupérer les détails de la réunion
+      const meeting = await getMeetingDetails(meetingId);
+      
+      if (!meeting) {
+        console.error(`Meeting ${meetingId} not found during summary status check`);
+        if (isActive && timeoutId) {
+          timeoutId = setTimeout(checkStatus, 10000); // Réessayer après un délai plus long en cas d'erreur
+        }
+        return;
+      }
+      
+      // Vérifier si le compte rendu est terminé
+      if (meeting.summary_status === 'completed' || meeting.summary_status === 'error') {
+        console.log(`Summary generation ${meeting.summary_status} for meeting ${meetingId}`);
+        if (onUpdate) {
+          onUpdate(meeting.summary_status, meeting);
+        }
+        return; // Arrêter la surveillance
+      }
+      
+      // Continuer la surveillance
+      if (onUpdate) {
+        onUpdate(meeting.summary_status || 'processing', meeting);
+      }
+      
+      // Planifier la prochaine vérification
+      timeoutId = setTimeout(checkStatus, 5000);
+    } catch (error) {
+      console.error(`Error checking summary status for meeting ${meetingId}:`, error);
+      if (isActive && timeoutId) {
+        timeoutId = setTimeout(checkStatus, 10000); // Réessayer après un délai plus long en cas d'erreur
+      }
+    }
+  };
+  
+  // Démarrer la surveillance
+  checkStatus();
+  
+  // Retourner une fonction pour arrêter la surveillance
+  return () => {
+    console.log(`Stopping summary status watch for meeting ${meetingId}`);
+    isActive = false;
+    if (timeoutId) {
+      clearTimeout(timeoutId);
+    }
+  };
 }

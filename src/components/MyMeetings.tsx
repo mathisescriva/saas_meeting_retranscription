@@ -16,6 +16,7 @@ import {
   DialogActions,
   CircularProgress,
   Alert,
+  Tooltip,
 } from '@mui/material';
 import {
   PlayArrow as PlayArrowIcon,
@@ -26,8 +27,21 @@ import {
   Warning as WarningIcon,
   EventNote as EventNoteIcon,
   Delete as DeleteIcon,
+  Update as UpdateIcon,
 } from '@mui/icons-material';
-import { getAllMeetings, getTranscript, deleteMeeting, Meeting as ApiMeeting, getMeetingDetails, onTranscriptionCompleted, getMeetingAudio } from '../services/meetingService';
+import { 
+  getAllMeetings, 
+  getTranscript, 
+  deleteMeeting, 
+  Meeting as ApiMeeting, 
+  getMeetingDetails, 
+  onTranscriptionCompleted, 
+  getMeetingAudio, 
+  updateMeetingMetadata, 
+  updateMeetingParticipantsAndDuration,
+  generateMeetingSummary,
+  watchSummaryStatus
+} from '../services/meetingService';
 import { useNotification } from '../contexts/NotificationContext';
 import MeetingAudioPlayer from './MeetingAudioPlayer';
 
@@ -40,7 +54,7 @@ interface Meeting extends ApiMeeting {
 
 const MyMeetings: React.FC = () => {
   const theme = useTheme();
-  const { showSuccessPopup } = useNotification();
+  const { showSuccessPopup, showErrorPopup } = useNotification();
   const [meetings, setMeetings] = useState<Meeting[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -51,6 +65,9 @@ const MyMeetings: React.FC = () => {
   const [audioDialogOpen, setAudioDialogOpen] = useState(false);
   const [currentAudioUrl, setCurrentAudioUrl] = useState<string | null>(null);
   const [currentAudioTitle, setCurrentAudioTitle] = useState<string | null>(null);
+  const [refreshingMetadataId, setRefreshingMetadataId] = useState<string | null>(null);
+  const [generatingSummaryId, setGeneratingSummaryId] = useState<string | null>(null);
+  const [summaryWatchers, setSummaryWatchers] = useState<Record<string, () => void>>({});
 
   // Définir fetchMeetings au début avec useCallback
   const fetchMeetings = useCallback(async () => {
@@ -66,14 +83,18 @@ const MyMeetings: React.FC = () => {
           rawDuration: meeting.duration,
           rawDurationType: typeof meeting.duration,
           rawAudioDuration: meeting.audio_duration,
-          rawAudioDurationType: typeof meeting.audio_duration
+          rawAudioDurationType: typeof meeting.audio_duration,
+          speakers: meeting.speaker_count || meeting.speakers_count || meeting.participants,
         });
         
         // Process duration - try to ensure we have a numerical value
         let durationInSeconds: number | undefined = undefined;
         
+        // Ordre de priorité: audio_duration, duration_seconds, puis duration
         if (typeof meeting.audio_duration === 'number') {
           durationInSeconds = meeting.audio_duration;
+        } else if (typeof meeting.duration_seconds === 'number') {
+          durationInSeconds = meeting.duration_seconds;
         } else if (typeof meeting.duration === 'number') {
           durationInSeconds = meeting.duration;
         } else if (typeof meeting.duration === 'string' && meeting.duration.includes('min')) {
@@ -84,12 +105,16 @@ const MyMeetings: React.FC = () => {
           }
         }
         
-        console.log(`Processed duration for ${meeting.id}:`, durationInSeconds);
+        // Déterminer le nombre de participants avec le bon ordre de priorité
+        const participants = meeting.speaker_count || meeting.speakers_count || meeting.participants || 0;
+        
+        console.log(`Processed metadata for ${meeting.id}: Duration=${durationInSeconds}s, Participants=${participants}`);
         
         return {
           ...meeting,
           audio_duration: durationInSeconds,
           duration: durationInSeconds || meeting.duration,
+          participants: participants,
           summary: {
             // Assuming if transcription is completed, a summary could be generated
             status: meeting.transcript_status === 'completed' || meeting.transcription_status === 'completed' 
@@ -173,19 +198,58 @@ const MyMeetings: React.FC = () => {
     try {
       console.log(`Fetching transcript for meeting ID: ${meetingId}`);
       
-      // Mettre à jour les détails de la réunion avant d'afficher la transcription
-      await updateMeetingDetails(meetingId);
+      // Récupérer le token d'authentification
+      const token = localStorage.getItem('auth_token');
+      console.log('Using auth token:', token ? `${token.substring(0, 10)}...` : 'No token found');
       
-      const transcriptData = await getTranscript(meetingId);
-      console.log('Transcript data:', transcriptData);
+      // Essayer les deux endpoints possibles pour voir lequel fonctionne
+      let response;
+      let endpoint;
+      let error404 = false;
       
-      if (transcriptData && transcriptData.transcript_text) {
-        setTranscript(transcriptData.transcript_text);
-      } else if (transcriptData && transcriptData.error) {
-        setTranscript(transcriptData.error);
-      } else {
-        setTranscript("No transcript available. The transcript may not have been generated yet or the transcription process failed.");
+      // Premier essai: utiliser l'endpoint direct
+      try {
+        endpoint = `http://localhost:8000/${meetingId}`;
+        console.log(`Trying direct endpoint: ${endpoint}`);
+        
+        response = await fetch(endpoint, {
+          method: 'GET',
+          headers: {
+            'Authorization': `Bearer ${token}`
+          }
+        });
+        
+        if (response.status === 404) {
+          error404 = true;
+          console.log('Direct endpoint returned 404, will try with /simple/ endpoint');
+        }
+      } catch (err) {
+        console.error('Error with direct endpoint:', err);
       }
+      
+      // Deuxième essai si le premier a échoué avec 404: utiliser l'endpoint /simple/
+      if (error404 || !response || !response.ok) {
+        endpoint = `http://localhost:8000/simple/meetings/${meetingId}`;
+        console.log(`Trying with /simple/ endpoint: ${endpoint}`);
+        
+        response = await fetch(endpoint, {
+          method: 'GET',
+          headers: {
+            'Authorization': `Bearer ${token}`
+          }
+        });
+      }
+      
+      if (!response.ok) {
+        console.error(`API error: ${response.status} ${response.statusText}`);
+        throw new Error(`Error fetching transcript: ${response.status} ${response.statusText}`);
+      }
+      
+      const rawData = await response.json();
+      console.log(`Raw data from ${endpoint}:`, rawData);
+      
+      // Afficher les données brutes formatées en JSON pour une meilleure lisibilité
+      setTranscript(JSON.stringify(rawData, null, 2));
     } catch (error) {
       console.error('Erreur lors de la récupération de la transcription:', error);
       
@@ -236,11 +300,32 @@ const MyMeetings: React.FC = () => {
     try {
       console.log(`Updating details for meeting ${meetingId} in MyMeetings`);
       
-      // Récupérer les détails complets de la réunion
-      const meetingDetails = await getMeetingDetails(meetingId);
+      // Essayer d'abord avec la fonction updateMeetingMetadata si elle est disponible
+      let meetingDetails;
+      
+      try {
+        // Vérifier si cette fonction existe
+        if (typeof updateMeetingMetadata === 'function') {
+          console.log('Using updateMeetingMetadata to get duration and participants count');
+          meetingDetails = await updateMeetingMetadata(meetingId);
+        } else {
+          // Sinon, utiliser la méthode standard
+          console.log('Using getMeetingDetails to get full meeting data');
+          meetingDetails = await getMeetingDetails(meetingId);
+        }
+      } catch (err) {
+        // En cas d'erreur avec updateMeetingMetadata, utiliser la méthode standard
+        console.warn('Error with metadata update, falling back to getMeetingDetails:', err);
+        meetingDetails = await getMeetingDetails(meetingId);
+      }
+      
+      if (!meetingDetails) {
+        console.warn(`No details found for meeting ${meetingId}`);
+        return null;
+      }
       
       // Si la réunion est marquée comme indisponible (statut 'failed'), mettre à jour l'interface
-      if (meetingDetails.transcript_status === 'failed' && meetingDetails.transcription_status === 'failed') {
+      if (meetingDetails.transcript_status === 'failed' || meetingDetails.transcription_status === 'failed') {
         setMeetings(prevMeetings => 
           prevMeetings.filter(meeting => meeting.id !== meetingId)
         );
@@ -248,21 +333,27 @@ const MyMeetings: React.FC = () => {
         return meetingDetails;
       }
       
+      // Extraire la durée et le nombre de participants
+      const duration = meetingDetails.audio_duration || 
+                      meetingDetails.duration_seconds || 
+                      meetingDetails.duration || 0;
+                      
+      const participants = meetingDetails.speaker_count || 
+                          meetingDetails.speakers_count || 
+                          meetingDetails.participants || 0;
+      
+      console.log(`Meeting ${meetingId} metadata: Duration=${duration}s, Participants=${participants}`);
+      
       // Mettre à jour l'interface utilisateur
       setMeetings(prevMeetings => 
         prevMeetings.map(meeting => 
           meeting.id === meetingId 
             ? {
                 ...meeting,
-                // Utiliser les nouveaux champs de durée et de participants
-                audio_duration: meetingDetails.duration_seconds || 
-                               meetingDetails.audio_duration,
-                duration: meetingDetails.duration_seconds || 
-                         meetingDetails.audio_duration || 
-                         meetingDetails.duration,
-                participants: meetingDetails.speakers_count || 
-                             meetingDetails.participants || 
-                             meeting.participants || 0
+                // Utiliser les valeurs extraites
+                audio_duration: duration,
+                duration: duration,
+                participants: participants
               } 
             : meeting
         )
@@ -346,6 +437,172 @@ const MyMeetings: React.FC = () => {
     // Ne pas effacer l'URL ici - le composant MeetingAudioPlayer va s'en charger
     // avec son effet de nettoyage lorsque le composant sera démonté
   };
+
+  // Fonction pour mettre à jour spécifiquement les métadonnées d'une réunion
+  const handleUpdateMetadata = async (meetingId: string) => {
+    try {
+      setRefreshingMetadataId(meetingId);
+      
+      console.log(`Requesting metadata update for meeting ${meetingId}`);
+      
+      // Utiliser la nouvelle fonction qui utilise le script transcribe_direct.py
+      const updatedMeeting = await updateMeetingParticipantsAndDuration(meetingId);
+      
+      if (!updatedMeeting) {
+        console.error(`Failed to update metadata for meeting ${meetingId}`);
+        showErrorPopup('Erreur', 'Erreur lors de la mise à jour des métadonnées');
+        return;
+      }
+      
+      // Extraire les métadonnées mises à jour
+      const duration = updatedMeeting.audio_duration || 
+                      updatedMeeting.duration_seconds || 
+                      updatedMeeting.duration || 0;
+                      
+      const participants = updatedMeeting.speaker_count || 
+                          updatedMeeting.speakers_count || 
+                          updatedMeeting.participants || 0;
+      
+      console.log(`Metadata updated: Duration=${duration}s, Participants=${participants}`);
+      
+      // Mettre à jour l'interface utilisateur
+      setMeetings(prevMeetings => 
+        prevMeetings.map(meeting => 
+          meeting.id === meetingId 
+            ? {
+                ...meeting,
+                audio_duration: duration,
+                duration: duration,
+                participants: participants
+              } 
+            : meeting
+        )
+      );
+      
+      showSuccessPopup('Succès', 'Métadonnées mises à jour avec succès');
+    } catch (err) {
+      console.error('Failed to update metadata:', err);
+      showErrorPopup('Erreur', `Erreur: ${err instanceof Error ? err.message : 'Erreur inconnue'}`);
+    } finally {
+      setRefreshingMetadataId(null);
+    }
+  };
+
+  // Fonction pour générer un compte rendu de réunion
+  const handleGenerateSummary = async (meetingId: string) => {
+    try {
+      setGeneratingSummaryId(meetingId);
+      console.log(`Generating summary for meeting ${meetingId}`);
+      
+      // Appeler l'API pour générer le compte rendu
+      const meeting = await generateMeetingSummary(meetingId);
+      
+      if (!meeting) {
+        console.error(`Failed to initiate summary generation for meeting ${meetingId}`);
+        showErrorPopup('Erreur', 'Erreur lors de la génération du compte rendu');
+        return;
+      }
+      
+      console.log(`Summary generation initiated for meeting ${meetingId}:`, meeting);
+      showSuccessPopup('Information', 'Génération du compte rendu en cours...');
+      
+      // Mettre à jour l'interface utilisateur pour indiquer que le compte rendu est en cours de génération
+      setMeetings(prevMeetings => 
+        prevMeetings.map(meeting => 
+          meeting.id === meetingId 
+            ? {
+                ...meeting,
+                summary_status: 'processing'
+              } 
+            : meeting
+        )
+      );
+      
+      // Arrêter tout watcher existant pour cette réunion
+      if (summaryWatchers[meetingId]) {
+        summaryWatchers[meetingId]();
+      }
+      
+      // Surveiller le statut de génération du compte rendu
+      const stopWatching = watchSummaryStatus(meetingId, (status, updatedMeeting) => {
+        console.log(`Summary status update for meeting ${meetingId}: ${status}`);
+        
+        // Mettre à jour l'interface utilisateur avec le statut actuel
+        setMeetings(prevMeetings => 
+          prevMeetings.map(meeting => 
+            meeting.id === meetingId 
+              ? {
+                  ...meeting,
+                  summary_status: status,
+                  summary_text: updatedMeeting.summary_text
+                } 
+              : meeting
+          )
+        );
+        
+        // Si le compte rendu est terminé ou en erreur, arrêter la surveillance
+        if (status === 'completed') {
+          showSuccessPopup('Succès', 'Compte rendu généré avec succès');
+          setGeneratingSummaryId(null);
+          
+          // Arrêter la surveillance
+          if (summaryWatchers[meetingId]) {
+            summaryWatchers[meetingId]();
+            const newWatchers = { ...summaryWatchers };
+            delete newWatchers[meetingId];
+            setSummaryWatchers(newWatchers);
+          }
+        } else if (status === 'error') {
+          showErrorPopup('Erreur', 'Erreur lors de la génération du compte rendu');
+          setGeneratingSummaryId(null);
+          
+          // Arrêter la surveillance
+          if (summaryWatchers[meetingId]) {
+            summaryWatchers[meetingId]();
+            const newWatchers = { ...summaryWatchers };
+            delete newWatchers[meetingId];
+            setSummaryWatchers(newWatchers);
+          }
+        }
+      });
+      
+      // Stocker la fonction pour arrêter la surveillance
+      setSummaryWatchers(prev => ({
+        ...prev,
+        [meetingId]: stopWatching
+      }));
+      
+    } catch (err) {
+      console.error('Failed to generate summary:', err);
+      showErrorPopup('Erreur', `Erreur: ${err instanceof Error ? err.message : 'Erreur inconnue'}`);
+      setGeneratingSummaryId(null);
+    }
+  };
+
+  // Fonction pour afficher le compte rendu sans le régénérer
+  const handleViewSummary = (meetingId: string) => {
+    // Trouver la réunion concernée
+    const meeting = meetings.find(m => m.id === meetingId);
+    if (!meeting || !meeting.summary_text) {
+      showErrorPopup('Erreur', 'Le compte rendu n\'est pas disponible');
+      return;
+    }
+    
+    // Afficher le compte rendu dans une boîte de dialogue
+    setTranscript(meeting.summary_text);
+  };
+
+  // Nettoyer les watchers lors du démontage du composant
+  useEffect(() => {
+    return () => {
+      // Arrêter tous les watchers de statut de compte rendu
+      Object.values(summaryWatchers).forEach(stopWatching => {
+        if (typeof stopWatching === 'function') {
+          stopWatching();
+        }
+      });
+    };
+  }, [summaryWatchers]);
 
   return (
     <>
@@ -507,6 +764,32 @@ const MyMeetings: React.FC = () => {
                         >
                           View Transcript
                         </Button>
+                        
+                        {/* Generate Summary button - only show for completed transcriptions */}
+                        {(meeting.transcript_status === 'completed' || meeting.transcription_status === 'completed') && (
+                          <Button
+                            variant="outlined"
+                            color="primary"
+                            startIcon={<EventNoteIcon />}
+                            onClick={(e) => {
+                              e.stopPropagation(); // Empêcher le onclick du Paper parent
+                              // Si le compte rendu est déjà généré, l'afficher sans le régénérer
+                              if (meeting.summary_status === 'completed') {
+                                handleViewSummary(meeting.id);
+                              } else {
+                                handleGenerateSummary(meeting.id);
+                              }
+                            }}
+                            disabled={generatingSummaryId === meeting.id || meeting.summary_status === 'processing'}
+                            size="small"
+                          >
+                            {generatingSummaryId === meeting.id || meeting.summary_status === 'processing' 
+                              ? 'Generating...' 
+                              : meeting.summary_status === 'completed' 
+                                ? 'View Summary' 
+                                : 'Generate Summary'}
+                          </Button>
+                        )}
                       </Stack>
                     </Box>
                     <Stack direction="row" spacing={1}>
@@ -543,6 +826,23 @@ const MyMeetings: React.FC = () => {
                       </IconButton>
                     </Stack>
                   </Box>
+                  {/* Bouton pour mettre à jour les métadonnées - ajouté directement dans la ligne des actions */}
+                  {(meeting.transcript_status === 'completed' || meeting.transcription_status === 'completed') && (
+                    <Box display="flex" justifyContent="flex-end" mt={1}>
+                      <Tooltip title="Mettre à jour durée et participants">
+                        <IconButton 
+                          size="small" 
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            handleUpdateMetadata(meeting.id);
+                          }}
+                          disabled={refreshingMetadataId === meeting.id}
+                        >
+                          <UpdateIcon fontSize="small" color={refreshingMetadataId === meeting.id ? "disabled" : "action"} />
+                        </IconButton>
+                      </Tooltip>
+                    </Box>
+                  )}
                 </Paper>
               </Grid>
             ))}
@@ -585,9 +885,20 @@ const MyMeetings: React.FC = () => {
         </DialogTitle>
         <DialogContent sx={{ mt: 2, minHeight: '300px', maxHeight: '60vh', overflowY: 'auto' }}>
           {transcript && transcript.length > 0 ? (
-            <Typography variant="body1" sx={{ whiteSpace: 'pre-wrap', lineHeight: 1.6 }}>
+            <Box 
+              component="pre" 
+              sx={{ 
+                whiteSpace: 'pre-wrap', 
+                fontFamily: 'monospace', 
+                backgroundColor: '#f5f5f5', 
+                padding: 2,
+                borderRadius: 1,
+                fontSize: '0.85rem',
+                overflow: 'auto'
+              }}
+            >
               {transcript}
-            </Typography>
+            </Box>
           ) : (
             <Box sx={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', height: '100%', py: 4 }}>
               <WarningIcon color="warning" sx={{ fontSize: 48, mb: 2 }} />
@@ -600,6 +911,49 @@ const MyMeetings: React.FC = () => {
         </DialogContent>
         <DialogActions>
           <Button onClick={() => setTranscript(null)}>Close</Button>
+        </DialogActions>
+      </Dialog>
+
+      {/* Dialogue pour afficher le compte rendu */}
+      <Dialog 
+        open={!!meetings.find(m => m.id === generatingSummaryId && m.summary_status === 'completed' && m.summary_text)} 
+        onClose={() => setGeneratingSummaryId(null)}
+        maxWidth="md"
+        fullWidth
+      >
+        <DialogTitle sx={{ borderBottom: '1px solid #eee', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+          <Typography variant="h6">Meeting Summary</Typography>
+          <IconButton onClick={() => setGeneratingSummaryId(null)}>
+            <CloseIcon />
+          </IconButton>
+        </DialogTitle>
+        <DialogContent sx={{ mt: 2, minHeight: '300px', maxHeight: '60vh', overflowY: 'auto' }}>
+          {meetings.find(m => m.id === generatingSummaryId)?.summary_text ? (
+            <Box 
+              sx={{ 
+                whiteSpace: 'pre-wrap', 
+                fontFamily: 'inherit', 
+                backgroundColor: '#f9f9f9', 
+                padding: 2,
+                borderRadius: 1,
+                fontSize: '1rem',
+                overflow: 'auto'
+              }}
+            >
+              {meetings.find(m => m.id === generatingSummaryId)?.summary_text}
+            </Box>
+          ) : (
+            <Box sx={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', height: '100%', py: 4 }}>
+              <WarningIcon color="warning" sx={{ fontSize: 48, mb: 2 }} />
+              <Typography variant="h6" sx={{ mb: 1 }}>No Summary Available</Typography>
+              <Typography variant="body2" color="text.secondary" sx={{ textAlign: 'center' }}>
+                The summary for this meeting has not been generated yet or the generation process failed.
+              </Typography>
+            </Box>
+          )}
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setGeneratingSummaryId(null)}>Close</Button>
         </DialogActions>
       </Dialog>
     </>
