@@ -70,6 +70,7 @@ const MyMeetings: React.FC = () => {
   const [currentAudioTitle, setCurrentAudioTitle] = useState<string | null>(null);
   const [refreshingMetadataId, setRefreshingMetadataId] = useState<string | null>(null);
   const [generatingSummaryId, setGeneratingSummaryId] = useState<string | null>(null);
+  const [closingSummary, setClosingSummary] = useState(false);
   const [summaryWatchers, setSummaryWatchers] = useState<Record<string, () => void>>({});
 
   // CSS styles for Markdown content
@@ -819,6 +820,18 @@ const MyMeetings: React.FC = () => {
     setGeneratingSummaryId(meetingId);
   };
 
+  // Fonction pour fermer le dialogue de summary avec un délai
+  const handleCloseSummary = () => {
+    // Marquer que nous sommes en train de fermer le dialogue
+    setClosingSummary(true);
+    // Fermer le dialogue
+    setGeneratingSummaryId(null);
+    // Réinitialiser l'état de fermeture après un délai
+    setTimeout(() => {
+      setClosingSummary(false);
+    }, 300);
+  };
+
   // Nettoyer les watchers lors du démontage du composant
   useEffect(() => {
     return () => {
@@ -1102,9 +1115,13 @@ const MyMeetings: React.FC = () => {
       <Dialog 
         open={transcriptDialogOpen} 
         onClose={() => {
+          // Fermer d'abord le dialogue, puis réinitialiser les états
           setTranscriptDialogOpen(false);
-          setTranscript(null);
-          setFormattedTranscript(null);
+          // Utiliser setTimeout pour réinitialiser les états après la fermeture du dialogue
+          setTimeout(() => {
+            setTranscript(null);
+            setFormattedTranscript(null);
+          }, 300); // Délai légèrement supérieur à la durée de l'animation de fermeture du dialogue
         }}
         maxWidth="md"
         fullWidth
@@ -1113,8 +1130,10 @@ const MyMeetings: React.FC = () => {
           <Typography variant="h6">Transcript</Typography>
           <IconButton onClick={() => {
             setTranscriptDialogOpen(false);
-            setTranscript(null);
-            setFormattedTranscript(null);
+            setTimeout(() => {
+              setTranscript(null);
+              setFormattedTranscript(null);
+            }, 300);
           }}>
             <CloseIcon />
           </IconButton>
@@ -1171,8 +1190,10 @@ const MyMeetings: React.FC = () => {
         <DialogActions>
           <Button onClick={() => {
             setTranscriptDialogOpen(false);
-            setTranscript(null);
-            setFormattedTranscript(null);
+            setTimeout(() => {
+              setTranscript(null);
+              setFormattedTranscript(null);
+            }, 300);
           }}>Close</Button>
         </DialogActions>
       </Dialog>
@@ -1180,13 +1201,13 @@ const MyMeetings: React.FC = () => {
       {/* Dialogue pour afficher le compte rendu */}
       <Dialog 
         open={!!generatingSummaryId} 
-        onClose={() => setGeneratingSummaryId(null)}
+        onClose={handleCloseSummary}
         maxWidth="md"
         fullWidth
       >
         <DialogTitle sx={{ borderBottom: '1px solid #eee', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
           <Typography variant="h6">Meeting Summary</Typography>
-          <IconButton onClick={() => setGeneratingSummaryId(null)}>
+          <IconButton onClick={handleCloseSummary}>
             <CloseIcon />
           </IconButton>
         </DialogTitle>
@@ -1195,7 +1216,9 @@ const MyMeetings: React.FC = () => {
             const meeting = meetings.find(m => m.id === generatingSummaryId);
             
             // Si le résumé est complété et contient du texte
-            if (meeting?.summary_status === 'completed' && meeting?.summary_text) {
+            if ((meeting?.summary_status === 'completed' && meeting?.summary_text) || closingSummary) {
+              // Si nous sommes en train de fermer le dialogue, afficher le dernier contenu connu
+              // pour éviter de montrer "No Summary Available" pendant la fermeture
               return (
                 <Box 
                   sx={{ 
@@ -1293,7 +1316,7 @@ const MyMeetings: React.FC = () => {
                       font-weight: 600;
                     }
                   `}</style>
-                  <ReactMarkdown>{meeting.summary_text}</ReactMarkdown>
+                  <ReactMarkdown>{meeting?.summary_text || ''}</ReactMarkdown>
                 </Box>
               );
             }
@@ -1344,7 +1367,7 @@ const MyMeetings: React.FC = () => {
           })()}
         </DialogContent>
         <DialogActions>
-          <Button onClick={() => setGeneratingSummaryId(null)}>Close</Button>
+          <Button onClick={handleCloseSummary}>Close</Button>
         </DialogActions>
       </Dialog>
     </>
