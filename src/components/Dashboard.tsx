@@ -168,6 +168,7 @@ const Dashboard: React.FC<DashboardProps> = ({ user }) => {
   const [isProcessing, setIsProcessing] = useState(false);
   const [showDialog, setShowDialog] = useState(false);
   const [showDemoDialog, setShowDemoDialog] = useState(false);
+  const [meetingsList, setMeetingsList] = useState<RecentMeeting[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const [errorState, setErrorState] = useState<{message: string} | null>(null);
   
