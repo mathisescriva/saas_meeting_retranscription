@@ -123,6 +123,10 @@ const MyMeetings: React.FC = () => {
       setLoading(true);
       setIsRefreshing(true);
       setError(null);
+      
+      // Enregistrer le temps de début pour garantir un temps minimum de chargement
+      const startTime = Date.now();
+      
       const fetchedMeetings = await getAllMeetings();
       
       // Convert the duration values for display
@@ -172,6 +176,15 @@ const MyMeetings: React.FC = () => {
         };
       });
       
+      // Calculer le temps écoulé depuis le début de la requête
+      const elapsedTime = Date.now() - startTime;
+      const minLoadingTime = 800; // Temps minimum de chargement en millisecondes
+      
+      // Si la requête a été trop rapide, attendre un peu pour montrer le chargement
+      if (elapsedTime < minLoadingTime) {
+        await new Promise(resolve => setTimeout(resolve, minLoadingTime - elapsedTime));
+      }
+      
       setMeetings(processedMeetings);
       
       // Pour chaque réunion complétée, mettre à jour les détails avec les informations les plus récentes
@@ -190,7 +203,7 @@ const MyMeetings: React.FC = () => {
       setLoading(false);
       setIsRefreshing(false);
     }
-  }, []);
+  }, [showErrorPopup]);
 
   // Load all meetings on component mount
   useEffect(() => {
