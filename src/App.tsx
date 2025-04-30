@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { ThemeProvider } from '@mui/material/styles';
-import { Box, CssBaseline, Snackbar, Alert, Typography, Grid } from '@mui/material';
+import { Box, CssBaseline, Snackbar, Alert, Typography, Grid, Dialog, DialogTitle, DialogContent, DialogActions, Button } from '@mui/material';
 import theme from './styles/theme';
 import Sidebar from './components/Sidebar';
 import MainContent from './components/MainContent';
@@ -14,6 +14,9 @@ function App() {
   const [currentUser, setCurrentUser] = useState<User | null>(null);
   const [isLoading, setIsLoading] = useState<boolean>(true);
   const [authError, setAuthError] = useState<string | null>(null);
+  const [isRecording, setIsRecording] = useState<boolean>(false);
+  const [showConfirmNavigation, setShowConfirmNavigation] = useState<boolean>(false);
+  const [pendingView, setPendingView] = useState<'dashboard' | 'meetings' | null>(null);
 
   // Fonction pour gérer les erreurs d'authentification et déconnecter l'utilisateur
   const handleAuthError = useCallback((message: string) => {
@@ -71,7 +74,34 @@ function App() {
   }, []);
 
   const handleViewChange = (view: 'dashboard' | 'meetings') => {
-    setCurrentView(view);
+    // Si un enregistrement est en cours, demander confirmation avant de changer de vue
+    if (isRecording && currentView !== view) {
+      setPendingView(view);
+      setShowConfirmNavigation(true);
+    } else {
+      setCurrentView(view);
+    }
+  };
+
+  // Fonction pour confirmer le changement de vue (arrête l'enregistrement)
+  const handleConfirmNavigation = () => {
+    if (pendingView) {
+      setCurrentView(pendingView);
+      setShowConfirmNavigation(false);
+      setPendingView(null);
+      // L'état isRecording sera mis à jour par le composant Dashboard
+    }
+  };
+
+  // Fonction pour annuler le changement de vue
+  const handleCancelNavigation = () => {
+    setShowConfirmNavigation(false);
+    setPendingView(null);
+  };
+
+  // Fonction pour mettre à jour l'état d'enregistrement
+  const handleRecordingStateChange = (recording: boolean) => {
+    setIsRecording(recording);
   };
 
   const handleAuthSuccess = async () => {
@@ -103,17 +133,39 @@ function App() {
       <NotificationProvider>
         <CssBaseline />
         {isLoggedIn ? (
-        <Grid container sx={{ height: '100vh', overflow: 'hidden' }}>
-          {/* Colonne de la sidebar - largeur fixe */}
-          <Grid item sx={{ width: '280px', height: '100%', position: 'relative' }}>
+          <Box sx={{ display: 'flex', height: '100vh', overflow: 'hidden', width: '100%' }}>
             <Sidebar onViewChange={handleViewChange} user={currentUser} />
-          </Grid>
-          
-          {/* Colonne du contenu principal - prend le reste de l'espace */}
-          <Grid item sx={{ width: 'calc(100% - 280px)', height: '100%', overflow: 'auto' }}>
-            <MainContent currentView={currentView} />
-          </Grid>
-        </Grid>
+            <MainContent 
+              currentView={currentView} 
+              currentUser={currentUser} 
+              onRecordingStateChange={handleRecordingStateChange} 
+            />
+            
+            {/* Dialogue de confirmation pour la navigation pendant l'enregistrement */}
+            <Dialog
+              open={showConfirmNavigation}
+              onClose={handleCancelNavigation}
+              aria-labelledby="alert-dialog-title"
+              aria-describedby="alert-dialog-description"
+            >
+              <DialogTitle id="alert-dialog-title">
+                Enregistrement en cours
+              </DialogTitle>
+              <DialogContent>
+                <Typography>
+                  Vous avez un enregistrement en cours. Si vous changez de page, l'enregistrement sera arrêté et vous devrez sauvegarder votre audio.
+                </Typography>
+              </DialogContent>
+              <DialogActions>
+                <Button onClick={handleCancelNavigation} color="inherit">
+                  Annuler
+                </Button>
+                <Button onClick={handleConfirmNavigation} variant="contained" color="error" autoFocus>
+                  Arrêter l'enregistrement et continuer
+                </Button>
+              </DialogActions>
+            </Dialog>
+          </Box>
         ) : (
           <Box sx={{ height: '100vh', display: 'flex', flexDirection: 'column' }}>
             <Box sx={{ flex: 1 }}>

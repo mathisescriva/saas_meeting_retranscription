@@ -276,7 +276,7 @@ const Sidebar: React.FC<SidebarProps> = ({ onViewChange, user }) => {
   return (
     <Box 
       sx={{ 
-        width: '100%', 
+        width: '330px', 
         height: '100%', 
         bgcolor: '#f8fafc', 
         borderRight: '1px solid rgba(0, 0, 0, 0.08)',

@@ -1,5 +1,6 @@
 import React, { useState, useRef, useMemo, useEffect, useCallback } from 'react';
 import { transcribeAudio } from '../services/assemblyAI';
+import { User } from '../services/authService';
 import Dashboard from './Dashboard';
 import AudioPlayer from './AudioPlayer';
 import MyMeetings from './MyMeetings';
@@ -52,6 +53,7 @@ interface Report {
 interface MainContentProps {
   currentUser: User | null;
   currentView: 'dashboard' | 'meetings';
+  onRecordingStateChange: (recording: boolean) => void;
 }
 
 const formatDuration = (seconds: number): string => {
@@ -470,15 +472,14 @@ const TranscriptionView = () => {
   );
 };
 
-const MainContent: React.FC<MainContentProps> = ({ currentUser, currentView }) => {
-  switch (currentView) {
-    case 'dashboard':
-      return <Dashboard />;
-    case 'meetings':
-      return <MyMeetings />;
-    default:
-      return <Dashboard />;
-  }
+const MainContent: React.FC<MainContentProps> = ({ currentUser, currentView, onRecordingStateChange }) => {
+  return (
+    <Box sx={{ flexGrow: 1, overflow: 'auto', width: 'calc(100% - 330px)' }}>
+      {currentView === 'dashboard' && <Dashboard user={currentUser} onRecordingStateChange={onRecordingStateChange} />}
+      {currentView === 'meetings' && <MyMeetings user={currentUser} />}
+      {currentView !== 'dashboard' && currentView !== 'meetings' && <Dashboard user={currentUser} onRecordingStateChange={onRecordingStateChange} />}
+    </Box>
+  );
 };
 
 export default MainContent;
