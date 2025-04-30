@@ -89,7 +89,8 @@ function App() {
       setCurrentView(pendingView);
       setShowConfirmNavigation(false);
       setPendingView(null);
-      // L'état isRecording sera mis à jour par le composant Dashboard
+      // Mettre à jour directement l'état d'enregistrement
+      setIsRecording(false);
     }
   };
 

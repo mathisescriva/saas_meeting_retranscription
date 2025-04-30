@@ -54,6 +54,7 @@ import { User } from '../services/authService';
 import { getUserProfile } from '../services/profileService';
 import { useNotification } from '../contexts/NotificationContext';
 import { formatDuration } from '../utils/formatters';
+import SettingsDialog from './SettingsDialog';
 
 import {
   uploadMeeting, 
@@ -71,6 +72,7 @@ import {
 
 interface DashboardProps {
   user: User | null;
+  onRecordingStateChange?: (recording: boolean) => void;
 }
 
 interface RecentMeeting {
@@ -149,7 +151,7 @@ const recentMeetings = [
   },
 ];
 
-const Dashboard: React.FC<DashboardProps> = ({ user }) => {
+const Dashboard: React.FC<DashboardProps> = ({ user, onRecordingStateChange }) => {
   const { showSuccessPopup } = useNotification();
   
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
@@ -173,6 +175,33 @@ const Dashboard: React.FC<DashboardProps> = ({ user }) => {
   const [errorState, setErrorState] = useState<{message: string} | null>(null);
   
   const [userProfile, setUserProfile] = useState<any>(null);
+  const [showSettingsDialog, setShowSettingsDialog] = useState(false);
+  const [showPremiumDialog, setShowPremiumDialog] = useState(false);
+
+  // Fonction pour ouvrir la fenêtre de paramètres
+  const handleOpenSettings = () => {
+    setShowSettingsDialog(true);
+  };
+
+  // Fonction pour fermer la fenêtre de paramètres
+  const handleCloseSettings = () => {
+    setShowSettingsDialog(false);
+  };
+
+  // Fonction pour ouvrir le popup premium
+  const handleOpenPremiumDialog = () => {
+    setShowPremiumDialog(true);
+  };
+
+  // Fonction pour fermer le popup premium
+  const handleClosePremiumDialog = () => {
+    setShowPremiumDialog(false);
+  };
+
+  // Fonction pour contacter Lexia France
+  const handleContactSupport = () => {
+    window.open('mailto:contact@lexiafrance.com?subject=Demande%20d%27information%20-%20Gilbert', '_blank');
+  };
 
   useEffect(() => {
     // Écouter les événements de transcription terminée
@@ -273,6 +302,26 @@ const Dashboard: React.FC<DashboardProps> = ({ user }) => {
     }
   }, [user]);
   
+  // Réinitialiser l'état d'enregistrement lorsque le composant est monté ou démonté
+  useEffect(() => {
+    // Vérifier si un enregistrement est en cours au montage du composant
+    if (isRecording) {
+      // Si on vient de revenir au dashboard après avoir confirmé l'arrêt de l'enregistrement
+      // via la boîte de dialogue de confirmation, on s'assure que l'état local est cohérent
+      setIsRecording(false);
+      if (onRecordingStateChange) {
+        onRecordingStateChange(false);
+      }
+    }
+    
+    // Nettoyer lors du démontage
+    return () => {
+      if (isRecording && mediaRecorderRef.current) {
+        stopRecording();
+      }
+    };
+  }, [isRecording, onRecordingStateChange]);
+  
   // Fonction pour charger le profil complet de l'utilisateur
   const loadUserProfile = async () => {
     try {
@@ -315,6 +364,11 @@ const Dashboard: React.FC<DashboardProps> = ({ user }) => {
       mediaRecorder.start();
       setIsRecording(true);
       
+      // Notifier le composant parent que l'enregistrement a commencé
+      if (onRecordingStateChange) {
+        onRecordingStateChange(true);
+      }
+      
       // Démarrer le chronomètre
       setAudioDuration(0);
       timerRef.current = setInterval(() => {
@@ -342,6 +396,11 @@ const Dashboard: React.FC<DashboardProps> = ({ user }) => {
       }
       
       setIsRecording(false);
+      
+      // Notifier le composant parent que l'enregistrement est terminé
+      if (onRecordingStateChange) {
+        onRecordingStateChange(false);
+      }
     }
   };
 
@@ -911,7 +970,11 @@ const Dashboard: React.FC<DashboardProps> = ({ user }) => {
                 <Typography variant="body2" sx={{ mb: 2, color: 'text.secondary' }}>
                   Collaborate with your team
                 </Typography>
-                <Button variant="outlined" startIcon={<ShareIcon />}>
+                <Button 
+                  variant="outlined" 
+                  startIcon={<ShareIcon />}
+                  onClick={handleOpenPremiumDialog}
+                >
                   Manage Access
                 </Button>
               </Box>
@@ -966,7 +1029,17 @@ const Dashboard: React.FC<DashboardProps> = ({ user }) => {
               <CardActions>
                 <Button 
                   size="small"
-                  onClick={feature.action === 'Start Recording' ? startRecording : undefined}
+                  onClick={
+                    feature.action === 'Start Recording' 
+                      ? startRecording 
+                      : feature.action === 'Change Language' || 
+                        feature.action === 'View Demo' || 
+                        feature.action === 'Setup Voices' || 
+                        feature.action === 'View Analytics' || 
+                        feature.action === 'View Stats'
+                        ? handleOpenSettings
+                        : undefined
+                  }
                 >
                   {feature.action}
                 </Button>
@@ -1056,6 +1129,85 @@ const Dashboard: React.FC<DashboardProps> = ({ user }) => {
         </DialogActions>
       </Dialog>
 
+      {/* Dialogue des paramètres */}
+      <SettingsDialog 
+        open={showSettingsDialog}
+        onClose={handleCloseSettings}
+      />
+
+      {/* Dialogue Premium */}
+      <Dialog 
+        open={showPremiumDialog} 
+        onClose={handleClosePremiumDialog}
+        maxWidth="sm"
+        fullWidth
+        PaperProps={{
+          sx: {
+            borderRadius: 2,
+            overflow: 'hidden'
+          }
+        }}
+      >
+        <DialogTitle sx={{ 
+          display: 'flex', 
+          justifyContent: 'space-between', 
+          alignItems: 'center',
+          borderBottom: '1px solid',
+          borderColor: 'divider',
+          pb: 2
+        }}>
+          <Typography variant="h6">Fonctionnalité Premium</Typography>
+          <IconButton onClick={handleClosePremiumDialog} size="small">
+            <CloseIcon />
+          </IconButton>
+        </DialogTitle>
+        
+        <DialogContent sx={{ py: 3 }}>
+          <Box sx={{ 
+            display: 'flex', 
+            flexDirection: 'column', 
+            alignItems: 'center',
+            textAlign: 'center',
+            mb: 2
+          }}>
+            <Box 
+              sx={{ 
+                bgcolor: 'primary.light', 
+                color: 'primary.main',
+                borderRadius: '50%',
+                p: 2,
+                mb: 2,
+                display: 'flex',
+                justifyContent: 'center',
+                alignItems: 'center'
+              }}
+            >
+              <ShareIcon fontSize="large" />
+            </Box>
+            <Typography variant="h6" sx={{ mb: 1 }}>
+              Gestion des accès partagés
+            </Typography>
+            <Typography variant="body1" sx={{ mb: 3 }}>
+              Cette fonctionnalité est disponible uniquement avec un abonnement premium.
+            </Typography>
+            <Typography variant="body2" color="text.secondary" sx={{ mb: 3 }}>
+              Avec le plan premium, vous pouvez partager vos transcriptions avec votre équipe et gérer les accès de manière sécurisée.
+            </Typography>
+          </Box>
+        </DialogContent>
+        
+        <DialogActions sx={{ px: 3, py: 2, borderTop: '1px solid', borderColor: 'divider' }}>
+          <Button onClick={handleClosePremiumDialog} color="inherit">Annuler</Button>
+          <Button 
+            onClick={handleContactSupport} 
+            variant="contained" 
+            color="primary"
+            startIcon={<ShareIcon />}
+          >
+            Contacter Lexia France
+          </Button>
+        </DialogActions>
+      </Dialog>
     </Box>
   );
 };
