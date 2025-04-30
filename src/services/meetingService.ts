@@ -69,6 +69,8 @@ export interface UploadOptions {
   onProgress?: (progress: number) => void;
   onSuccess?: (meeting: Meeting) => void;
   onError?: (error: Error) => void;
+  format?: string; // Format audio (wav, mp3, webm, etc.)
+  title?: string; // Titre de la réunion
 }
 
 /**

@@ -48,7 +48,7 @@ export async function transcribeAudio(file: File, options?: UploadOptions): Prom
       console.log('Meeting status detected:', meetingStatus);
       
       // Vérifier si le statut initial indique déjà une erreur
-      if (meetingStatus === 'failed' || meetingStatus === 'error') {
+      if (meetingStatus === 'error') {
         console.error(`Transcription failed immediately after upload with status "${meetingStatus}"`);
         throw new Error(`Transcription failed immediately: The file format or content may not be supported`);
       }
@@ -62,7 +62,7 @@ export async function transcribeAudio(file: File, options?: UploadOptions): Prom
           
           // Vérifier si le démarrage de la transcription a échoué
           const startResultStatus = startResult.transcript_status || startResult.transcription_status;
-          if (startResultStatus === 'failed' || startResultStatus === 'error') {
+          if (startResultStatus === 'error') {
             console.error('Transcription failed after explicitly starting it');
             throw new Error(`Failed to process audio file: The file may be corrupt or in an unsupported format`);
           }

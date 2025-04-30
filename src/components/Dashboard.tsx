@@ -357,12 +357,13 @@ const Dashboard: React.FC<DashboardProps> = ({ user, onRecordingStateChange }) =
       });
       
       // Déterminer le type MIME supporté par le navigateur
+      // Prioriser les formats les plus compatibles avec AssemblyAI
       const mimeTypes = [
-        'audio/webm',
-        'audio/webm;codecs=opus',
-        'audio/ogg;codecs=opus',
-        'audio/mp4',
-        'audio/wav'
+        'audio/wav',  // Priorité 1: WAV est généralement bien supporté par les services de transcription
+        'audio/mp4',  // Priorité 2: MP4 est également bien supporté
+        'audio/webm;codecs=opus',  // Priorité 3: WebM avec Opus
+        'audio/ogg;codecs=opus',   // Priorité 4: OGG avec Opus
+        'audio/webm'  // Priorité 5: WebM standard
       ];
       
       let mimeType = '';
@@ -402,9 +403,31 @@ const Dashboard: React.FC<DashboardProps> = ({ user, onRecordingStateChange }) =
           return;
         }
         
-        // Déterminer le type MIME approprié en fonction du navigateur et de la configuration
-        const mimeType = mediaRecorder.mimeType || 'audio/webm';
-        console.log('Using MIME type for blob:', mimeType);
+        // Utiliser le format fourni par le MediaRecorder pour garantir la cohérence
+        // entre le contenu et le type MIME
+        let mimeType = mediaRecorder.mimeType;
+        console.log('Original MIME type from recorder:', mimeType);
+        
+        // Si aucun type MIME n'est fourni, utiliser webm par défaut car c'est le plus courant
+        // dans les navigateurs modernes pour MediaRecorder
+        if (!mimeType || mimeType === '') {
+          mimeType = 'audio/webm';
+          console.log('No MIME type provided by recorder, defaulting to:', mimeType);
+        }
+        
+        // Déterminer l'extension de fichier appropriée en fonction du type MIME
+        let fileExtension = 'webm'; // Extension par défaut pour la plupart des navigateurs
+        if (mimeType.includes('wav')) {
+          fileExtension = 'wav';
+        } else if (mimeType.includes('mp3')) {
+          fileExtension = 'mp3';
+        } else if (mimeType.includes('mp4')) {
+          fileExtension = 'mp4';
+        } else if (mimeType.includes('ogg')) {
+          fileExtension = 'ogg';
+        } else if (mimeType.includes('webm')) {
+          fileExtension = 'webm';
+        }
         
         // Créer le blob audio avec le type MIME approprié
         const audioBlob = new Blob(audioChunksRef.current, { type: mimeType });
@@ -414,15 +437,23 @@ const Dashboard: React.FC<DashboardProps> = ({ user, onRecordingStateChange }) =
           chunks: audioChunksRef.current.length
         });
         
+        // Vérifier que le blob a bien un type MIME
+        if (!audioBlob.type || audioBlob.type === '') {
+          console.warn('Blob has no MIME type, using the one from MediaRecorder:', mimeType);
+        } else if (audioBlob.type !== mimeType) {
+          console.warn(`Blob MIME type (${audioBlob.type}) differs from MediaRecorder MIME type (${mimeType})`);
+        }
+        
         if (audioBlob.size < 1000) { // Moins de 1 KB est probablement un enregistrement vide ou corrompu
           console.error('Audio blob is too small, likely empty or corrupted');
           alert('L\'enregistrement audio semble vide ou corrompu. Veuillez réessayer.');
           return;
         }
         
-        // Convertir le Blob en File directement ici pour éviter les problèmes de type
-        const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
-        const audioFile = new File([audioBlob], `recording-${timestamp}.${mimeType.split('/')[1] || 'webm'}`, {
+        // Convertir le Blob en File avec un nom de fichier simple et explicite
+        // AssemblyAI peut avoir des problèmes avec les noms de fichiers trop complexes
+        const timestamp = new Date().toISOString().replace(/[:.]/g, '-').substring(0, 19);
+        const audioFile = new File([audioBlob], `recording_${timestamp}.${fileExtension}`, {
           type: mimeType,
           lastModified: Date.now()
         });
@@ -533,33 +564,47 @@ const Dashboard: React.FC<DashboardProps> = ({ user, onRecordingStateChange }) =
     setErrorState(null);
     
     try {
-      // Déterminer l'extension de fichier appropriée en fonction du type MIME
-      const mimeType = latestAudioFile.type;
-      let fileExtension = 'wav'; // Extension par défaut
+      // Conserver le type MIME original du fichier audio
+      // La conversion forcée vers WAV peut causer des problèmes car le contenu ne correspond pas au type déclaré
+      const originalMimeType = latestAudioFile.type;
+      let fileExtension = 'webm'; // Extension par défaut
       
-      if (mimeType.includes('webm')) {
-        fileExtension = 'webm';
-      } else if (mimeType.includes('ogg')) {
-        fileExtension = 'ogg';
-      } else if (mimeType.includes('mp4') || mimeType.includes('mp3')) {
+      // Déterminer l'extension appropriée en fonction du type MIME original
+      if (originalMimeType.includes('wav')) {
+        fileExtension = 'wav';
+      } else if (originalMimeType.includes('mp3')) {
         fileExtension = 'mp3';
+      } else if (originalMimeType.includes('mp4')) {
+        fileExtension = 'mp4';
+      } else if (originalMimeType.includes('ogg')) {
+        fileExtension = 'ogg';
+      } else if (originalMimeType.includes('webm')) {
+        fileExtension = 'webm';
       }
       
-      // Créer un nouveau fichier avec le titre spécifié par l'utilisateur et l'extension appropriée
+      // Créer un nom de fichier simple sans caractères spéciaux
       const sanitizedTitle = titleInput.trim().replace(/[^a-zA-Z0-9]/g, '_');
-      const newFileName = `${sanitizedTitle}.${fileExtension}`;
+      const newFileName = `${sanitizedTitle}_${Date.now()}.${fileExtension}`;
       
-      // Créer un nouveau fichier avec le bon nom et type MIME
-      const audioFile = new File([latestAudioFile], newFileName, { 
-        type: mimeType,
+      console.log('Type MIME original:', originalMimeType);
+      console.log('Taille du fichier original:', Math.round(latestAudioFile.size / 1024) + ' KB');
+      
+      // Créer un nouveau fichier audio directement à partir du contenu brut
+      // plutôt que d'encapsuler le fichier existant, ce qui peut causer des problèmes
+      // Lire le contenu du fichier original
+      const arrayBuffer = await latestAudioFile.arrayBuffer();
+      console.log('Contenu du fichier lu avec succès, taille:', Math.round(arrayBuffer.byteLength / 1024) + ' KB');
+      
+      // Créer un nouveau fichier avec le contenu brut
+      const audioFile = new File([arrayBuffer], newFileName, { 
+        type: originalMimeType,
         lastModified: Date.now()
       });
       
       console.log('Préparation du fichier audio pour upload:', {
         name: audioFile.name,
         type: audioFile.type,
-        size: Math.round(audioFile.size / 1024) + ' KB',
-        originalType: latestAudioFile.type
+        size: Math.round(audioFile.size / 1024) + ' KB'
       });
       
       // Vérifier que le fichier est valide avant de l'envoyer
@@ -580,8 +625,26 @@ const Dashboard: React.FC<DashboardProps> = ({ user, onRecordingStateChange }) =
       
       // Uploader le fichier et démarrer la transcription
       try {
-        // Utiliser le titre comme paramètre pour la transcription
-        await transcribeAudio(audioFile, titleInput.trim());
+        // Importer la fonction transcribeAudio du service assemblyAI
+        const { transcribeAudio } = await import('../services/assemblyAI');
+        
+        // Ajouter des options supplémentaires pour le débogage
+        const options = {
+          onProgress: (progress: number) => {
+            console.log(`Upload progress: ${progress}%`);
+            setUploadProgress(Math.min(90, progress));
+          },
+          onError: (error: Error) => {
+            console.error('Upload error callback:', error);
+          },
+          // Utiliser le titre comme paramètre pour l'upload
+          title: titleInput.trim(),
+          // Forcer le format audio pour AssemblyAI
+          format: fileExtension
+        };
+        
+        // Appeler la fonction avec les bons paramètres
+        await transcribeAudio(audioFile, options);
         
         clearInterval(interval);
         setUploadProgress(100);
