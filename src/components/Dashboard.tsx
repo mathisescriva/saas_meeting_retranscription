@@ -201,7 +201,7 @@ const Dashboard: React.FC<DashboardProps> = ({ user, onRecordingStateChange }) =
 
   // Fonction pour contacter Lexia France
   const handleContactSupport = () => {
-    window.open('mailto:contact@lexiafrance.com?subject=Demande%20d%27information%20-%20Gilbert', '_blank');
+    window.open('mailto:contact@lexiapro.fr?subject=Demande%20d%27information%20-%20Gilbert', '_blank');
   };
 
   useEffect(() => {
@@ -533,14 +533,39 @@ const Dashboard: React.FC<DashboardProps> = ({ user, onRecordingStateChange }) =
     setErrorState(null);
     
     try {
-      // Le fichier audio est déjà un objet File, donc nous pouvons l'utiliser directement
-      // Nous allons simplement nous assurer que le nom du fichier contient le titre spécifié par l'utilisateur
+      // Déterminer l'extension de fichier appropriée en fonction du type MIME
+      const mimeType = latestAudioFile.type;
+      let fileExtension = 'wav'; // Extension par défaut
       
-      console.log('Saving recording with details:', {
-        name: latestAudioFile.name,
-        type: latestAudioFile.type,
-        size: Math.round(latestAudioFile.size / 1024) + ' KB'
+      if (mimeType.includes('webm')) {
+        fileExtension = 'webm';
+      } else if (mimeType.includes('ogg')) {
+        fileExtension = 'ogg';
+      } else if (mimeType.includes('mp4') || mimeType.includes('mp3')) {
+        fileExtension = 'mp3';
+      }
+      
+      // Créer un nouveau fichier avec le titre spécifié par l'utilisateur et l'extension appropriée
+      const sanitizedTitle = titleInput.trim().replace(/[^a-zA-Z0-9]/g, '_');
+      const newFileName = `${sanitizedTitle}.${fileExtension}`;
+      
+      // Créer un nouveau fichier avec le bon nom et type MIME
+      const audioFile = new File([latestAudioFile], newFileName, { 
+        type: mimeType,
+        lastModified: Date.now()
       });
+      
+      console.log('Préparation du fichier audio pour upload:', {
+        name: audioFile.name,
+        type: audioFile.type,
+        size: Math.round(audioFile.size / 1024) + ' KB',
+        originalType: latestAudioFile.type
+      });
+      
+      // Vérifier que le fichier est valide avant de l'envoyer
+      if (audioFile.size < 1000) { // Moins de 1 KB est probablement un enregistrement vide ou corrompu
+        throw new Error("L'enregistrement audio est trop petit ou corrompu. Veuillez réessayer.");
+      }
       
       // Simuler une progression d'upload
       const interval = setInterval(() => {
@@ -555,7 +580,8 @@ const Dashboard: React.FC<DashboardProps> = ({ user, onRecordingStateChange }) =
       
       // Uploader le fichier et démarrer la transcription
       try {
-        await transcribeAudio(latestAudioFile, titleInput);
+        // Utiliser le titre comme paramètre pour la transcription
+        await transcribeAudio(audioFile, titleInput.trim());
         
         clearInterval(interval);
         setUploadProgress(100);
