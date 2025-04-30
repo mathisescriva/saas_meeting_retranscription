@@ -28,6 +28,7 @@ import {
   EventNote as EventNoteIcon,
   Delete as DeleteIcon,
   Update as UpdateIcon,
+  FileDownload as FileDownloadIcon,
 } from '@mui/icons-material';
 import { 
   getAllMeetings, 
@@ -42,6 +43,8 @@ import {
   generateMeetingSummary,
   watchSummaryStatus
 } from '../services/meetingService';
+import { exportSummaryToWord } from '../services/exportServiceDirect';
+import { exportActionsToExcel } from '../services/exportServiceExcel';
 import { useNotification } from '../contexts/NotificationContext';
 import MeetingAudioPlayer from './MeetingAudioPlayer';
 import ReactMarkdown from 'react-markdown';
@@ -832,6 +835,92 @@ const MyMeetings: React.FC = () => {
     }, 300);
   };
 
+  // Fonction pour exporter le compte rendu au format Word
+  const handleExportToWord = (meetingId: string) => {
+    console.log('Début de l\'exportation Word pour la réunion:', meetingId);
+    // Trouver la réunion concernée
+    const meeting = meetings.find(m => m.id === meetingId);
+    if (!meeting) {
+      console.error('Réunion non trouvée pour l\'exportation:', meetingId);
+      showErrorPopup('Erreur', 'Réunion non trouvée');
+      return;
+    }
+    
+    console.log('Données de la réunion pour exportation:', {
+      id: meeting.id,
+      name: meeting.name || meeting.title,
+      summary_status: meeting.summary_status,
+      summary_text_length: meeting.summary_text ? meeting.summary_text.length : 0
+    });
+    
+    if (!meeting.summary_text && meeting.summary_status !== 'completed') {
+      console.error('Compte rendu non disponible pour l\'exportation');
+      showErrorPopup('Erreur', 'Le compte rendu n\'est pas disponible pour l\'exportation');
+      return;
+    }
+    
+    try {
+      // Formater la date de la réunion
+      const meetingDate = formatDate(meeting.created_at);
+      console.log('Tentative d\'exportation avec les paramètres:', {
+        summary_text_length: meeting.summary_text ? meeting.summary_text.substring(0, 50) + '...' : 'vide',
+        meeting_name: meeting.name || meeting.title || 'Sans titre',
+        meeting_date: meetingDate
+      });
+      
+      // Exporter le compte rendu au format Word
+      exportSummaryToWord(
+        meeting.summary_text || '',
+        meeting.name || meeting.title || 'Sans titre',
+        meetingDate
+      );
+      console.log('Exportation Word réussie');
+      showSuccessPopup('Succès', 'Le compte rendu a été exporté au format Word');
+    } catch (error) {
+      console.error('Erreur lors de l\'exportation du compte rendu:', error);
+      showErrorPopup('Erreur', `Erreur lors de l'exportation: ${error instanceof Error ? error.message : 'Erreur inconnue'}`);
+    }
+  };
+
+  // Fonction pour exporter les actions au format Excel
+  const handleExportToExcel = (meetingId: string) => {
+    console.log('Début de l\'exportation Excel pour la réunion:', meetingId);
+    // Trouver la réunion concernée
+    const meeting = meetings.find(m => m.id === meetingId);
+    if (!meeting) {
+      console.error('Réunion non trouvée pour l\'exportation Excel:', meetingId);
+      showErrorPopup('Erreur', 'Réunion non trouvée');
+      return;
+    }
+    
+    if (!meeting.summary_text && meeting.summary_status !== 'completed') {
+      console.error('Compte rendu non disponible pour l\'exportation Excel');
+      showErrorPopup('Erreur', 'Le compte rendu n\'est pas disponible pour l\'exportation');
+      return;
+    }
+    
+    try {
+      // Formater la date de la réunion
+      const meetingDate = formatDate(meeting.created_at);
+      
+      // Exporter les actions au format Excel
+      exportActionsToExcel(
+        meeting.summary_text || '',
+        meeting.name || meeting.title || 'Sans titre',
+        meetingDate
+      ).then(() => {
+        console.log('Exportation Excel réussie');
+        showSuccessPopup('Succès', 'Les actions ont été exportées au format Excel');
+      }).catch((error) => {
+        console.error('Erreur lors de l\'exportation Excel:', error);
+        showErrorPopup('Erreur', `Erreur lors de l'exportation Excel: ${error instanceof Error ? error.message : 'Erreur inconnue'}`);
+      });
+    } catch (error) {
+      console.error('Erreur lors de l\'exportation des actions:', error);
+      showErrorPopup('Erreur', `Erreur lors de l'exportation: ${error instanceof Error ? error.message : 'Erreur inconnue'}`);
+    }
+  };
+
   // Nettoyer les watchers lors du démontage du composant
   useEffect(() => {
     return () => {
@@ -1367,7 +1456,36 @@ const MyMeetings: React.FC = () => {
           })()}
         </DialogContent>
         <DialogActions>
-          <Button onClick={handleCloseSummary}>Close</Button>
+          {/* Boutons d'exportation */}
+          {(() => {
+            const meeting = meetings.find(m => m.id === generatingSummaryId);
+            if (meeting?.summary_status === 'completed' && meeting?.summary_text) {
+              return (
+                <>
+                  <Button 
+                    startIcon={<FileDownloadIcon />}
+                    variant="outlined" 
+                    color="primary" 
+                    onClick={() => meeting.id && handleExportToWord(meeting.id)}
+                    sx={{ mr: 1 }}
+                  >
+                    Exporter en Word
+                  </Button>
+                  <Button 
+                    startIcon={<FileDownloadIcon />}
+                    variant="outlined" 
+                    color="success" 
+                    onClick={() => meeting.id && handleExportToExcel(meeting.id)}
+                    sx={{ mr: 1 }}
+                  >
+                    Exporter les actions en Excel
+                  </Button>
+                </>
+              );
+            }
+            return null;
+          })()}
+          <Button onClick={handleCloseSummary}>Fermer</Button>
         </DialogActions>
       </Dialog>
     </>
