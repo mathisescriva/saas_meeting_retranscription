@@ -1081,7 +1081,7 @@ export async function generateMeetingSummary(meetingId: string): Promise<Meeting
     }
     
     // Appeler l'API pour générer le compte rendu
-    const response = await fetch(`http://localhost:8000/meetings/${meetingId}/generate-summary`, {
+    const response = await fetch(`https://backend-meeting.onrender.com/meetings/${meetingId}/generate-summary`, {
       method: 'POST',
       headers: {
         'Authorization': `Bearer ${token}`

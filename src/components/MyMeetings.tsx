@@ -290,7 +290,7 @@ const MyMeetings: React.FC = () => {
       let response;
       let endpoint;
       let error404 = false;
-      const baseUrl = 'http://localhost:8000'; // Pourrait être extrait en variable d'environnement
+      const baseUrl = 'https://backend-meeting.onrender.com'; // URL du backend hébergé sur Render
       
       // Premier essai: utiliser l'endpoint direct
       try {

@@ -1,7 +1,7 @@
 import { logoutUser } from './authService';
 
 // Base URL for API calls
-export const API_BASE_URL = 'http://localhost:8000';
+export const API_BASE_URL = 'https://backend-meeting.onrender.com';
 
 // Fonction pour récupérer le token d'authentification
 function getAuthToken() {

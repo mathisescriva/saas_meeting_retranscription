@@ -254,7 +254,7 @@ const Dashboard: React.FC<DashboardProps> = ({ user }) => {
       if (error instanceof Error) {
         // Message d'erreur plus précis selon le type d'erreur
         if (error.message.includes('Network connection')) {
-          errorMessage = "Cannot connect to the server. Please make sure the backend server is running at http://localhost:8000";
+          errorMessage = "Cannot connect to the server. The backend server at https://backend-meeting.onrender.com may be unavailable";
         } else {
           errorMessage = `Error: ${error.message}`;
         }
@@ -649,7 +649,7 @@ const Dashboard: React.FC<DashboardProps> = ({ user }) => {
       // Message d'erreur personnalisé selon le type d'erreur
       if (error instanceof Error) {
         if (error.message.includes('Network connection')) {
-          setErrorState({ message: "Cannot connect to the server. Please make sure the backend server is running at http://localhost:8000" });
+          setErrorState({ message: "Cannot connect to the server. The backend server at https://backend-meeting.onrender.com may be unavailable" });
         } else if (error.message.includes('404') || error.message.includes('not found')) {
           setErrorState({ message: "Transcript not found. The transcription process may not have completed yet." });
         } else {

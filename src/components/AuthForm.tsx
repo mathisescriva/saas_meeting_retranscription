@@ -44,9 +44,9 @@ const AuthForm: React.FC<AuthFormProps> = ({ onAuthSuccess }) => {
       
       // Liste des endpoints à tester dans l'ordre
       const endpointsToTry = [
-        'http://localhost:8000/',     // Racine de l'API
-        'http://localhost:8000/docs', // Documentation (fallback)
-        'http://localhost:8000/api',  // Endpoint API potentiel
+        'https://backend-meeting.onrender.com/',     // Racine de l'API
+        'https://backend-meeting.onrender.com/docs', // Documentation (fallback)
+        'https://backend-meeting.onrender.com/api',  // Endpoint API potentiel
       ];
       
       // Essayer chaque endpoint jusqu'à ce qu'un fonctionne

@@ -1,7 +1,7 @@
 import apiClient from './apiClient';
 
 // Base URL pour les ressources statiques
-const API_BASE_URL = 'http://localhost:8000';
+const API_BASE_URL = 'https://backend-meeting.onrender.com';
 
 export interface ProfileData {
   id: string;
