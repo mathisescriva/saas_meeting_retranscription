@@ -159,6 +159,7 @@ const Dashboard: React.FC<DashboardProps> = ({ user, onRecordingStateChange }) =
   const timerRef = useRef<NodeJS.Timeout | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
+  // État pour le fichier audio le plus récent
   const [latestAudioFile, setLatestAudioFile] = useState<File | null>(null);
   const [titleInput, setTitleInput] = useState('');
   const [isRecording, setIsRecording] = useState(false);
@@ -302,9 +303,9 @@ const Dashboard: React.FC<DashboardProps> = ({ user, onRecordingStateChange }) =
     }
   }, [user]);
   
-  // Réinitialiser l'état d'enregistrement lorsque le composant est monté ou démonté
+  // Réinitialiser l'état d'enregistrement uniquement au montage initial du composant
   useEffect(() => {
-    // Vérifier si un enregistrement est en cours au montage du composant
+    // Vérifier si un enregistrement est en cours au montage initial du composant
     if (isRecording) {
       // Si on vient de revenir au dashboard après avoir confirmé l'arrêt de l'enregistrement
       // via la boîte de dialogue de confirmation, on s'assure que l'état local est cohérent
@@ -320,7 +321,8 @@ const Dashboard: React.FC<DashboardProps> = ({ user, onRecordingStateChange }) =
         stopRecording();
       }
     };
-  }, [isRecording, onRecordingStateChange]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []); // Dépendance vide pour n'exécuter qu'au montage initial
   
   // Fonction pour charger le profil complet de l'utilisateur
   const loadUserProfile = async () => {
@@ -344,24 +346,100 @@ const Dashboard: React.FC<DashboardProps> = ({ user, onRecordingStateChange }) =
   // Fonction pour démarrer l'enregistrement
   const startRecording = async () => {
     try {
-      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-      const mediaRecorder = new MediaRecorder(stream);
+      // Demander l'accès au microphone avec une qualité audio élevée
+      const stream = await navigator.mediaDevices.getUserMedia({ 
+        audio: { 
+          echoCancellation: true,
+          noiseSuppression: true,
+          autoGainControl: true,
+          sampleRate: 44100
+        } 
+      });
+      
+      // Déterminer le type MIME supporté par le navigateur
+      const mimeTypes = [
+        'audio/webm',
+        'audio/webm;codecs=opus',
+        'audio/ogg;codecs=opus',
+        'audio/mp4',
+        'audio/wav'
+      ];
+      
+      let mimeType = '';
+      for (const type of mimeTypes) {
+        if (MediaRecorder.isTypeSupported(type)) {
+          mimeType = type;
+          break;
+        }
+      }
+      
+      console.log('Using MIME type for recording:', mimeType || 'browser default');
+      
+      // Créer le MediaRecorder avec le type MIME supporté et une bonne qualité
+      const options = mimeType ? { mimeType, audioBitsPerSecond: 128000 } : {};
+      const mediaRecorder = new MediaRecorder(stream, options);
+      
       mediaRecorderRef.current = mediaRecorder;
       audioChunksRef.current = [];
+      
+      console.log('MediaRecorder initialized with options:', options);
 
+      // Configuration pour capturer les données audio toutes les 1 seconde pendant l'enregistrement
+      // Cela permet d'avoir des chunks plus petits et plus fréquents, ce qui peut être plus fiable
       mediaRecorder.ondataavailable = (event) => {
-        if (event.data.size > 0) {
+        if (event.data && event.data.size > 0) {
+          console.log(`Received audio chunk: ${Math.round(event.data.size / 1024)} KB`);
           audioChunksRef.current.push(event.data);
         }
       };
 
       mediaRecorder.onstop = () => {
-        const audioBlob = new Blob(audioChunksRef.current, { type: 'audio/wav' });
-        setLatestAudioFile(audioBlob);
+        console.log(`Recording stopped. Total chunks: ${audioChunksRef.current.length}`);
+        
+        if (audioChunksRef.current.length === 0) {
+          console.error('No audio data was captured during recording');
+          alert('Aucune donnée audio n\'a été capturée. Veuillez vérifier votre microphone et réessayer.');
+          return;
+        }
+        
+        // Déterminer le type MIME approprié en fonction du navigateur et de la configuration
+        const mimeType = mediaRecorder.mimeType || 'audio/webm';
+        console.log('Using MIME type for blob:', mimeType);
+        
+        // Créer le blob audio avec le type MIME approprié
+        const audioBlob = new Blob(audioChunksRef.current, { type: mimeType });
+        console.log('Audio blob created:', {
+          type: audioBlob.type,
+          size: `${Math.round(audioBlob.size / 1024)} KB`,
+          chunks: audioChunksRef.current.length
+        });
+        
+        if (audioBlob.size < 1000) { // Moins de 1 KB est probablement un enregistrement vide ou corrompu
+          console.error('Audio blob is too small, likely empty or corrupted');
+          alert('L\'enregistrement audio semble vide ou corrompu. Veuillez réessayer.');
+          return;
+        }
+        
+        // Convertir le Blob en File directement ici pour éviter les problèmes de type
+        const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
+        const audioFile = new File([audioBlob], `recording-${timestamp}.${mimeType.split('/')[1] || 'webm'}`, {
+          type: mimeType,
+          lastModified: Date.now()
+        });
+        
+        console.log('Converted blob to file:', {
+          name: audioFile.name,
+          type: audioFile.type,
+          size: `${Math.round(audioFile.size / 1024)} KB`
+        });
+        
+        setLatestAudioFile(audioFile);
         setShowDialog(true);
       };
 
-      mediaRecorder.start();
+      // Démarrer l'enregistrement avec un intervalle de 1 seconde pour capturer régulièrement les données
+      // Cela améliore la fiabilité et permet d'avoir des chunks plus petits et plus fréquents
+      mediaRecorder.start(1000);
       setIsRecording(true);
       
       // Notifier le composant parent que l'enregistrement a commencé
@@ -384,22 +462,43 @@ const Dashboard: React.FC<DashboardProps> = ({ user, onRecordingStateChange }) =
   // Fonction pour arrêter l'enregistrement
   const stopRecording = () => {
     if (mediaRecorderRef.current && isRecording) {
-      mediaRecorderRef.current.stop();
-      
-      // Arrêter toutes les pistes audio
-      mediaRecorderRef.current.stream.getTracks().forEach(track => track.stop());
-      
-      // Arrêter le chronomètre
-      if (timerRef.current) {
-        clearInterval(timerRef.current);
-        timerRef.current = null;
-      }
-      
-      setIsRecording(false);
-      
-      // Notifier le composant parent que l'enregistrement est terminé
-      if (onRecordingStateChange) {
-        onRecordingStateChange(false);
+      try {
+        console.log('Stopping recording...');
+        
+        // Forcer un dernier événement dataavailable avant d'arrêter
+        mediaRecorderRef.current.requestData();
+        
+        // Arrêter l'enregistrement après un court délai pour s'assurer que les données sont bien capturées
+        setTimeout(() => {
+          if (mediaRecorderRef.current) {
+            // Arrêter l'enregistrement
+            mediaRecorderRef.current.stop();
+            
+            // Arrêter toutes les pistes audio
+            mediaRecorderRef.current.stream.getTracks().forEach(track => {
+              console.log(`Stopping audio track: ${track.kind}`);
+              track.stop();
+            });
+            
+            console.log('MediaRecorder and audio tracks stopped');
+          }
+        }, 100);
+        
+        // Arrêter le chronomètre
+        if (timerRef.current) {
+          clearInterval(timerRef.current);
+          timerRef.current = null;
+        }
+        
+        setIsRecording(false);
+        
+        // Notifier le composant parent que l'enregistrement est terminé
+        if (onRecordingStateChange) {
+          onRecordingStateChange(false);
+        }
+      } catch (error) {
+        console.error('Error stopping recording:', error);
+        alert('Une erreur est survenue lors de l\'arrêt de l\'enregistrement. Veuillez réessayer.');
       }
     }
   };
@@ -434,10 +533,14 @@ const Dashboard: React.FC<DashboardProps> = ({ user, onRecordingStateChange }) =
     setErrorState(null);
     
     try {
-      // Créer un fichier à partir du blob audio avec le nom spécifié
-      const audioFile = new File([latestAudioFile], `${titleInput.trim()}.wav`, { type: 'audio/wav' });
+      // Le fichier audio est déjà un objet File, donc nous pouvons l'utiliser directement
+      // Nous allons simplement nous assurer que le nom du fichier contient le titre spécifié par l'utilisateur
       
-      console.log('Saving recording:', titleInput, 'Size:', Math.round(latestAudioFile.size / 1024), 'KB');
+      console.log('Saving recording with details:', {
+        name: latestAudioFile.name,
+        type: latestAudioFile.type,
+        size: Math.round(latestAudioFile.size / 1024) + ' KB'
+      });
       
       // Simuler une progression d'upload
       const interval = setInterval(() => {
@@ -452,7 +555,7 @@ const Dashboard: React.FC<DashboardProps> = ({ user, onRecordingStateChange }) =
       
       // Uploader le fichier et démarrer la transcription
       try {
-        await transcribeAudio(audioFile, titleInput);
+        await transcribeAudio(latestAudioFile, titleInput);
         
         clearInterval(interval);
         setUploadProgress(100);
@@ -487,11 +590,41 @@ const Dashboard: React.FC<DashboardProps> = ({ user, onRecordingStateChange }) =
     // Récupérer le fichier
     const audioFile = event.target.files[0];
     
+    console.log('File upload details:', {
+      name: audioFile.name,
+      type: audioFile.type,
+      size: `${Math.round(audioFile.size / 1024)} KB`,
+      lastModified: new Date(audioFile.lastModified).toISOString()
+    });
+    
+    // Vérification de la taille du fichier
+    if (audioFile.size < 1000) { // Moins de 1 KB est probablement un fichier vide ou corrompu
+      console.error('Audio file is too small, likely empty or corrupted');
+      showSuccessPopup(
+        "Fichier audio invalide",
+        "Le fichier audio semble vide ou corrompu. Veuillez sélectionner un autre fichier.",
+        'error'
+      );
+      return;
+    }
+    
+    // Vérification de la taille maximale (50 MB)
+    const MAX_FILE_SIZE = 50 * 1024 * 1024; // 50 MB en octets
+    if (audioFile.size > MAX_FILE_SIZE) {
+      console.error('Audio file is too large');
+      showSuccessPopup(
+        "Fichier trop volumineux",
+        "Le fichier audio ne doit pas dépasser 50 MB. Veuillez sélectionner un fichier plus petit.",
+        'error'
+      );
+      return;
+    }
+    
     // Vérifier que le fichier est un audio
-    if (!audioFile.type.startsWith('audio/') && !audioFile.name.endsWith('.mp3') && !audioFile.name.endsWith('.wav')) {
+    if (!audioFile.type.startsWith('audio/') && !audioFile.name.endsWith('.mp3') && !audioFile.name.endsWith('.wav') && !audioFile.name.endsWith('.webm') && !audioFile.name.endsWith('.ogg')) {
       showSuccessPopup(
         "Fichier non supporté",
-        "Veuillez sélectionner un fichier audio (MP3 ou WAV).",
+        "Veuillez sélectionner un fichier audio (MP3, WAV, WebM ou OGG).",
         'error'
       );
       return;
@@ -511,9 +644,48 @@ const Dashboard: React.FC<DashboardProps> = ({ user, onRecordingStateChange }) =
     // Utiliser le titre saisi ou le nom du fichier par défaut
     const title = titleInput || audioFile.name.replace(/\.[^/.]+$/, "");
     
+    // Créer une copie du fichier avec un nom plus descriptif si nécessaire
+    let processedAudioFile = audioFile;
+    
+    // Si le titre est différent du nom du fichier, créer une nouvelle instance de File
+    if (title && title !== audioFile.name.replace(/\.[^/.]+$/, "")) {
+      // Déterminer l'extension appropriée en fonction du type MIME
+      let fileExtension = '.webm';  // Par défaut
+      if (audioFile.type.includes('ogg')) {
+        fileExtension = '.ogg';
+      } else if (audioFile.type.includes('mp4') || audioFile.type.includes('mp3')) {
+        fileExtension = '.mp3';
+      } else if (audioFile.type.includes('wav')) {
+        fileExtension = '.wav';
+      } else {
+        // Extraire l'extension du nom de fichier original si le type MIME n'est pas reconnu
+        const originalExt = audioFile.name.split('.').pop();
+        if (originalExt) {
+          fileExtension = `.${originalExt}`;
+        }
+      }
+      
+      // Créer un nouveau fichier avec le titre spécifié
+      processedAudioFile = new File([audioFile], `${title}${fileExtension}`, {
+        type: audioFile.type,
+        lastModified: new Date().getTime()
+      });
+      
+      console.log('Created new file with custom title:', {
+        name: processedAudioFile.name,
+        type: processedAudioFile.type,
+        size: `${Math.round(processedAudioFile.size / 1024)} KB`
+      });
+    }
+    
     // Uploader le fichier et démarrer la transcription
     try {
-      await transcribeAudio(audioFile, title);
+      // Vérifier une dernière fois que le fichier est valide
+      if (!processedAudioFile || processedAudioFile.size === 0) {
+        throw new Error("Le fichier audio est invalide ou vide.");
+      }
+      
+      await transcribeAudio(processedAudioFile, title);
       
       clearInterval(interval);
       setUploadProgress(100);
@@ -521,7 +693,9 @@ const Dashboard: React.FC<DashboardProps> = ({ user, onRecordingStateChange }) =
       // Réinitialiser les états
       setTitleInput('');
       setErrorState(null);
-      fileInputRef.current!.value = '';
+      if (fileInputRef.current) {
+        fileInputRef.current.value = '';
+      }
       
       // Cacher la modal après un court délai
       setTimeout(() => {
@@ -534,14 +708,42 @@ const Dashboard: React.FC<DashboardProps> = ({ user, onRecordingStateChange }) =
       setUploadProgress(0);
       console.error('Error uploading file:', error);
       
-      // Montrer le message d'erreur
+      // Montrer un message d'erreur plus détaillé et informatif
+      let errorTitle = "Erreur d'upload";
       let errorMessage = "Une erreur s'est produite lors de l'upload";
+      
       if (error instanceof Error) {
-        errorMessage = error.message;
+        // Analyser le message d'erreur pour fournir des informations plus précises
+        const errorMsg = error.message.toLowerCase();
+        
+        if (errorMsg.includes('network') || errorMsg.includes('connection') || errorMsg.includes('connect')) {
+          errorTitle = "Erreur de connexion";
+          errorMessage = "Impossible de se connecter au serveur. Vérifiez votre connexion internet et réessayez.";
+        } else if (errorMsg.includes('format') || errorMsg.includes('type') || errorMsg.includes('support')) {
+          errorTitle = "Format non supporté";
+          errorMessage = "Le format du fichier audio n'est pas supporté. Veuillez utiliser un format audio standard comme MP3, WAV, WebM ou OGG.";
+        } else if (errorMsg.includes('size') || errorMsg.includes('large') || errorMsg.includes('big')) {
+          errorTitle = "Fichier trop volumineux";
+          errorMessage = "Le fichier audio est trop volumineux. Veuillez utiliser un fichier de moins de 50 MB.";
+        } else if (errorMsg.includes('empty') || errorMsg.includes('corrupt') || errorMsg.includes('invalid')) {
+          errorTitle = "Fichier corrompu";
+          errorMessage = "Le fichier audio semble être vide ou corrompu. Veuillez vérifier le fichier et réessayer.";
+        } else if (errorMsg.includes('auth') || errorMsg.includes('token') || errorMsg.includes('login')) {
+          errorTitle = "Erreur d'authentification";
+          errorMessage = "Votre session a expiré. Veuillez vous reconnecter et réessayer.";
+        } else {
+          // Si nous ne pouvons pas catégoriser l'erreur, utiliser le message original
+          errorMessage = error.message;
+        }
+      }
+      
+      // Réinitialiser le champ de fichier pour permettre une nouvelle tentative
+      if (fileInputRef.current) {
+        fileInputRef.current.value = '';
       }
       
       showSuccessPopup(
-        "Erreur d'upload",
+        errorTitle,
         errorMessage,
         'error'
       );
