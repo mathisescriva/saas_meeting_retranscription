@@ -32,8 +32,8 @@ export async function transcribeAudio(file: File, options?: UploadOptions): Prom
       throw new Error('Vous devez être connecté pour transcribe un fichier audio. Veuillez vous connecter et réessayer.');
     }
     
-    // Use a temporary title based on file name, this could be updated later
-    const title = file.name.replace(/\.[^/.]+$/, ""); // Remove file extension
+    // Utiliser le titre fourni dans les options ou extraire un titre temporaire du nom du fichier
+    const title = options?.title || file.name.replace(/\.[^/.]+$/, "").replace(/_\d+$/, ""); // Utiliser le titre des options ou nettoyer le nom du fichier (sans extension et sans timestamp)
     
     console.log('Starting transcription for file:', file.name, 'Size:', Math.round(file.size / 1024), 'KB', 'Options:', JSON.stringify(options || {}));
     

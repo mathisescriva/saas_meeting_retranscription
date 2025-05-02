@@ -54,11 +54,17 @@ const SettingsDialog: React.FC<SettingsDialogProps> = ({ open, onClose }) => {
   };
   
   const handleSpeakerRecognitionChange = (event: React.ChangeEvent<HTMLInputElement>) => {
-    setSpeakerRecognition(event.target.checked);
+    // Si l'utilisateur tente de désactiver la reconnaissance des locuteurs, on ne change pas l'état
+    // mais on affiche un message pour contacter l'équipe Lexia France
+    if (!event.target.checked) {
+      handleContactSupport();
+    } else {
+      setSpeakerRecognition(true);
+    }
   };
   
   const handleContactSupport = () => {
-    window.open('mailto:contact@lexiafrance.com?subject=Demande%20d%27information%20-%20Gilbert', '_blank');
+    window.open('mailto:contact@lexiapro.fr?subject=Demande%20d%27information%20-%20Gilbert', '_blank');
   };
   
   return (
@@ -202,8 +208,28 @@ const SettingsDialog: React.FC<SettingsDialogProps> = ({ open, onClose }) => {
                     color="primary"
                   />
                 }
-                label={speakerRecognition ? "Activée" : "Désactivée"}
+                label="Activée"
               />
+              <Box sx={{ 
+                mt: 2, 
+                p: 2, 
+                bgcolor: alpha(theme.palette.primary.main, 0.05),
+                borderRadius: 1,
+                border: '1px dashed',
+                borderColor: alpha(theme.palette.primary.main, 0.3)
+              }}>
+                <Typography variant="body2">
+                  La reconnaissance des locuteurs est une fonctionnalité essentielle. Pour toute demande spécifique,
+                  <Link 
+                    component="button"
+                    variant="body2"
+                    onClick={handleContactSupport}
+                    sx={{ ml: 1 }}
+                  >
+                    contactez l'équipe Lexia France
+                  </Link>
+                </Typography>
+              </Box>
             </Paper>
           </Grid>
           

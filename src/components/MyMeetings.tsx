@@ -46,6 +46,7 @@ import {
 import { exportSummaryToWord } from '../services/exportServiceDirect';
 import { exportActionsToExcel } from '../services/exportServiceExcel';
 import { useNotification } from '../contexts/NotificationContext';
+import { User } from '../services/authService';
 import MeetingAudioPlayer from './MeetingAudioPlayer';
 import ReactMarkdown from 'react-markdown';
 
@@ -56,7 +57,11 @@ interface Meeting extends ApiMeeting {
   };
 }
 
-const MyMeetings: React.FC = () => {
+interface MyMeetingsProps {
+  user: User | null;
+}
+
+const MyMeetings: React.FC<MyMeetingsProps> = ({ user }) => {
   const theme = useTheme();
   const { showSuccessPopup, showErrorPopup } = useNotification();
   const [meetings, setMeetings] = useState<Meeting[]>([]);
@@ -66,6 +71,7 @@ const MyMeetings: React.FC = () => {
   const [transcript, setTranscript] = useState<string | null>(null);
   const [formattedTranscript, setFormattedTranscript] = useState<Array<{speaker: string; text: string; timestamp?: string}> | null>(null);
   const [transcriptDialogOpen, setTranscriptDialogOpen] = useState<boolean>(false);
+  const [isLoadingTranscript, setIsLoadingTranscript] = useState<boolean>(false);
   const [retryingMeetingId, setRetryingMeetingId] = useState<string | null>(null);
   const [isDeleting, setIsDeleting] = useState(false);
   const [audioDialogOpen, setAudioDialogOpen] = useState(false);
@@ -260,6 +266,8 @@ const MyMeetings: React.FC = () => {
   };
 
   const handleViewTranscript = async (meetingId: string) => {
+    // Indiquer que le chargement est en cours
+    setIsLoadingTranscript(true);
     // Ouvrir le dialogue immédiatement pour montrer que quelque chose se passe
     setTranscriptDialogOpen(true);
     try {
@@ -370,6 +378,7 @@ const MyMeetings: React.FC = () => {
         
         console.log('Formatted utterances:', formattedData);
         setFormattedTranscript(formattedData);
+        setIsLoadingTranscript(false);
       } else if (hasTranscriptText) {
         // 2. Format avec texte complet (format non structuré)
         const text = rawData.transcript_text || rawData.text || '';
@@ -447,6 +456,7 @@ const MyMeetings: React.FC = () => {
           
           console.log(`Final formatted data has ${formattedData.length} entries`);
           setFormattedTranscript(formattedData);
+          setIsLoadingTranscript(false);
         } catch (parseError) {
           console.error('Error parsing transcript:', parseError);
           // Fallback: afficher le texte complet sans speakers
@@ -454,6 +464,7 @@ const MyMeetings: React.FC = () => {
             speaker: 'Transcript',
             text: text
           }]);
+          setIsLoadingTranscript(false);
         }
       } else if (rawData.transcript) {
         // 3. Format avec transcript comme objet
@@ -465,17 +476,20 @@ const MyMeetings: React.FC = () => {
           : (rawData.transcript.text || JSON.stringify(rawData.transcript));
         
         setFormattedTranscript([{
-          speaker: 'Transcript',
+          speaker: 'System',
           text: transcriptText
         }]);
+        setIsLoadingTranscript(false);
       } else {
-        // 4. Aucun format reconnu
-        console.error('No recognized transcript format in data:', Object.keys(rawData));
+        // Aucune donnée de transcription disponible
+        console.warn('No transcript data available');
         setFormattedTranscript(null);
+        setIsLoadingTranscript(false);
       }
     } catch (error) {
-      console.error('Error retrieving transcript:', error);
-      
+      console.error('Error fetching transcript:', error);
+      setFormattedTranscript(null);
+      setIsLoadingTranscript(false);
       // Message d'erreur personnalisé selon le type d'erreur
       if (error instanceof Error) {
         if (error.message.includes('Network') || error.message.includes('Failed to fetch')) {
@@ -716,22 +730,17 @@ const MyMeetings: React.FC = () => {
   // Fonction pour générer un compte rendu de réunion
   const handleGenerateSummary = async (meetingId: string) => {
     try {
-      setGeneratingSummaryId(meetingId);
-      console.log(`Generating summary for meeting ${meetingId}`);
-      
-      // Appeler l'API pour générer le compte rendu
-      const meeting = await generateMeetingSummary(meetingId);
-      
-      if (!meeting) {
-        console.error(`Failed to initiate summary generation for meeting ${meetingId}`);
-        showErrorPopup('Erreur', 'Erreur lors de la génération du compte rendu');
+      // Éviter les clics multiples
+      if (generatingSummaryId === meetingId) {
+        console.log(`Summary generation already in progress for meeting ${meetingId}`);
         return;
       }
       
-      console.log(`Summary generation initiated for meeting ${meetingId}:`, meeting);
-      showSuccessPopup('Information', 'Génération du compte rendu en cours...');
+      setGeneratingSummaryId(meetingId);
+      console.log(`Generating summary for meeting ${meetingId}`);
       
       // Mettre à jour l'interface utilisateur pour indiquer que le compte rendu est en cours de génération
+      // avant même d'appeler l'API pour une réponse plus immédiate
       setMeetings(prevMeetings => 
         prevMeetings.map(meeting => 
           meeting.id === meetingId 
@@ -742,6 +751,19 @@ const MyMeetings: React.FC = () => {
             : meeting
         )
       );
+      
+      // Appeler l'API pour générer le compte rendu
+      const meeting = await generateMeetingSummary(meetingId);
+      
+      if (!meeting) {
+        console.error(`Failed to initiate summary generation for meeting ${meetingId}`);
+        showErrorPopup('Erreur', 'Erreur lors de la génération du compte rendu');
+        setGeneratingSummaryId(null);
+        return;
+      }
+      
+      console.log(`Summary generation initiated for meeting ${meetingId}:`, meeting);
+      // Pas de notification ici - l'interface montre déjà 'processing'
       
       // Arrêter tout watcher existant pour cette réunion
       if (summaryWatchers[meetingId]) {
@@ -767,6 +789,7 @@ const MyMeetings: React.FC = () => {
         
         // Si le compte rendu est terminé ou en erreur, arrêter la surveillance
         if (status === 'completed') {
+          // Notification uniquement à la fin du processus
           showSuccessPopup('Succès', 'Compte rendu généré avec succès');
           setGeneratingSummaryId(null);
           
@@ -789,6 +812,7 @@ const MyMeetings: React.FC = () => {
             setSummaryWatchers(newWatchers);
           }
         }
+        // Pas de notification pour les statuts intermédiaires
       });
       
       // Stocker la fonction pour arrêter la surveillance
@@ -801,6 +825,18 @@ const MyMeetings: React.FC = () => {
       console.error('Failed to generate summary:', err);
       showErrorPopup('Erreur', `Erreur: ${err instanceof Error ? err.message : 'Erreur inconnue'}`);
       setGeneratingSummaryId(null);
+      
+      // Réinitialiser le statut en cas d'erreur
+      setMeetings(prevMeetings => 
+        prevMeetings.map(meeting => 
+          meeting.id === meetingId 
+            ? {
+                ...meeting,
+                summary_status: 'error'
+              } 
+            : meeting
+        )
+      );
     }
   };
 
@@ -1036,6 +1072,31 @@ const MyMeetings: React.FC = () => {
                           👥 {meeting.participants || meeting.speakers_count || '0'} participants
                         </Typography>
                         
+                        {/* Avertissement pour les audios de moins d'une minute */}
+                        {((meeting.audio_duration || meeting.duration || 0) < 60) && (
+                          <Tooltip title="Les enregistrements courts peuvent affecter la qualité de la transcription">
+                            <Chip
+                              icon={<WarningIcon fontSize="small" />}
+                              label="Gilbert n'identifie pas les locuteurs sur les audios de moins d'une minute"
+                              size="small"
+                              sx={{
+                                bgcolor: alpha('#F59E0B', 0.1),
+                                color: '#F59E0B',
+                                fontWeight: 500,
+                                maxWidth: '100%',
+                                '& .MuiChip-label': {
+                                  whiteSpace: 'normal',
+                                  overflow: 'visible',
+                                  textOverflow: 'clip',
+                                  display: 'block',
+                                  lineHeight: 1.2,
+                                  py: 0.5
+                                }
+                              }}
+                            />
+                          </Tooltip>
+                        )}
+                        
                         {/* Status chip */}
                         {(meeting.transcript_status === 'completed' || meeting.transcription_status === 'completed') ? (
                           <Chip
@@ -1098,23 +1159,38 @@ const MyMeetings: React.FC = () => {
                         {/* Generate Summary button - only show for completed transcriptions */}
                         {(meeting.transcript_status === 'completed' || meeting.transcription_status === 'completed') && (
                           <Button
-                            variant="outlined"
-                            color="primary"
-                            startIcon={<EventNoteIcon />}
+                            variant={meeting.summary_status === 'processing' ? "contained" : "outlined"}
+                            color={meeting.summary_status === 'processing' ? "info" : "primary"}
+                            startIcon={
+                              meeting.summary_status === 'processing' 
+                                ? <CircularProgress size={16} color="inherit" />
+                                : meeting.summary_status === 'completed'
+                                  ? <DescriptionIcon />
+                                  : <EventNoteIcon />
+                            }
                             onClick={(e) => {
                               e.stopPropagation(); // Empêcher le onclick du Paper parent
                               // Si le compte rendu est déjà généré, l'afficher sans le régénérer
                               if (meeting.summary_status === 'completed') {
                                 handleViewSummary(meeting.id);
-                              } else {
+                              } else if (meeting.summary_status !== 'processing') {
                                 handleGenerateSummary(meeting.id);
                               }
                             }}
-                            disabled={generatingSummaryId === meeting.id || meeting.summary_status === 'processing'}
+                            disabled={generatingSummaryId === meeting.id && meeting.summary_status !== 'completed'}
                             size="small"
+                            sx={{
+                              minWidth: '140px',
+                              position: 'relative',
+                              ...(meeting.summary_status === 'processing' && {
+                                '&:hover': {
+                                  backgroundColor: (theme) => theme.palette.info.main,
+                                }
+                              })
+                            }}
                           >
-                            {generatingSummaryId === meeting.id || meeting.summary_status === 'processing' 
-                              ? 'Generating...' 
+                            {meeting.summary_status === 'processing' 
+                              ? 'Processing...' 
                               : meeting.summary_status === 'completed' 
                                 ? 'View Summary' 
                                 : 'Generate Summary'}
@@ -1210,6 +1286,7 @@ const MyMeetings: React.FC = () => {
           setTimeout(() => {
             setTranscript(null);
             setFormattedTranscript(null);
+            setIsLoadingTranscript(false);
           }, 300); // Délai légèrement supérieur à la durée de l'animation de fermeture du dialogue
         }}
         maxWidth="md"
@@ -1228,7 +1305,15 @@ const MyMeetings: React.FC = () => {
           </IconButton>
         </DialogTitle>
         <DialogContent sx={{ mt: 2, minHeight: '300px', maxHeight: '60vh', overflowY: 'auto' }}>
-          {formattedTranscript && formattedTranscript.length > 0 ? (
+          {isLoadingTranscript ? (
+            <Box sx={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', height: '100%', py: 4 }}>
+              <CircularProgress size={40} sx={{ mb: 2 }} />
+              <Typography variant="h6" sx={{ mb: 1 }}>Loading Transcript...</Typography>
+              <Typography variant="body2" color="text.secondary" sx={{ textAlign: 'center' }}>
+                Please wait while we retrieve the transcript.
+              </Typography>
+            </Box>
+          ) : formattedTranscript && formattedTranscript.length > 0 ? (
             <Box sx={{ padding: 2 }}>
               {formattedTranscript.map((utterance, index) => (
                 <Box key={index} sx={{ mb: 3 }}>
