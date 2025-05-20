@@ -286,28 +286,52 @@ const Sidebar: React.FC<SidebarProps> = ({ onViewChange, user }) => {
       <Box sx={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
         <Box sx={{ p: 2, display: 'flex', alignItems: 'center' }}>
           <Box
-            component="img"
-            src="/img/logo_gilbert.png"
-            alt="Gilbert"
             sx={{
-              height: '35px',
-              width: 'auto',
-              display: 'block',
-              marginTop: '2px',
-              marginBottom: '2px',
-              cursor: 'pointer',
-              transition: 'all 0.3s ease',
-              '&:hover': {
-                transform: 'scale(1.05)',
-                filter: 'brightness(1.1)'
+              position: 'relative',
+              overflow: 'hidden',
+              display: 'inline-block',
+              borderRadius: '4px',
+              '&::after': {
+                content: '""',
+                position: 'absolute',
+                top: 0,
+                left: 0,
+                width: '100%',
+                height: '100%',
+                background: 'radial-gradient(circle, rgba(255,255,255,0) 70%, rgba(255,255,255,0.2) 100%)',
+                opacity: 0,
+                transition: 'opacity 0.4s cubic-bezier(0.4, 0, 0.2, 1)',
+                pointerEvents: 'none'
               },
-              '&:active': {
-                transform: 'scale(0.95)',
-                filter: 'brightness(0.95)'
+              '&:hover::after': {
+                opacity: 1
               }
             }}
-            onClick={(event) => handleListItemClick(event, 0)} // Redirection vers le dashboard (index 0)
-          />
+          >
+            <Box
+              component="img"
+              src="/img/logo_gilbert.png"
+              alt="Gilbert"
+              sx={{
+                height: '35px',
+                width: 'auto',
+                display: 'block',
+                marginTop: '2px',
+                marginBottom: '2px',
+                cursor: 'pointer',
+                transition: 'all 0.4s cubic-bezier(0.4, 0, 0.2, 1)',
+                '&:hover': {
+                  transform: 'scale(1.03) translateY(-1px)',
+                  filter: 'drop-shadow(0 4px 6px rgba(59, 130, 246, 0.1))'
+                },
+                '&:active': {
+                  transform: 'scale(0.98) translateY(0)',
+                  filter: 'none'
+                }
+              }}
+              onClick={(event) => handleListItemClick(event, 0)} // Redirection vers le dashboard (index 0)
+            />
+          </Box>
         </Box>
 
         <Divider />
