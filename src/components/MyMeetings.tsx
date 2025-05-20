@@ -92,6 +92,7 @@ const MyMeetings: React.FC<MyMeetingsProps> = ({ user }) => {
   const [audioDialogOpen, setAudioDialogOpen] = useState(false);
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [refreshingMetadataId, setRefreshingMetadataId] = useState<string | null>(null);
+  const [showPremiumDialog, setShowPremiumDialog] = useState(false);
   const [transcript, setTranscript] = useState<string | null>(null);
   const [formattedTranscript, setFormattedTranscript] = useState<Array<{speaker: string; text: string; timestamp?: string}> | null>(null);
   const [closingSummary, setClosingSummary] = useState(false);
@@ -697,6 +698,21 @@ const MyMeetings: React.FC<MyMeetingsProps> = ({ user }) => {
     // avec son effet de nettoyage lorsque le composant sera démonté
   };
 
+  // Fonction pour ouvrir le popup premium
+  const handleOpenPremiumDialog = () => {
+    setShowPremiumDialog(true);
+  };
+
+  // Fonction pour fermer le popup premium
+  const handleClosePremiumDialog = () => {
+    setShowPremiumDialog(false);
+  };
+
+  // Fonction pour contacter le support
+  const handleContactSupport = () => {
+    window.open('mailto:contact@lexiafrance.fr', '_blank');
+  };
+
   // Fonction pour mettre à jour spécifiquement les métadonnées d'une réunion
   const handleUpdateMetadata = async (meetingId: string) => {
     try {
@@ -1268,16 +1284,6 @@ const MyMeetings: React.FC<MyMeetingsProps> = ({ user }) => {
                     <Stack direction="row" spacing={1}>
                       <IconButton 
                         size="small" 
-                        sx={{ color: '#3B82F6' }}
-                        onClick={(e) => {
-                          e.stopPropagation(); // Empêcher le onclick du Paper parent
-                          handlePlayAudio(meeting.id, meeting.name || meeting.title || 'Réunion sans titre');
-                        }}
-                      >
-                        <PlayArrowIcon />
-                      </IconButton>
-                      <IconButton 
-                        size="small" 
                         sx={{ color: '#10B981' }}
                         onClick={(e) => {
                           e.stopPropagation(); // Empêcher le onclick du Paper parent
@@ -1286,7 +1292,14 @@ const MyMeetings: React.FC<MyMeetingsProps> = ({ user }) => {
                       >
                         <DescriptionIcon />
                       </IconButton>
-                      <IconButton size="small" sx={{ color: '#6366F1' }}>
+                      <IconButton 
+                        size="small" 
+                        sx={{ color: '#6366F1' }}
+                        onClick={(e) => {
+                          e.stopPropagation(); // Empêcher le onclick du Paper parent
+                          handleOpenPremiumDialog();
+                        }}
+                      >
                         <ShareIcon />
                       </IconButton>
                       <IconButton 
@@ -1486,6 +1499,80 @@ const MyMeetings: React.FC<MyMeetingsProps> = ({ user }) => {
             return null;
           })()}
           <Button onClick={handleCloseSummary}>Fermer</Button>
+        </DialogActions>
+      </Dialog>
+
+      {/* Dialogue Premium */}
+      <Dialog 
+        open={showPremiumDialog} 
+        onClose={handleClosePremiumDialog}
+        maxWidth="sm"
+        fullWidth
+        PaperProps={{
+          sx: {
+            borderRadius: 2,
+            overflow: 'hidden'
+          }
+        }}
+      >
+        <DialogTitle sx={{ 
+          display: 'flex', 
+          justifyContent: 'space-between', 
+          alignItems: 'center',
+          borderBottom: '1px solid',
+          borderColor: 'divider',
+          pb: 2
+        }}>
+          <Typography variant="h6">Fonctionnalité Premium</Typography>
+          <IconButton onClick={handleClosePremiumDialog} size="small">
+            <CloseIcon />
+          </IconButton>
+        </DialogTitle>
+        
+        <DialogContent sx={{ py: 3 }}>
+          <Box sx={{ 
+            display: 'flex', 
+            flexDirection: 'column', 
+            alignItems: 'center',
+            textAlign: 'center',
+            mb: 2
+          }}>
+            <Box 
+              sx={{ 
+                bgcolor: 'primary.light', 
+                color: 'primary.main',
+                borderRadius: '50%',
+                p: 2,
+                mb: 2,
+                display: 'flex',
+                justifyContent: 'center',
+                alignItems: 'center'
+              }}
+            >
+              <ShareIcon fontSize="large" />
+            </Box>
+            <Typography variant="h6" sx={{ mb: 1 }}>
+              Gestion des accès partagés
+            </Typography>
+            <Typography variant="body1" sx={{ mb: 3 }}>
+              Cette fonctionnalité est disponible uniquement avec un abonnement premium.
+            </Typography>
+            <Typography variant="body2" color="text.secondary" sx={{ mb: 3 }}>
+              Avec le plan premium, vous pouvez partager vos transcriptions avec votre équipe et gérer les accès de manière sécurisée.
+            </Typography>
+          </Box>
+        </DialogContent>
+        
+        <DialogActions sx={{ px: 3, py: 2, borderTop: '1px solid', borderColor: 'divider' }}>
+          <Button onClick={handleClosePremiumDialog} color="inherit">Annuler</Button>
+          <Button 
+            onClick={handleContactSupport} 
+            variant="contained" 
+            color="primary"
+            startIcon={<ShareIcon />}
+          >
+            Contacter Lexia France
+          </Button>
         </DialogActions>
       </Dialog>
     </>
