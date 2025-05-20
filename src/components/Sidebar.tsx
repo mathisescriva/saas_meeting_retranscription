@@ -285,17 +285,18 @@ const Sidebar: React.FC<SidebarProps> = ({ onViewChange, user }) => {
     >
       <Box sx={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
         <Box sx={{ p: 2, display: 'flex', alignItems: 'center' }}>
-          <Typography
-            variant="h5"
+          <Box
+            component="img"
+            src="/img/logo_gilbert.png"
+            alt="Gilbert"
             sx={{
-              fontWeight: 700,
-              background: 'linear-gradient(45deg, #3B82F6 30%, #6366F1 90%)',
-              WebkitBackgroundClip: 'text',
-              WebkitTextFillColor: 'transparent',
+              height: '35px',
+              width: 'auto',
+              display: 'block',
+              marginTop: '2px',
+              marginBottom: '2px'
             }}
-          >
-            Gilbert
-          </Typography>
+          />
         </Box>
 
         <Divider />

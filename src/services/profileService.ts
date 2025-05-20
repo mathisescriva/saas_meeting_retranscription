@@ -1,8 +1,6 @@
 import apiClient from './apiClient';
 
-// Base URL pour les ressources statiques
-const API_BASE_URL = 'https://backend-meeting.onrender.com';
-
+// Interface pour les données de profil
 export interface ProfileData {
   id: string;
   email: string;
@@ -13,14 +11,31 @@ export interface ProfileData {
 
 /**
  * Formate l'URL d'une image si nécessaire
- * Si l'URL est une URL relative commençant par /uploads, on la préfixe avec l'URL de base
+ * Si l'URL est relative, on utilise l'URL de base de l'API
  */
 function formatImageUrl(url: string | null): string | null {
   if (!url) return null;
-  if (url.startsWith('/uploads')) {
-    return `${API_BASE_URL}${url}`;
+  
+  // Si l'URL est déjà absolue (commence par http:// ou https://), la retourner telle quelle
+  if (url.startsWith('http://') || url.startsWith('https://')) {
+    return url;
   }
-  return url;
+  
+  // Pour les URLs relatives, utiliser la base de l'API
+  // Récupérer la base URL du service API client pour être cohérent
+  const apiBaseUrl = import.meta.env.VITE_API_URL || '';
+  
+  // Assurer que nous n'avons pas de barres obliques en double
+  if (url.startsWith('/') && apiBaseUrl.endsWith('/')) {
+    return `${apiBaseUrl}${url.substring(1)}`;
+  }
+  
+  // Gérer le cas où apiBaseUrl n'a pas de barre oblique finale et url n'a pas de barre initiale
+  if (!url.startsWith('/') && !apiBaseUrl.endsWith('/')) {
+    return `${apiBaseUrl}/${url}`;
+  }
+  
+  return `${apiBaseUrl}${url}`;
 }
 
 /**

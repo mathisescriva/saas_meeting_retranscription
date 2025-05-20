@@ -697,17 +697,8 @@ const Dashboard: React.FC<DashboardProps> = ({ user, onRecordingStateChange }) =
       return;
     }
     
-    // Vérification de la taille maximale (50 MB)
-    const MAX_FILE_SIZE = 50 * 1024 * 1024; // 50 MB en octets
-    if (audioFile.size > MAX_FILE_SIZE) {
-      console.error('Audio file is too large');
-      showSuccessPopup(
-        "Fichier trop volumineux",
-        "Le fichier audio ne doit pas dépasser 50 MB. Veuillez sélectionner un fichier plus petit.",
-        'error'
-      );
-      return;
-    }
+    // La vérification de la taille maximale des fichiers audio a été retirée pour permettre
+    // le téléversement de fichiers audio de grande taille
     
     // Vérifier que le fichier est un audio
     if (!audioFile.type.startsWith('audio/') && !audioFile.name.endsWith('.mp3') && !audioFile.name.endsWith('.wav') && !audioFile.name.endsWith('.webm') && !audioFile.name.endsWith('.ogg')) {
