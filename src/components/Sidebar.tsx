@@ -294,8 +294,10 @@ const Sidebar: React.FC<SidebarProps> = ({ onViewChange, user }) => {
               width: 'auto',
               display: 'block',
               marginTop: '2px',
-              marginBottom: '2px'
+              marginBottom: '2px',
+              cursor: 'pointer'
             }}
+            onClick={(event) => handleListItemClick(event, 0)} // Redirection vers le dashboard (index 0)
           />
         </Box>
 
