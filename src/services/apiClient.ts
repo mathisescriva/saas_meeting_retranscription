@@ -15,6 +15,7 @@ interface RequestOptions {
   signal?: AbortSignal;
   timeout?: number;
   cache?: RequestCache;
+  ignoreError?: boolean; // Option pour ignorer les erreurs de connexion
 }
 
 interface ApiClient {
@@ -38,6 +39,11 @@ async function request<T>(
 ): Promise<T> {
   try {
     // Check if we had a recent connection error
+    // Réinitialiser l'état d'erreur précédent pour permettre de nouveaux essais
+    localStorage.removeItem('lastConnectionErrorTime');
+    
+    // Code commenté pour éviter le mécanisme de blocage des requêtes
+    /*
     const lastConnectionErrorTimeStr = localStorage.getItem('lastConnectionErrorTime');
     if (lastConnectionErrorTimeStr) {
       const lastErrorTime = parseInt(lastConnectionErrorTimeStr);
@@ -60,6 +66,7 @@ async function request<T>(
         }
       }
     }
+    */
     
     const url = `${API_BASE_URL}${endpoint}`;
     const headers: HeadersInit = {};

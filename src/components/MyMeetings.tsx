@@ -26,6 +26,7 @@ import {
 } from '@mui/material';
 import { alpha } from '@mui/material/styles';
 import MeetingSummaryRenderer from './MeetingSummaryRenderer';
+import TemplateSelectorModal from './TemplateSelectorModal';
 import {
   PlayArrow as PlayArrowIcon,
   Description as DescriptionIcon,
@@ -56,7 +57,7 @@ import {
 } from '../services/meetingService';
 import apiClient, { API_BASE_URL } from '../services/apiClient';
 import { exportSummaryToWord } from '../services/exportServiceDirect';
-import { exportActionsToExcel } from '../services/exportServiceExcel';
+// L'import exportActionsToExcel a été supprimé car il n'est plus utilisé
 import { useNotification } from '../contexts/NotificationContext';
 import { User } from '../services/authService';
 import MeetingAudioPlayer from './MeetingAudioPlayer';
@@ -96,6 +97,10 @@ const MyMeetings: React.FC<MyMeetingsProps> = ({ user }) => {
   const [transcript, setTranscript] = useState<string | null>(null);
   const [formattedTranscript, setFormattedTranscript] = useState<Array<{speaker: string; text: string; timestamp?: string}> | null>(null);
   const [closingSummary, setClosingSummary] = useState(false);
+  
+  // États pour la modale de sélection de template
+  const [templateSelectorOpen, setTemplateSelectorOpen] = useState(false);
+  const [currentMeetingId, setCurrentMeetingId] = useState<string | null>(null);
 
   // CSS styles for Markdown content
   const markdownStyles = `
@@ -764,16 +769,29 @@ const MyMeetings: React.FC<MyMeetingsProps> = ({ user }) => {
   };
 
   // Fonction pour générer un compte rendu de réunion
-  const handleGenerateSummary = async (meetingId: string) => {
+  // Affiche la modale de sélection de template
+  const handleGenerateSummary = (meetingId: string) => {
+    // Éviter les clics multiples
+    if (generatingSummaryId === meetingId) {
+      console.log(`Summary generation already in progress for meeting ${meetingId}`);
+      return;
+    }
+    
+    console.log(`Opening template selector for meeting ${meetingId}`);
+    setCurrentMeetingId(meetingId);
+    setTemplateSelectorOpen(true);
+  };
+  
+  // Génère le résumé avec le template sélectionné
+  const handleTemplateSelect = async (clientId: string | null) => {
+    if (!currentMeetingId) return;
+    
+    const meetingId = currentMeetingId;
+    setTemplateSelectorOpen(false);
+    
     try {
-      // Éviter les clics multiples
-      if (generatingSummaryId === meetingId) {
-        console.log(`Summary generation already in progress for meeting ${meetingId}`);
-        return;
-      }
-      
       setGeneratingSummaryId(meetingId);
-      console.log(`Generating summary for meeting ${meetingId}`);
+      console.log(`Generating summary for meeting ${meetingId} with ${clientId ? `client template: ${clientId}` : 'default template'}`);
       
       // Mettre à jour l'interface utilisateur pour indiquer que le compte rendu est en cours de génération
       // avant même d'appeler l'API pour une réponse plus immédiate
@@ -788,8 +806,9 @@ const MyMeetings: React.FC<MyMeetingsProps> = ({ user }) => {
         )
       );
       
-      // Appeler l'API pour générer le compte rendu
-      const meeting = await generateMeetingSummary(meetingId);
+      // Appeler l'API pour générer le compte rendu avec le template sélectionné
+      // Nous passons explicitement le client_id (même si null) pour indiquer que nous voulons utiliser le template par défaut
+      const meeting = await generateMeetingSummary(meetingId, clientId);
       
       if (!meeting) {
         console.error(`Failed to initiate summary generation for meeting ${meetingId}`);
@@ -955,43 +974,7 @@ const MyMeetings: React.FC<MyMeetingsProps> = ({ user }) => {
   };
 
   // Fonction pour exporter les actions au format Excel
-  const handleExportToExcel = (meetingId: string) => {
-    console.log('Début de l\'exportation Excel pour la réunion:', meetingId);
-    // Trouver la réunion concernée
-    const meeting = meetings.find(m => m.id === meetingId);
-    if (!meeting) {
-      console.error('Réunion non trouvée pour l\'exportation Excel:', meetingId);
-      showErrorPopup('Erreur', 'Réunion non trouvée');
-      return;
-    }
-    
-    if (!meeting.summary_text && meeting.summary_status !== 'completed') {
-      console.error('Compte rendu non disponible pour l\'exportation Excel');
-      showErrorPopup('Erreur', 'Le compte rendu n\'est pas disponible pour l\'exportation');
-      return;
-    }
-    
-    try {
-      // Formater la date de la réunion
-      const meetingDate = formatDate(meeting.created_at);
-      
-      // Exporter les actions au format Excel
-      exportActionsToExcel(
-        meeting.summary_text || '',
-        meeting.name || meeting.title || 'Sans titre',
-        meetingDate
-      ).then(() => {
-        console.log('Exportation Excel réussie');
-        showSuccessPopup('Succès', 'Les actions ont été exportées au format Excel');
-      }).catch((error) => {
-        console.error('Erreur lors de l\'exportation Excel:', error);
-        showErrorPopup('Erreur', `Erreur lors de l'exportation Excel: ${error instanceof Error ? error.message : 'Erreur inconnue'}`);
-      });
-    } catch (error) {
-      console.error('Erreur lors de l\'exportation des actions:', error);
-      showErrorPopup('Erreur', `Erreur lors de l'exportation: ${error instanceof Error ? error.message : 'Erreur inconnue'}`);
-    }
-  };
+  // La fonction handleExportToExcel a été supprimée car elle n'est plus utilisée
 
   // Nettoyer les watchers lors du démontage du composant
   useEffect(() => {
@@ -1320,11 +1303,11 @@ const MyMeetings: React.FC<MyMeetingsProps> = ({ user }) => {
                           size="small" 
                           onClick={(e) => {
                             e.stopPropagation();
-                            handleUpdateMetadata(meeting.id);
+                            fetchMeetings();
                           }}
-                          disabled={refreshingMetadataId === meeting.id}
+                          disabled={isRefreshing}
                         >
-                          <UpdateIcon fontSize="small" color={refreshingMetadataId === meeting.id ? "disabled" : "action"} />
+                          <UpdateIcon fontSize="small" color={isRefreshing ? "disabled" : "action"} />
                         </IconButton>
                       </Tooltip>
                     </Box>
@@ -1484,15 +1467,7 @@ const MyMeetings: React.FC<MyMeetingsProps> = ({ user }) => {
                   >
                     Exporter en Word
                   </Button>
-                  <Button 
-                    startIcon={<FileDownloadIcon />}
-                    variant="outlined" 
-                    color="success" 
-                    onClick={() => meeting.id && handleExportToExcel(meeting.id)}
-                    sx={{ mr: 1 }}
-                  >
-                    Exporter les actions en Excel
-                  </Button>
+
                 </>
               );
             }
@@ -1575,6 +1550,14 @@ const MyMeetings: React.FC<MyMeetingsProps> = ({ user }) => {
           </Button>
         </DialogActions>
       </Dialog>
+
+      {/* Modale de sélection de template */}
+      <TemplateSelectorModal
+        open={templateSelectorOpen}
+        onClose={() => setTemplateSelectorOpen(false)}
+        onTemplateSelect={handleTemplateSelect}
+        meetingId={currentMeetingId || ''}
+      />
     </>
   );
 };

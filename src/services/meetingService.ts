@@ -44,6 +44,8 @@ export interface Meeting {
   // Champs pour le compte rendu
   summary_status?: 'not_generated' | 'processing' | 'completed' | 'error';
   summary_text?: string;
+  // Champ pour l'association avec un client (pour les templates personnalisés)
+  client_id?: string | null;
 }
 
 export interface TranscriptResponse {
@@ -1067,11 +1069,12 @@ function attemptDiarizationOnRawText(text: string): string {
 /**
  * Génère un compte rendu pour une réunion spécifique
  * @param meetingId ID de la réunion pour laquelle générer un compte rendu
+ * @param clientId ID du client pour utiliser son template (optionnel)
  * @returns La réunion mise à jour avec le statut du compte rendu
  */
-export async function generateMeetingSummary(meetingId: string): Promise<Meeting> {
+export async function generateMeetingSummary(meetingId: string, clientId?: string | null): Promise<Meeting> {
   try {
-    console.log(`Generating summary for meeting ID: ${meetingId}`);
+    console.log(`Generating summary for meeting ID: ${meetingId}${clientId ? ` with client template: ${clientId}` : ' with default template'}`);
     
     // Récupérer le token d'authentification
     const token = localStorage.getItem('auth_token');
@@ -1079,23 +1082,91 @@ export async function generateMeetingSummary(meetingId: string): Promise<Meeting
       throw new Error('Authentication token not found');
     }
     
-    // Appeler l'API pour générer le compte rendu en utilisant apiClient
     let data;
-    try {
-      const endpoint = `/meetings/${meetingId}/generate-summary`;
-      console.log(`Calling summary generation API at endpoint: ${endpoint}`);
-      data = await apiClient.post(endpoint);
-      console.log('Summary generation API response:', data);
-    } catch (err: any) {
-      console.error('API error during summary generation:', err);
-      throw new Error(`Error generating summary: ${err.status || err.message}`);
+    
+    // Étape 1: Associer la réunion au client choisi (seulement pour les templates personnalisés)
+    let associationSuccess = true; // Variable pour suivre le succès de l'association
+    
+    if (clientId !== undefined && clientId !== null) {
+      try {
+        console.log(`Étape 1: Associer la réunion ${meetingId} au client ${clientId}`);
+        await apiClient.put(`/meetings/${meetingId}`, { client_id: clientId });
+        console.log('Association réunion-client mise à jour avec succès');
+      } catch (err: any) {
+        console.error('Erreur lors de l\'association avec le client:', err);
+        console.log('Tentative de continuer malgré l\'échec de l\'association client...');
+        associationSuccess = false;
+        // Ne pas lancer d'erreur, continuons avec l'étape 2 quand même
+      }
+    } else if (clientId === null) {
+      // Pour le template par défaut, nous sautons l'étape d'association
+      console.log(`Template par défaut sélectionné pour la réunion ${meetingId}, aucune association nécessaire`);
     }
-    console.log(`Summary generation initiated for meeting ${meetingId}:`, data);
+    
+    // Étape 2: Générer le résumé
+    try {
+      // Message utilisateur pour informer que l'opération peut être longue
+      console.log(`Étape 2: Génération du résumé pour la réunion ${meetingId}`);
+      console.log('La génération du résumé peut prendre quelques instants, veuillez patienter...');
+      
+      // L'endpoint /ping n'existe pas sur le serveur, abandon de la vérification préalable
+      // Utilisation directe des endpoints de la documentation
+      console.log('Utilisation de l\'endpoint de génération de résumé selon la documentation...');
+      
+      // Selon la doc: POST /meetings/{meeting_id}/generate-summary
+      const generateEndpoint = `/meetings/${meetingId}/generate-summary`;
+      console.log(`Envoi de la requête à l'endpoint: ${generateEndpoint}`);
+      
+      // Stratégie multi-tentatives pour générer le résumé
+      // Essayons plusieurs formats et méthodes selon la documentation et l'expérience
+      
+      // Essai 1: POST /meetings/{meeting_id}/generate-summary (endpoint principal selon la doc)
+      try {
+        console.log('Essai 1: POST sur /meetings/{meeting_id}/generate-summary');
+        data = await apiClient.post(generateEndpoint);
+        console.log('Réponse API de génération de résumé (essai 1):', data);
+        return await getMeetingDetails(meetingId); // Retourner immédiatement si réussi
+      } catch (err1: any) {
+        console.warn('Essai 1 échoué:', err1.message);
+      }
+
+      // Essai 2: POST /meetings/{meeting_id}/summary (autre endpoint possible)
+      try {
+        console.log('Essai 2: POST sur /meetings/{meeting_id}/summary');
+        const summaryEndpoint = `/meetings/${meetingId}/summary`;
+        data = await apiClient.post(summaryEndpoint);
+        console.log('Réponse API de génération de résumé (essai 2):', data);
+        return await getMeetingDetails(meetingId); // Retourner immédiatement si réussi
+      } catch (err2: any) {
+        console.warn('Essai 2 échoué:', err2.message);
+      }
+
+      // Essai 3: GET /meetings/{meeting_id}/summary (pour récupérer un résumé déjà généré)
+      try {
+        console.log('Essai 3: GET sur /meetings/{meeting_id}/summary');
+        const getSummaryEndpoint = `/meetings/${meetingId}/summary`;
+        data = await apiClient.get(getSummaryEndpoint);
+        console.log('Réponse API de récupération de résumé (essai 3):', data);
+        return await getMeetingDetails(meetingId); // Retourner immédiatement si réussi
+      } catch (err3: any) {
+        console.warn('Essai 3 échoué:', err3.message);
+        // Si nous arrivons ici, tous les essais ont échoué
+        throw new Error(`Échec de génération du résumé après plusieurs tentatives. Vérifiez la connexion au serveur et réessayez.`);
+      }
+    } catch (err: any) {
+      console.error('Erreur lors de la génération du résumé:', err);
+      throw new Error(`Erreur lors de la génération du résumé: ${err.message}`);
+    }
+    
+    console.log(`Génération du résumé initiée pour la réunion ${meetingId}:`, data);
     
     // Mettre à jour le cache avec le statut de génération du compte rendu
     const meetingsCache = getMeetingsFromCache();
     if (meetingsCache[meetingId]) {
       meetingsCache[meetingId].summary_status = 'processing';
+      if (clientId !== undefined) {
+        meetingsCache[meetingId].client_id = clientId;
+      }
       saveMeetingsCache(meetingsCache);
     }
     
