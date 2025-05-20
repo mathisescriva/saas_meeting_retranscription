@@ -2,59 +2,73 @@ import React, { useState, useEffect, useCallback } from 'react';
 import {
   Box,
   Typography,
-  Paper,
-  Grid,
-  IconButton,
-  Chip,
-  Stack,
   Button,
-  useTheme,
-  alpha,
+  Table,
+  TableBody,
+  TableCell,
+  TableContainer,
+  TableHead,
+  TableRow,
+  Paper,
+  Chip,
+  IconButton,
   Dialog,
   DialogTitle,
   DialogContent,
   DialogActions,
   CircularProgress,
-  Alert,
+  Stack,
+  Divider,
   Tooltip,
+  useTheme,
+  Grid,
+  Alert,
 } from '@mui/material';
+import { alpha } from '@mui/material/styles';
+import MeetingSummaryRenderer from './MeetingSummaryRenderer';
 import {
   PlayArrow as PlayArrowIcon,
   Description as DescriptionIcon,
-  Share as ShareIcon,
-  Refresh as RefreshIcon,
-  Close as CloseIcon,
-  Warning as WarningIcon,
-  EventNote as EventNoteIcon,
   Delete as DeleteIcon,
-  Update as UpdateIcon,
+  Refresh as RefreshIcon,
+  EventNote as EventNoteIcon,
+  Warning as WarningIcon,
+  Close as CloseIcon,
   FileDownload as FileDownloadIcon,
+  People as PeopleIcon,
+  Person as PersonIcon,
+  Summarize as SummarizeIcon,
+  Assignment as AssignmentIcon,
+  Share as ShareIcon,
+  Update as UpdateIcon,
 } from '@mui/icons-material';
 import { 
   getAllMeetings, 
-  getTranscript, 
   deleteMeeting, 
-  Meeting as ApiMeeting, 
-  getMeetingDetails, 
-  onTranscriptionCompleted, 
-  getMeetingAudio, 
-  updateMeetingMetadata, 
-  updateMeetingParticipantsAndDuration,
   generateMeetingSummary,
-  watchSummaryStatus
+  getMeetingDetails,
+  onTranscriptionCompleted,
+  getMeetingAudio,
+  updateMeetingMetadata,
+  updateMeetingParticipantsAndDuration,
+  watchSummaryStatus,
+  Meeting as ApiMeeting
 } from '../services/meetingService';
+import apiClient, { API_BASE_URL } from '../services/apiClient';
 import { exportSummaryToWord } from '../services/exportServiceDirect';
 import { exportActionsToExcel } from '../services/exportServiceExcel';
 import { useNotification } from '../contexts/NotificationContext';
 import { User } from '../services/authService';
 import MeetingAudioPlayer from './MeetingAudioPlayer';
-import ReactMarkdown from 'react-markdown';
 
-interface Meeting extends ApiMeeting {
+interface Meeting extends Omit<ApiMeeting, 'summary_status'> {
   summary?: {
-    status: 'generated' | 'not_generated' | 'in_progress';
+    status: string;
     lastModified?: string;
   };
+  summary_status?: string;
+  summary_text?: string;
+  speakers_count?: number;
 }
 
 interface MyMeetingsProps {
@@ -63,67 +77,89 @@ interface MyMeetingsProps {
 
 const MyMeetings: React.FC<MyMeetingsProps> = ({ user }) => {
   const theme = useTheme();
-  const { showSuccessPopup, showErrorPopup } = useNotification();
+  const { showSuccessPopup, showErrorPopup, showNotification } = useNotification();
   const [meetings, setMeetings] = useState<Meeting[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [isRefreshing, setIsRefreshing] = useState(false);
-  const [transcript, setTranscript] = useState<string | null>(null);
-  const [formattedTranscript, setFormattedTranscript] = useState<Array<{speaker: string; text: string; timestamp?: string}> | null>(null);
+  const [currentAudioUrl, setCurrentAudioUrl] = useState<string | null>(null);
+  const [currentAudioTitle, setCurrentAudioTitle] = useState<string | null>(null);
+  const [generatingSummaryId, setGeneratingSummaryId] = useState<string | null>(null);
+  const [summaryWatchers, setSummaryWatchers] = useState<Record<string, () => void>>({});
   const [transcriptDialogOpen, setTranscriptDialogOpen] = useState<boolean>(false);
   const [isLoadingTranscript, setIsLoadingTranscript] = useState<boolean>(false);
   const [retryingMeetingId, setRetryingMeetingId] = useState<string | null>(null);
-  const [isDeleting, setIsDeleting] = useState(false);
+  const [isDeleting, setIsDeleting] = useState<boolean>(false);
   const [audioDialogOpen, setAudioDialogOpen] = useState(false);
-  const [currentAudioUrl, setCurrentAudioUrl] = useState<string | null>(null);
-  const [currentAudioTitle, setCurrentAudioTitle] = useState<string | null>(null);
+  const [isRefreshing, setIsRefreshing] = useState(false);
   const [refreshingMetadataId, setRefreshingMetadataId] = useState<string | null>(null);
-  const [generatingSummaryId, setGeneratingSummaryId] = useState<string | null>(null);
+  const [transcript, setTranscript] = useState<string | null>(null);
+  const [formattedTranscript, setFormattedTranscript] = useState<Array<{speaker: string; text: string; timestamp?: string}> | null>(null);
   const [closingSummary, setClosingSummary] = useState(false);
-  const [summaryWatchers, setSummaryWatchers] = useState<Record<string, () => void>>({});
 
   // CSS styles for Markdown content
   const markdownStyles = `
-    .markdown-content h1 {
-      font-size: 1.8rem;
-      margin-top: 1.5rem;
-      margin-bottom: 1rem;
-      font-weight: 600;
-    }
-    .markdown-content h2 {
-      font-size: 1.5rem;
-      margin-top: 1.2rem;
-      margin-bottom: 0.8rem;
-      font-weight: 600;
-    }
-    .markdown-content h3 {
-      font-size: 1.3rem;
-      margin-top: 1rem;
-      margin-bottom: 0.6rem;
-      font-weight: 600;
-    }
     .markdown-content p {
-      margin-bottom: 1rem;
+      margin-bottom: 16px;
       line-height: 1.6;
     }
+    .markdown-content h1 {
+      font-size: 28px;
+      font-weight: 700;
+      margin-top: 24px;
+      margin-bottom: 16px;
+    }
+    .markdown-content h2 {
+      font-size: 24px;
+      font-weight: 600;
+      margin-top: 20px;
+      margin-bottom: 12px;
+    }
+    .markdown-content h3 {
+      font-size: 20px;
+      font-weight: 600;
+      margin-top: 16px;
+      margin-bottom: 10px;
+    }
     .markdown-content ul, .markdown-content ol {
-      margin-left: 1.5rem;
-      margin-bottom: 1rem;
+      margin-bottom: 16px;
+      padding-left: 24px;
     }
     .markdown-content li {
-      margin-bottom: 0.5rem;
+      margin-bottom: 8px;
     }
     .markdown-content code {
-      background-color: #f0f0f0;
-      padding: 0.2rem 0.4rem;
-      border-radius: 3px;
+      background-color: rgba(0, 0, 0, 0.05);
+      padding: 2px 4px;
+      border-radius: 4px;
       font-family: monospace;
     }
+    .markdown-content pre {
+      background-color: rgba(0, 0, 0, 0.05);
+      padding: 16px;
+      border-radius: 4px;
+      overflow-x: auto;
+      margin-bottom: 16px;
+    }
     .markdown-content blockquote {
-      border-left: 4px solid #ddd;
-      padding-left: 1rem;
+      border-left: 4px solid #e0e0e0;
+      padding-left: 16px;
       margin-left: 0;
-      color: #666;
+      margin-bottom: 16px;
+      color: #616161;
+    }
+    .markdown-content table {
+      width: 100%;
+      border-collapse: collapse;
+      margin-bottom: 16px;
+    }
+    .markdown-content table th, .markdown-content table td {
+      border: 1px solid #e0e0e0;
+      padding: 8px 12px;
+      text-align: left;
+    }
+    .markdown-content table th {
+      background-color: rgba(0, 0, 0, 0.05);
+      font-weight: 600;
     }
   `;
 
@@ -146,7 +182,7 @@ const MyMeetings: React.FC<MyMeetingsProps> = ({ user }) => {
           rawDurationType: typeof meeting.duration,
           rawAudioDuration: meeting.audio_duration,
           rawAudioDurationType: typeof meeting.audio_duration,
-          speakers: meeting.speaker_count || meeting.speakers_count || meeting.participants,
+          speakers: meeting.speakers_count || meeting.speakers_count || meeting.participants,
         });
         
         // Process duration - try to ensure we have a numerical value
@@ -168,7 +204,7 @@ const MyMeetings: React.FC<MyMeetingsProps> = ({ user }) => {
         }
         
         // Déterminer le nombre de participants avec le bon ordre de priorité
-        const participants = meeting.speaker_count || meeting.speakers_count || meeting.participants || 0;
+        const participants = meeting.speakers_count || meeting.speakers_count || meeting.participants || 0;
         
         console.log(`Processed metadata for ${meeting.id}: Duration=${durationInSeconds}s, Participants=${participants}`);
         
@@ -176,13 +212,7 @@ const MyMeetings: React.FC<MyMeetingsProps> = ({ user }) => {
           ...meeting,
           audio_duration: durationInSeconds,
           duration: durationInSeconds || meeting.duration,
-          participants: participants,
-          summary: {
-            // Assuming if transcription is completed, a summary could be generated
-            status: meeting.transcript_status === 'completed' || meeting.transcription_status === 'completed' 
-              ? 'generated' 
-              : 'in_progress',
-          }
+          participants: participants
         };
       });
       
@@ -301,19 +331,13 @@ const MyMeetings: React.FC<MyMeetingsProps> = ({ user }) => {
       let response;
       let endpoint;
       let error404 = false;
-      const baseUrl = 'https://backend-meeting.onrender.com'; // URL du backend hébergé sur Render
       
       // Premier essai: utiliser l'endpoint direct
       try {
-        endpoint = `${baseUrl}/meetings/${meetingId}`;
-        console.log(`Trying endpoint: ${endpoint}`);
+        endpoint = `/meetings/${meetingId}`;
+        console.log(`Trying endpoint: ${API_BASE_URL}${endpoint}`);
         
-        response = await fetch(endpoint, {
-          method: 'GET',
-          headers: {
-            'Authorization': `Bearer ${token}`
-          }
-        });
+        response = await apiClient.get(endpoint);
         
         if (response.status === 404) {
           error404 = true;
@@ -325,36 +349,31 @@ const MyMeetings: React.FC<MyMeetingsProps> = ({ user }) => {
       
       // Deuxième essai si le premier a échoué avec 404: utiliser l'endpoint alternatif
       if (error404 || !response || !response.ok) {
-        endpoint = `${baseUrl}/simple/meetings/${meetingId}`;
-        console.log(`Trying alternative endpoint: ${endpoint}`);
+        endpoint = `/simple/meetings/${meetingId}`;
+        console.log(`Trying alternative endpoint: ${API_BASE_URL}${endpoint}`);
         
-        response = await fetch(endpoint, {
-          method: 'GET',
-          headers: {
-            'Authorization': `Bearer ${token}`
-          }
-        });
+        try {
+          response = await apiClient.get(endpoint);
+        } catch (err) {
+          console.error('Error with second endpoint:', err);
+        }
       }
       
-      // Troixième essai: essayer avec l'ID directement (certaines API sont configurées ainsi)
-      if (!response || !response.ok) {
-        endpoint = `${baseUrl}/${meetingId}`;
-        console.log(`Trying direct ID endpoint: ${endpoint}`);
+      // Troisième essai: essayer avec l'ID directement (certaines API sont configurées ainsi)
+      if (!response || (response as any).status === 404) {
+        endpoint = `/${meetingId}`;
+        console.log(`Trying direct ID endpoint: ${API_BASE_URL}${endpoint}`);
         
-        response = await fetch(endpoint, {
-          method: 'GET',
-          headers: {
-            'Authorization': `Bearer ${token}`
-          }
-        });
+        try {
+          response = await apiClient.get(endpoint);
+        } catch (err) {
+          console.error('Error with third endpoint:', err);
+        }
       }
       
-      if (!response.ok) {
-        console.error(`API error: ${response.status} ${response.statusText}`);
-        throw new Error(`Error fetching transcript: ${response.status} ${response.statusText}`);
-      }
-      
-      const rawData = await response.json();
+      // avec apiClient, les données sont déjà au format JSON
+      // et les erreurs sont gérées automatiquement via les blocs try/catch
+      const rawData = response as any;
       console.log(`Raw data from ${endpoint}:`, rawData);
       
       // Stocker les données brutes pour débogage si nécessaire
@@ -517,20 +536,22 @@ const MyMeetings: React.FC<MyMeetingsProps> = ({ user }) => {
     }, 2000);
   };
 
-  const handleDeleteMeeting = async (meetingId: string) => {
-    if (window.confirm('Êtes-vous sûr de vouloir supprimer cette réunion ? Cette action est irréversible.')) {
-      try {
-        setIsDeleting(true);
-        await deleteMeeting(meetingId);
-        console.log(`Meeting ${meetingId} deleted successfully`);
-        // Mettre à jour la liste des réunions
-        setMeetings(meetings.filter(m => m.id !== meetingId));
-      } catch (err) {
-        console.error('Failed to delete meeting:', err);
-        setError(`Erreur lors de la suppression: ${err instanceof Error ? err.message : 'Erreur inconnue'}`);
-      } finally {
-        setIsDeleting(false);
+  const handleDeleteMeeting = async (id: string) => {
+    try {
+      // Call the API to delete the meeting
+      const response = await deleteMeeting(id);
+      
+      // Check response
+      if (!response) {
+        throw new Error('Failed to delete meeting: No response');
       }
+
+      // Remove the meeting from the state
+      setMeetings(meetings.filter(meeting => meeting.id !== id));
+      showNotification('Meeting successfully deleted', 'success');
+    } catch (error) {
+      console.error('Error deleting meeting:', error);
+      showNotification('Failed to delete meeting', 'error');
     }
   };
 
@@ -559,17 +580,16 @@ const MyMeetings: React.FC<MyMeetingsProps> = ({ user }) => {
       }
       
       if (!meetingDetails) {
-        console.warn(`No details found for meeting ${meetingId}`);
-        return null;
+        console.log(`No meeting details found for ${meetingId}`);
+        showNotification('Cannot find meeting details', 'error');
+        return false;
       }
       
       // Si la réunion est marquée comme indisponible (statut 'failed'), mettre à jour l'interface
-      if (meetingDetails.transcript_status === 'failed' || meetingDetails.transcription_status === 'failed') {
-        setMeetings(prevMeetings => 
-          prevMeetings.filter(meeting => meeting.id !== meetingId)
-        );
-        console.log(`Meeting ${meetingId} removed from list as it's no longer available`);
-        return meetingDetails;
+      if (meetingDetails.transcript_status === 'error' || meetingDetails.transcription_status === 'error') {
+        console.log(`Meeting ${meetingId} has failed transcription`);
+        showNotification('This meeting has a failed transcription and cannot be updated', 'error');
+        return false;
       }
       
       // Extraire la durée et le nombre de participants
@@ -577,7 +597,7 @@ const MyMeetings: React.FC<MyMeetingsProps> = ({ user }) => {
                       meetingDetails.duration_seconds || 
                       meetingDetails.duration || 0;
                       
-      const participants = meetingDetails.speaker_count || 
+      const participants = meetingDetails.speakers_count || 
                           meetingDetails.speakers_count || 
                           meetingDetails.participants || 0;
       
@@ -631,7 +651,7 @@ const MyMeetings: React.FC<MyMeetingsProps> = ({ user }) => {
         console.log('Meeting details refreshed on click:', meetingDetails);
         
         // Si la réunion est indisponible, avertir l'utilisateur mais ne pas afficher d'erreur
-        if (meetingDetails.transcript_status === 'failed' && meetingDetails.transcription_status === 'failed') {
+        if (meetingDetails.transcript_status === 'error' && meetingDetails.transcription_status === 'error') {
           setError(`La réunion n'est plus disponible et a été retirée de la liste.`);
           setTimeout(() => setError(null), 5000); // Effacer le message après 5 secondes
           return;
@@ -698,7 +718,7 @@ const MyMeetings: React.FC<MyMeetingsProps> = ({ user }) => {
                       updatedMeeting.duration_seconds || 
                       updatedMeeting.duration || 0;
                       
-      const participants = updatedMeeting.speaker_count || 
+      const participants = updatedMeeting.speakers_count || 
                           updatedMeeting.speakers_count || 
                           updatedMeeting.participants || 0;
       
@@ -969,9 +989,56 @@ const MyMeetings: React.FC<MyMeetingsProps> = ({ user }) => {
     };
   }, [summaryWatchers]);
 
+  const renderSummary = () => {
+    const meeting = meetings.find(m => m.id === generatingSummaryId);
+    if (!meeting) return null;
+    
+    const isLoading = meeting.summary?.status === 'in_progress' || meeting.summary_status === 'processing';
+    const summaryText = meeting.summary_text || '';
+    
+    return <MeetingSummaryRenderer summaryText={summaryText} isLoading={isLoading} />;
+  };
+
+  useEffect(() => {
+    const handleError = (error: any) => {
+      console.error('Error fetching meetings:', error);
+      setLoading(false);
+      setError('Failed to fetch meetings');
+    };
+
+    const fetchMeetings = async () => {
+      setLoading(true);
+      setError(null);
+      try {
+        const response = await getAllMeetings();
+        
+        if (!response) {
+          handleError('No response from server');
+          return;
+        }
+        
+        if (Array.isArray(response)) {
+          // Triez les réunions par date de création (plus récentes en premier)
+          const sortedMeetings = response.sort((a, b) => {
+            return new Date(b.created_at).getTime() - new Date(a.created_at).getTime();
+          });
+          setMeetings(sortedMeetings);
+        } else {
+          handleError('Invalid response format');
+        }
+      } catch (error) {
+        handleError(error);
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    fetchMeetings();
+  }, []);
+
   return (
     <>
-      <style jsx global>{markdownStyles}</style>
+      <style dangerouslySetInnerHTML={{ __html: markdownStyles }} />
       <Box sx={{ 
         p: 4,
         background: 'linear-gradient(145deg, rgba(255,255,255,0.9) 0%, rgba(249,250,251,0.9) 100%)',
@@ -1108,7 +1175,7 @@ const MyMeetings: React.FC<MyMeetingsProps> = ({ user }) => {
                               fontWeight: 500,
                             }}
                           />
-                        ) : (meeting.transcript_status === 'failed' || meeting.transcription_status === 'failed') ? (
+                        ) : (meeting.transcript_status === 'error' || meeting.transcription_status === 'error') ? (
                           <Chip
                             label="failed"
                             size="small"
@@ -1386,159 +1453,7 @@ const MyMeetings: React.FC<MyMeetingsProps> = ({ user }) => {
           </IconButton>
         </DialogTitle>
         <DialogContent sx={{ mt: 2, minHeight: '300px', maxHeight: '60vh', overflowY: 'auto' }}>
-          {(() => {
-            const meeting = meetings.find(m => m.id === generatingSummaryId);
-            
-            // Si le résumé est complété et contient du texte
-            if ((meeting?.summary_status === 'completed' && meeting?.summary_text) || closingSummary) {
-              // Si nous sommes en train de fermer le dialogue, afficher le dernier contenu connu
-              // pour éviter de montrer "No Summary Available" pendant la fermeture
-              return (
-                <Box 
-                  sx={{ 
-                    fontFamily: 'inherit',
-                    padding: 3,
-                    borderRadius: 1,
-                    fontSize: '1rem',
-                    overflow: 'auto',
-                    backgroundColor: 'white'
-                  }}
-                  className="markdown-content"
-                >
-                  <style jsx global>{`
-                    .markdown-content h1 {
-                      font-size: 1.8rem;
-                      margin-top: 1.5rem;
-                      margin-bottom: 1rem;
-                      font-weight: 600;
-                      color: #333;
-                    }
-                    .markdown-content h2 {
-                      font-size: 1.5rem;
-                      margin-top: 1.2rem;
-                      margin-bottom: 0.8rem;
-                      font-weight: 600;
-                      color: #333;
-                    }
-                    .markdown-content h3 {
-                      font-size: 1.3rem;
-                      margin-top: 1rem;
-                      margin-bottom: 0.6rem;
-                      font-weight: 600;
-                      color: #333;
-                    }
-                    .markdown-content p {
-                      margin-bottom: 1rem;
-                      line-height: 1.6;
-                    }
-                    .markdown-content ul {
-                      margin-left: 1.5rem;
-                      margin-bottom: 1rem;
-                      list-style-type: disc;
-                    }
-                    .markdown-content ol {
-                      margin-left: 1.5rem;
-                      margin-bottom: 1rem;
-                    }
-                    .markdown-content li {
-                      margin-bottom: 0.5rem;
-                      padding-left: 0.5rem;
-                    }
-                    .markdown-content li > ul, .markdown-content li > ol {
-                      margin-top: 0.5rem;
-                      margin-bottom: 0;
-                    }
-                    .markdown-content code {
-                      background-color: #f0f0f0;
-                      padding: 0.2rem 0.4rem;
-                      border-radius: 3px;
-                      font-family: monospace;
-                    }
-                    .markdown-content blockquote {
-                      border-left: 4px solid #3B82F6;
-                      padding-left: 1rem;
-                      margin-left: 0;
-                      color: #4B5563;
-                      font-style: italic;
-                      background-color: #F3F4F6;
-                      padding: 0.5rem 1rem;
-                      border-radius: 0 4px 4px 0;
-                    }
-                    .markdown-content strong {
-                      font-weight: 600;
-                      color: #111;
-                    }
-                    .markdown-content a {
-                      color: #3B82F6;
-                      text-decoration: none;
-                    }
-                    .markdown-content a:hover {
-                      text-decoration: underline;
-                    }
-                    .markdown-content table {
-                      border-collapse: collapse;
-                      width: 100%;
-                      margin-bottom: 1rem;
-                    }
-                    .markdown-content th, .markdown-content td {
-                      border: 1px solid #e5e7eb;
-                      padding: 0.5rem;
-                      text-align: left;
-                    }
-                    .markdown-content th {
-                      background-color: #f9fafb;
-                      font-weight: 600;
-                    }
-                  `}</style>
-                  <ReactMarkdown>{meeting?.summary_text || ''}</ReactMarkdown>
-                </Box>
-              );
-            }
-            
-            // Si le résumé est en cours de génération
-            else if (meeting?.summary_status === 'processing' || meeting?.summary?.status === 'in_progress') {
-              return (
-                <Box sx={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', height: '100%', py: 4 }}>
-                  <CircularProgress sx={{ mb: 2 }} />
-                  <Typography variant="h6" sx={{ mb: 1 }}>Generating Summary...</Typography>
-                  <Typography variant="body2" color="text.secondary" sx={{ textAlign: 'center' }}>
-                    Please wait while we generate the summary for this meeting.
-                  </Typography>
-                </Box>
-              );
-            }
-            
-            // Si le résumé a échoué ou n'existe pas
-            else {
-              return (
-                <Box sx={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', height: '100%', py: 4 }}>
-                  <WarningIcon color="warning" sx={{ fontSize: 48, mb: 2 }} />
-                  <Typography variant="h6" sx={{ mb: 1 }}>No Summary Available</Typography>
-                  <Typography variant="body2" color="text.secondary" sx={{ textAlign: 'center' }}>
-                    {meeting?.summary_status === 'error' || meeting?.summary?.status === 'not_generated'
-                      ? 'An error occurred while generating the summary for this meeting.' 
-                      : 'The summary for this meeting has not been generated yet.'}
-                  </Typography>
-                  {(meeting?.summary_status !== 'processing' && meeting?.summary?.status !== 'in_progress' && meeting?.summary_status !== 'completed') && (
-                    <Button 
-                      variant="contained" 
-                      color="primary" 
-                      sx={{ mt: 2 }}
-                      onClick={() => {
-                        // Ici, vous pourriez ajouter la logique pour générer le résumé
-                        // Appeler la fonction pour générer le résumé
-                        if (meeting?.id) {
-                          handleGenerateSummary(meeting.id);
-                        }
-                      }}
-                    >
-                      Generate Summary
-                    </Button>
-                  )}
-                </Box>
-              );
-            }
-          })()}
+          {renderSummary()}
         </DialogContent>
         <DialogActions>
           {/* Boutons d'exportation */}

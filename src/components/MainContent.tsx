@@ -76,6 +76,7 @@ const TranscriptionView = () => {
   const [reports, setReports] = useState<Report[]>([]);
   const [selectedReport, setSelectedReport] = useState<Report | null>(null);
   const [customReportTitle, setCustomReportTitle] = useState('');
+  const [lastGeneratedReport, setLastGeneratedReport] = useState<string | null>(null);
 
   const themeColors = useMemo(() => [
     { main: theme.palette.primary.main, light: alpha(theme.palette.primary.main, 0.1) },
@@ -158,33 +159,58 @@ const TranscriptionView = () => {
 
   const generateSummary = async (type: 'general' | 'commercial' | 'technical' | 'custom') => {
     if (!transcription) return;
+    
+    console.log(`generateSummary appelé avec le type: ${type}`);
+    
+    const userConfirmed = window.confirm(`Voulez-vous vraiment générer un compte rendu de type ${type}?`);
+    
+    if (!userConfirmed) {
+      console.log(`Génération du compte rendu de type ${type} annulée par l'utilisateur`);
+      return;
+    }
+    
+    console.log(`Génération du compte rendu de type ${type} confirmée par l'utilisateur`);
 
     let prompt = '';
+    let title = '';
+    
     switch (type) {
       case 'general':
         prompt = 'Generate a concise summary of the key points discussed in this meeting.';
+        title = 'Compte rendu standard';
         break;
       case 'commercial':
         prompt = 'Extract the main business points, decisions, and action items from this meeting.';
+        title = 'Compte rendu business';
         break;
       case 'technical':
         prompt = 'Summarize the technical discussions, specifications, and decisions made in this meeting.';
+        title = 'Compte rendu technique';
         break;
       case 'custom':
         prompt = 'Create a custom summary based on specific requirements.';
+        title = customReportTitle || 'Compte rendu personnalisé';
         break;
     }
 
-    // Pour l'instant, on simule la génération du résumé
-    const summary = `Summary of type: ${type}\n\nKey Points:\n1. Point 1\n2. Point 2\n3. Point 3`;
+    const summary = `Résumé de type: ${type}
+
+Points clés:
+1. Point 1
+2. Point 2
+3. Point 3
+
+Ce résumé a été généré le ${new Date().toLocaleString()}`;
 
     const newReport: Report = {
       type,
-      title: `${type.charAt(0).toUpperCase() + type.slice(1)} Summary`,
+      title: title,
       content: summary
     };
 
-    setReports([...reports, newReport]);
+    setReports(prevReports => [...prevReports, newReport]);
+    setLastGeneratedReport(type);
+    
     if (type === 'custom') {
       setIsCustomReportDialogOpen(false);
       setCustomReportTitle('');
@@ -302,7 +328,7 @@ const TranscriptionView = () => {
         </DialogContent>
         <DialogActions>
           <Button onClick={() => setIsCustomReportDialogOpen(false)}>Cancel</Button>
-          <Button onClick={() => handleReportCreate('custom')} variant="contained">
+          <Button onClick={() => generateSummary('custom')} variant="contained">
             Create
           </Button>
         </DialogActions>
@@ -313,9 +339,9 @@ const TranscriptionView = () => {
         open={isReportMenuOpen}
         onClose={() => setIsReportMenuOpen(false)}
       >
-        <MenuItem onClick={() => handleReportCreate('general')}>General Report</MenuItem>
-        <MenuItem onClick={() => handleReportCreate('commercial')}>Commercial Report</MenuItem>
-        <MenuItem onClick={() => handleReportCreate('technical')}>Technical Report</MenuItem>
+        <MenuItem onClick={() => generateSummary('general')}>General Report</MenuItem>
+        <MenuItem onClick={() => generateSummary('commercial')}>Commercial Report</MenuItem>
+        <MenuItem onClick={() => generateSummary('technical')}>Technical Report</MenuItem>
         <MenuItem onClick={() => setIsCustomReportDialogOpen(true)}>Custom Report...</MenuItem>
       </Menu>
 
@@ -405,6 +431,37 @@ const TranscriptionView = () => {
         )}
 
 
+
+        {reports.length > 0 && (
+          <Paper sx={{ p: 3, mb: 3 }}>
+            <Typography variant="h6" sx={{ mb: 2 }}>
+              Comptes rendus générés
+            </Typography>
+            <Stack spacing={2}>
+              {reports.map((report, index) => (
+                <Paper
+                  key={index}
+                  sx={{
+                    p: 2,
+                    bgcolor: report === selectedReport ? alpha(theme.palette.primary.main, 0.05) : 'background.paper',
+                    cursor: 'pointer',
+                    '&:hover': {
+                      bgcolor: alpha(theme.palette.primary.main, 0.05)
+                    }
+                  }}
+                  onClick={() => setSelectedReport(report)}
+                >
+                  <Typography variant="subtitle1" sx={{ mb: 1, color: 'primary.main' }}>
+                    {report.title}
+                  </Typography>
+                  <Typography variant="body2" sx={{ whiteSpace: 'pre-line' }}>
+                    {report.content}
+                  </Typography>
+                </Paper>
+              ))}
+            </Stack>
+          </Paper>
+        )}
 
         <Box sx={{ mt: 3 }}>
           {utterances.map((utterance, index) => (

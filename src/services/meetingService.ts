@@ -961,43 +961,40 @@ export async function getMeetingDetails(meetingId: string): Promise<Meeting> {
  * @param cachedMeetingIds Liste des IDs de réunions en cache
  * @returns Liste des IDs de réunions valides
  */
-export async function syncMeetingsCache(cachedMeetingIds: string[]): Promise<string[]> {
-  if (!cachedMeetingIds || cachedMeetingIds.length === 0) {
-    return [];
-  }
+export async function syncMeetingsCache(): Promise<Meeting[]> {
+  console.log('Synchronizing meetings cache with server...');
   
   try {
-    // Vérifier les IDs stockés en cache local avec le nouvel endpoint simplifié
-    const response = await apiClient.post<ValidateIdsResponse>(
-      '/simple/meetings/validate-ids', 
-      { meeting_ids: cachedMeetingIds }
-    );
-    
-    // Supprimer du cache local les réunions qui n'existent plus
-    const { invalid_ids } = response;
-    if (invalid_ids && invalid_ids.length > 0) {
-      console.log(`Removing ${invalid_ids.length} invalid meetings from cache:`, invalid_ids);
-      
-      // Supprimer les réunions invalides du localStorage
-      const cachedMeetings = getMeetingsFromCache();
-      
-      invalid_ids.forEach(id => {
-        // Supprimer du cache
-        if (cachedMeetings[id]) {
-          delete cachedMeetings[id];
-        }
-      });
-      
-      // Mettre à jour le cache
-      saveMeetingsCache(cachedMeetings);
+    // Vérifier si le token est valide pour éviter les erreurs 401
+    const isTokenValid = await verifyTokenValidity();
+    if (!isTokenValid) {
+      console.warn('Token invalid when syncing meetings cache');
+      return [];
     }
     
-    return response.valid_ids || [];
+    // Fetch all meetings from the server
+    const meetings = await getAllMeetings();
+    
+    if (meetings && meetings.length > 0) {
+      console.log(`Fetched ${meetings.length} meetings from server`);
+      
+      // Normalize and update each meeting in the cache
+      const normalizedMeetings = meetings.map(meeting => normalizeMeeting(meeting));
+      
+      // Update the cache with all fetched meetings
+      updateMeetingsCache(normalizedMeetings);
+      
+      return normalizedMeetings;
+    } else {
+      console.log('No meetings found on server');
+      return [];
+    }
   } catch (error) {
-    console.error('Failed to sync meetings cache', error);
-    // En cas d'erreur, on considère que tous les IDs sont potentiellement valides
-    // pour éviter de bloquer l'utilisateur
-    return cachedMeetingIds;
+    console.error('Error syncing meetings cache:', error);
+    
+    // Return cached meetings in case of server error
+    const cachedMeetings = Object.values(getMeetingsFromCache());
+    return cachedMeetings;
   }
 }
 
@@ -1082,19 +1079,17 @@ export async function generateMeetingSummary(meetingId: string): Promise<Meeting
       throw new Error('Authentication token not found');
     }
     
-    // Appeler l'API pour générer le compte rendu
-    const response = await fetch(`https://backend-meeting.onrender.com/meetings/${meetingId}/generate-summary`, {
-      method: 'POST',
-      headers: {
-        'Authorization': `Bearer ${token}`
-      }
-    });
-    
-    if (!response.ok) {
-      throw new Error(`Error generating summary: ${response.status} ${response.statusText}`);
+    // Appeler l'API pour générer le compte rendu en utilisant apiClient
+    let data;
+    try {
+      const endpoint = `/meetings/${meetingId}/generate-summary`;
+      console.log(`Calling summary generation API at endpoint: ${endpoint}`);
+      data = await apiClient.post(endpoint);
+      console.log('Summary generation API response:', data);
+    } catch (err: any) {
+      console.error('API error during summary generation:', err);
+      throw new Error(`Error generating summary: ${err.status || err.message}`);
     }
-    
-    const data = await response.json();
     console.log(`Summary generation initiated for meeting ${meetingId}:`, data);
     
     // Mettre à jour le cache avec le statut de génération du compte rendu
