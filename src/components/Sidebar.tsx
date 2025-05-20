@@ -295,7 +295,16 @@ const Sidebar: React.FC<SidebarProps> = ({ onViewChange, user }) => {
               display: 'block',
               marginTop: '2px',
               marginBottom: '2px',
-              cursor: 'pointer'
+              cursor: 'pointer',
+              transition: 'all 0.3s ease',
+              '&:hover': {
+                transform: 'scale(1.05)',
+                filter: 'brightness(1.1)'
+              },
+              '&:active': {
+                transform: 'scale(0.95)',
+                filter: 'brightness(0.95)'
+              }
             }}
             onClick={(event) => handleListItemClick(event, 0)} // Redirection vers le dashboard (index 0)
           />
