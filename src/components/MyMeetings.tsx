@@ -1592,28 +1592,12 @@ const MyMeetings: React.FC<MyMeetingsProps> = ({ user }) => {
         maxWidth="xs"
         fullWidth
       >
-        <Box
-          sx={{
-            position: 'absolute',
-            top: '-24px',
-            left: 'calc(50% - 24px)',
-            width: '48px',
-            height: '48px',
-            borderRadius: '50%',
-            backgroundColor: 'white',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            boxShadow: '0 2px 12px rgba(0,0,0,0.08)'
-          }}
-        >
-          <DeleteForever color="error" fontSize="medium" />
-        </Box>
+        {/* Retrait du cercle flottant avec l'icône pour éviter les redondances */}
         
         <DialogTitle 
           id="delete-dialog-title"
           sx={{ 
-            pt: 4,
+            pt: 3,
             textAlign: 'center',
             fontWeight: 500,
             fontSize: '1.25rem',
@@ -1624,7 +1608,20 @@ const MyMeetings: React.FC<MyMeetingsProps> = ({ user }) => {
             gap: 1
           }}
         >
-          <Box sx={{ fontSize: '2rem', mb: 1 }}>🗑️</Box>
+          <Box
+            sx={{
+              width: '60px',
+              height: '60px',
+              borderRadius: '50%',
+              backgroundColor: 'rgba(244, 67, 54, 0.08)',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              mb: 2
+            }}
+          >
+            <Typography sx={{ fontSize: '28px' }}>🗑</Typography>
+          </Box>
           Supprimer cette réunion ?
         </DialogTitle>
         

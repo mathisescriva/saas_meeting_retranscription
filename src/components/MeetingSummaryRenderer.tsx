@@ -136,18 +136,43 @@ const MeetingSummaryRenderer: React.FC<MeetingSummaryRendererProps> = ({ summary
 
   // Fonction pour rendre le texte markdown (italique, gras, etc.)
   const renderMarkdownText = (text: string) => {
-    // Gestion du gras: **texte** ou __texte__
+    // Gestion du gras avec **texte**
     let renderedText = text.replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>');
-    renderedText = renderedText.replace(/__([^_]+)__/g, '<strong>$1</strong>');
     
-    // Gestion de l'italique: *texte* ou _texte_
-    renderedText = renderedText.replace(/\*([^*]+)\*/g, '<em>$1</em>');
-    renderedText = renderedText.replace(/_([^_]+)_/g, '<em>$1</em>');
+    // Gestion des titres avec #### (sous-sections)
+    if (text.match(/^#### (.+)$/)) {
+      const titleText = text.replace(/^#### (.+)$/, '$1');
+      return (
+        <Typography variant="h6" sx={{ fontWeight: 600, mt: 2, mb: 1 }}>
+          {renderMarkdownText(titleText)}
+        </Typography>
+      );
+    }
     
-    // Gestion des titres #
-    renderedText = renderedText.replace(/^# (.+)$/gm, '<h1>$1</h1>');
+    // Gestion des titres avec ### (sections principales)
+    if (text.match(/^### (.+)$/)) {
+      const titleText = text.replace(/^### (.+)$/, '$1');
+      return (
+        <Typography variant="h5" sx={{ fontWeight: 700, mt: 3, mb: 2, color: 'primary.main' }}>
+          {renderMarkdownText(titleText)}
+        </Typography>
+      );
+    }
     
-    // Convertir en JSX avec dangerouslySetInnerHTML
+    // Gestion des lignes commençant par un tiret
+    if (text.match(/^- /)) {
+      const lineContent = text.replace(/^- /, '');
+      return (
+        <Box sx={{ display: 'flex', alignItems: 'flex-start', mb: 1 }}>
+          <Box component="span" sx={{ mr: 1, mt: 0.5 }}>•</Box>
+          <Typography variant="body1">
+            <span dangerouslySetInnerHTML={{ __html: lineContent.replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>') }} />
+          </Typography>
+        </Box>
+      );
+    }
+    
+    // Convertir en JSX avec dangerouslySetInnerHTML pour le texte normal
     if (renderedText !== text) {
       return <span dangerouslySetInnerHTML={{ __html: renderedText }} />;
     }
@@ -158,8 +183,141 @@ const MeetingSummaryRenderer: React.FC<MeetingSummaryRendererProps> = ({ summary
   for (let i = 0; i < lines.length; i++) {
     const line = lines[i];
 
+    // Détection des titres avec #### (sous-sections)
+    if (line.match(/^####\s+/)) {
+      // Traiter la section précédente si elle existe
+      if (sectionType && sectionContent.length > 0) {
+        if (sectionType === 'other') {
+          renderedSections.push(
+            <Box key={`section-${renderedSections.length}`} sx={{ mb: 3 }}>
+              <Typography variant="body1" sx={{ whiteSpace: 'pre-line' }}>
+                {sectionContent.join('\n')}
+              </Typography>
+            </Box>
+          );
+        }
+        sectionContent = [];
+      }
+
+      // Extraire le texte du titre (sans les ####)
+      const title = line.replace(/^####\s+/, '');
+      
+      // Initialiser la nouvelle section 
+      sectionType = 'subtitle';
+      currentSection = line;
+
+      // Extraire les éléments sous ce titre
+      const contentItems = [];
+      let j = i + 1;
+      while (j < lines.length && !lines[j].match(/^####/) && !lines[j].match(/^###/) && !lines[j].match(/^---/)) {
+        if (lines[j].trim() !== '') {
+          contentItems.push(lines[j].trim());
+        }
+        j++;
+      }
+      i = j - 1; // Mettre à jour l'index
+      
+      // Ajouter la section avec le titre formaté
+      renderedSections.push(
+        <Box key={`subtitle-${renderedSections.length}`} sx={{ mb: 3 }}>
+          <Typography variant="h6" component="h3" fontWeight="600" sx={{ mb: 1.5 }}>
+            {title}
+          </Typography>
+          
+          {contentItems.length > 0 && (
+            <Box sx={{ pl: 2 }}>
+              {contentItems.map((item, index) => {
+                // Vérifier si c'est un élément avec tiret
+                if (item.match(/^-\s*/)) {
+                  return (
+                    <Box key={`item-${index}`} sx={{ display: 'flex', mb: 1 }}>
+                      <Box component="span" sx={{ mr: 1 }}>•</Box>
+                      <Typography variant="body1">
+                        <span dangerouslySetInnerHTML={{ __html: item.replace(/^-\s*/, '').replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>') }} />
+                      </Typography>
+                    </Box>
+                  );
+                } else {
+                  return <Typography key={`item-${index}`} sx={{ mb: 1 }}>{renderMarkdownText(item)}</Typography>;
+                }
+              })}
+            </Box>
+          )}
+        </Box>
+      );
+    }
+    // Détection des titres avec ### (Points clés)
+    else if (line.match(/^###\s+/)) {
+      // Traiter la section précédente si elle existe
+      if (sectionType && sectionContent.length > 0) {
+        if (sectionType === 'other') {
+          renderedSections.push(
+            <Box key={`section-${renderedSections.length}`} sx={{ mb: 3 }}>
+              <Typography variant="body1" sx={{ whiteSpace: 'pre-line' }}>
+                {sectionContent.join('\n')}
+              </Typography>
+            </Box>
+          );
+        }
+        sectionContent = [];
+      }
+
+      // Extraire le texte du titre (sans les ###)
+      const title = line.replace(/^###\s+/, '');
+      
+      // Initialiser la nouvelle section 
+      sectionType = 'title';
+      currentSection = line;
+
+      // Extraire les éléments sous ce titre
+      const contentItems = [];
+      let j = i + 1;
+      while (j < lines.length && !lines[j].match(/^#[#]?/) && !lines[j].match(/^---/)) {
+        if (lines[j].trim() !== '') {
+          contentItems.push(lines[j].trim());
+        }
+        j++;
+      }
+      i = j - 1; // Mettre à jour l'index
+      
+      // Ajouter la section avec le titre formaté
+      renderedSections.push(
+        <Box key={`title-${renderedSections.length}`} sx={{ mb: 3 }}>
+          <Typography variant="h5" component="h2" fontWeight="700" color="primary.main" sx={{ mb: 2 }}>
+            {title}
+          </Typography>
+          
+          {contentItems.length > 0 && (
+            <Paper elevation={1} sx={{ p: 2 }}>
+              {contentItems.map((item, index) => {
+                // Vérifier si c'est un élément numéroté
+                const isNumbered = item.match(/^\d+\.\s*/);
+                if (isNumbered) {
+                  return (
+                    <Typography key={`item-${index}`} sx={{ mb: 1, display: 'flex', alignItems: 'center' }}>
+                      <strong style={{ marginRight: '8px' }}>{isNumbered[0]}</strong>
+                      <span>{renderMarkdownText(item.replace(/^\d+\.\s*/, ''))}</span>
+                    </Typography>
+                  );
+                } else if (item.match(/^-\s*/)) {
+                  // Élément avec puces
+                  return (
+                    <Typography key={`item-${index}`} sx={{ mb: 1, pl: 2 }}>
+                      • {renderMarkdownText(item.replace(/^-\s*/, ''))}
+                    </Typography>
+                  );
+                } else {
+                  // Texte simple
+                  return <Typography key={`item-${index}`} sx={{ mb: 1 }}>{renderMarkdownText(item)}</Typography>;
+                }
+              })}
+            </Paper>
+          )}
+        </Box>
+      );
+    }
     // Détection des titres principaux avec un seul #
-    if (line.match(/^#\s+[^#][\p{Emoji}\p{Emoji_Presentation}\p{Emoji_Modifier_Base}\p{Emoji_Modifier}\p{Emoji_Component}]*.*$/ui) && !line.match(/^#\s*Réunion/ui)) {
+    else if (line.match(/^#\s+[^#][\p{Emoji}\p{Emoji_Presentation}\p{Emoji_Modifier_Base}\p{Emoji_Modifier}\p{Emoji_Component}]*.*$/ui) && !line.match(/^#\s*Réunion/ui)) {
       // Traiter la section précédente si elle existe
       if (sectionType && sectionContent.length > 0) {
         if (sectionType === 'other') {
