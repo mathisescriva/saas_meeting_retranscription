@@ -134,11 +134,102 @@ const MeetingSummaryRenderer: React.FC<MeetingSummaryRendererProps> = ({ summary
   let sectionContent: string[] = [];
   let sectionType: string | null = null;
 
+  // Fonction pour rendre le texte markdown (italique, gras, etc.)
+  const renderMarkdownText = (text: string) => {
+    // Gestion du gras: **texte** ou __texte__
+    let renderedText = text.replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>');
+    renderedText = renderedText.replace(/__([^_]+)__/g, '<strong>$1</strong>');
+    
+    // Gestion de l'italique: *texte* ou _texte_
+    renderedText = renderedText.replace(/\*([^*]+)\*/g, '<em>$1</em>');
+    renderedText = renderedText.replace(/_([^_]+)_/g, '<em>$1</em>');
+    
+    // Gestion des titres #
+    renderedText = renderedText.replace(/^# (.+)$/gm, '<h1>$1</h1>');
+    
+    // Convertir en JSX avec dangerouslySetInnerHTML
+    if (renderedText !== text) {
+      return <span dangerouslySetInnerHTML={{ __html: renderedText }} />;
+    }
+    
+    return text;
+  };
+
   for (let i = 0; i < lines.length; i++) {
     const line = lines[i];
 
+    // Détection des titres principaux avec un seul #
+    if (line.match(/^#\s+[^#][\p{Emoji}\p{Emoji_Presentation}\p{Emoji_Modifier_Base}\p{Emoji_Modifier}\p{Emoji_Component}]*.*$/ui) && !line.match(/^#\s*Réunion/ui)) {
+      // Traiter la section précédente si elle existe
+      if (sectionType && sectionContent.length > 0) {
+        if (sectionType === 'other') {
+          renderedSections.push(
+            <Box key={`section-${renderedSections.length}`} sx={{ mb: 3 }}>
+              <Typography variant="body1" sx={{ whiteSpace: 'pre-line' }}>
+                {sectionContent.join('\n')}
+              </Typography>
+            </Box>
+          );
+        }
+        sectionContent = [];
+      }
+
+      // Extraire le texte du titre (sans le #)
+      const title = line.replace(/^#\s+/, '');
+      
+      // Initialiser la nouvelle section 
+      sectionType = 'title';
+      currentSection = line;
+
+      // Extraire les éléments sous ce titre
+      const contentItems = [];
+      let j = i + 1;
+      while (j < lines.length && !lines[j].match(/^#[#]?/) && !lines[j].match(/^---/)) {
+        if (lines[j].trim() !== '') {
+          contentItems.push(lines[j].trim());
+        }
+        j++;
+      }
+      i = j - 1; // Mettre à jour l'index
+      
+      // Ajouter la section avec le titre formaté
+      renderedSections.push(
+        <Box key={`title-${renderedSections.length}`} sx={{ mb: 3 }}>
+          <Typography variant="h4" component="h1" fontWeight="bold" color="primary.main" sx={{ mb: 2 }}>
+            {title}
+          </Typography>
+          
+          {contentItems.length > 0 && (
+            <Paper elevation={1} sx={{ p: 2 }}>
+              {contentItems.map((item, index) => {
+                // Vérifier si c'est un élément numéroté
+                const isNumbered = item.match(/^\d+\.\s*/);
+                if (isNumbered) {
+                  return (
+                    <Typography key={`item-${index}`} sx={{ mb: 1, display: 'flex', alignItems: 'center' }}>
+                      <strong style={{ marginRight: '8px' }}>{isNumbered[0]}</strong>
+                      <span>{renderMarkdownText(item.replace(/^\d+\.\s*/, ''))}</span>
+                    </Typography>
+                  );
+                } else if (item.match(/^-\s*/)) {
+                  // Élément avec puces
+                  return (
+                    <Typography key={`item-${index}`} sx={{ mb: 1, pl: 2 }}>
+                      • {renderMarkdownText(item.replace(/^-\s*/, ''))}
+                    </Typography>
+                  );
+                } else {
+                  // Texte simple
+                  return <Typography key={`item-${index}`} sx={{ mb: 1 }}>{renderMarkdownText(item)}</Typography>;
+                }
+              })}
+            </Paper>
+          )}
+        </Box>
+      );
+    }
     // Détection des sous-titres génériques
-    if (line.match(/^##\s+[\p{Emoji}\p{Emoji_Presentation}\p{Emoji_Modifier_Base}\p{Emoji_Modifier}\p{Emoji_Component}]*.*$/ui) && !line.match(/^##\s*[📆🗳✅⚠️💨📘👥🧠].*$/ui)) {
+    else if (line.match(/^##\s+[\p{Emoji}\p{Emoji_Presentation}\p{Emoji_Modifier_Base}\p{Emoji_Modifier}\p{Emoji_Component}]*.*$/ui) && !line.match(/^##\s*[📆🗳✅⚠️💨📘👥🧠].*$/ui)) {
       // Traiter la section précédente si elle existe
       if (sectionType && sectionContent.length > 0) {
         if (sectionType === 'other') {
@@ -230,19 +321,19 @@ const MeetingSummaryRenderer: React.FC<MeetingSummaryRendererProps> = ({ summary
                   return (
                     <Typography key={`item-${index}`} sx={{ mb: 1, display: 'flex', alignItems: 'center' }}>
                       <strong style={{ marginRight: '8px' }}>{isNumbered[0]}</strong>
-                      <span>{item.replace(/^\d+\.\s*/, '')}</span>
+                      <span>{renderMarkdownText(item.replace(/^\d+\.\s*/, ''))}</span>
                     </Typography>
                   );
                 } else if (item.match(/^-\s*/)) {
                   // Élément avec puces
                   return (
                     <Typography key={`item-${index}`} sx={{ mb: 1, pl: 2 }}>
-                      • {item.replace(/^-\s*/, '')}
+                      • {renderMarkdownText(item.replace(/^-\s*/, ''))}
                     </Typography>
                   );
                 } else {
-                  // Texte simple
-                  return <Typography key={`item-${index}`} sx={{ mb: 1 }}>{item}</Typography>;
+                  // Texte simple avec formatage markdown
+                  return <Typography key={`item-${index}`} sx={{ mb: 1 }}>{renderMarkdownText(item)}</Typography>;
                 }
               })}
             </Paper>
