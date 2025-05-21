@@ -905,7 +905,7 @@ const Dashboard: React.FC<DashboardProps> = ({ user, onRecordingStateChange }) =
       // Afficher un message de succès
       showSuccessPopup(
         "Upload successful!",
-        `Your meeting "${title}" has been uploaded with ID ${meeting.id}. You can find it in "My Recent Meetings".`
+        `Your meeting "${title}" has been uploaded. You can find it in "My Recent Meetings".`
       );
       
       // Commencer à surveiller le statut de la transcription
