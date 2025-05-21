@@ -1617,9 +1617,14 @@ const MyMeetings: React.FC<MyMeetingsProps> = ({ user }) => {
             textAlign: 'center',
             fontWeight: 500,
             fontSize: '1.25rem',
-            color: 'text.primary'
+            color: 'text.primary',
+            display: 'flex',
+            flexDirection: 'column',
+            alignItems: 'center',
+            gap: 1
           }}
         >
+          <Box sx={{ fontSize: '2rem', mb: 1 }}>🗑️</Box>
           Supprimer cette réunion ?
         </DialogTitle>
         
