@@ -102,6 +102,10 @@ const MyMeetings: React.FC<MyMeetingsProps> = ({ user }) => {
   const [templateSelectorOpen, setTemplateSelectorOpen] = useState(false);
   const [currentMeetingId, setCurrentMeetingId] = useState<string | null>(null);
 
+  // États pour la confirmation de suppression
+  const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false);
+  const [meetingToDelete, setMeetingToDelete] = useState<string | null>(null);
+
   // CSS styles for Markdown content
   const markdownStyles = `
     .markdown-content p {
@@ -542,10 +546,25 @@ const MyMeetings: React.FC<MyMeetingsProps> = ({ user }) => {
     }, 2000);
   };
 
-  const handleDeleteMeeting = async (id: string) => {
+  // Ouvrir la boîte de dialogue de confirmation de suppression
+  const confirmDeleteMeeting = (id: string) => {
+    setMeetingToDelete(id);
+    setDeleteConfirmOpen(true);
+  };
+
+  // Fermer la boîte de dialogue sans supprimer
+  const cancelDeleteMeeting = () => {
+    setDeleteConfirmOpen(false);
+    setMeetingToDelete(null);
+  };
+
+  // Fonction de suppression effective après confirmation
+  const handleDeleteMeeting = async () => {
+    if (!meetingToDelete) return;
+    
     try {
       // Call the API to delete the meeting
-      const response = await deleteMeeting(id);
+      const response = await deleteMeeting(meetingToDelete);
       
       // Check response
       if (!response) {
@@ -553,11 +572,17 @@ const MyMeetings: React.FC<MyMeetingsProps> = ({ user }) => {
       }
 
       // Remove the meeting from the state
-      setMeetings(meetings.filter(meeting => meeting.id !== id));
+      setMeetings(meetings.filter(meeting => meeting.id !== meetingToDelete));
       showNotification('Meeting successfully deleted', 'success');
+
+      // Fermer la boîte de dialogue
+      setDeleteConfirmOpen(false);
+      setMeetingToDelete(null);
     } catch (error) {
       console.error('Error deleting meeting:', error);
       showNotification('Failed to delete meeting', 'error');
+      setDeleteConfirmOpen(false);
+      setMeetingToDelete(null);
     }
   };
 
@@ -1288,7 +1313,7 @@ const MyMeetings: React.FC<MyMeetingsProps> = ({ user }) => {
                       <IconButton 
                         size="small" 
                         sx={{ color: '#EF4444' }}
-                        onClick={() => handleDeleteMeeting(meeting.id)}
+                        onClick={() => confirmDeleteMeeting(meeting.id)}
                         disabled={isDeleting}
                       >
                         <DeleteIcon />
@@ -1547,6 +1572,31 @@ const MyMeetings: React.FC<MyMeetingsProps> = ({ user }) => {
             startIcon={<ShareIcon />}
           >
             Contacter Lexia France
+          </Button>
+        </DialogActions>
+      </Dialog>
+
+      {/* Dialogue de confirmation de suppression */}
+      <Dialog
+        open={deleteConfirmOpen}
+        onClose={cancelDeleteMeeting}
+        aria-labelledby="delete-dialog-title"
+        aria-describedby="delete-dialog-description"
+      >
+        <DialogTitle id="delete-dialog-title">
+          Confirmation de suppression
+        </DialogTitle>
+        <DialogContent>
+          <Typography variant="body1">
+            Êtes-vous sûr de vouloir supprimer cette réunion ? Cette action est irréversible.
+          </Typography>
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={cancelDeleteMeeting} color="primary">
+            Annuler
+          </Button>
+          <Button onClick={handleDeleteMeeting} color="error" variant="contained">
+            Supprimer
           </Button>
         </DialogActions>
       </Dialog>
