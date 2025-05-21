@@ -42,6 +42,10 @@ import {
   Assignment as AssignmentIcon,
   Share as ShareIcon,
   Update as UpdateIcon,
+  MoreVert,
+  Cancel,
+  DeleteForever,
+  Close
 } from '@mui/icons-material';
 import { 
   getAllMeetings, 
@@ -563,25 +567,21 @@ const MyMeetings: React.FC<MyMeetingsProps> = ({ user }) => {
     if (!meetingToDelete) return;
     
     try {
-      // Call the API to delete the meeting
-      const response = await deleteMeeting(meetingToDelete);
+      // Fermer d'abord la boîte de dialogue pour améliorer la perception de réactivité
+      setDeleteConfirmOpen(false);
       
-      // Check response
-      if (!response) {
-        throw new Error('Failed to delete meeting: No response');
-      }
-
+      // Call the API to delete the meeting
+      await deleteMeeting(meetingToDelete);
+      
       // Remove the meeting from the state
       setMeetings(meetings.filter(meeting => meeting.id !== meetingToDelete));
       showNotification('Meeting successfully deleted', 'success');
 
-      // Fermer la boîte de dialogue
-      setDeleteConfirmOpen(false);
+      // Réinitialiser l'ID de réunion à supprimer
       setMeetingToDelete(null);
     } catch (error) {
       console.error('Error deleting meeting:', error);
       showNotification('Failed to delete meeting', 'error');
-      setDeleteConfirmOpen(false);
       setMeetingToDelete(null);
     }
   };
@@ -1582,20 +1582,96 @@ const MyMeetings: React.FC<MyMeetingsProps> = ({ user }) => {
         onClose={cancelDeleteMeeting}
         aria-labelledby="delete-dialog-title"
         aria-describedby="delete-dialog-description"
+        PaperProps={{
+          sx: {
+            borderRadius: '16px',
+            boxShadow: '0 12px 28px rgba(0,0,0,0.1)',
+            overflow: 'visible'
+          }
+        }}
+        maxWidth="xs"
+        fullWidth
       >
-        <DialogTitle id="delete-dialog-title">
-          Confirmation de suppression
+        <Box
+          sx={{
+            position: 'absolute',
+            top: '-24px',
+            left: 'calc(50% - 24px)',
+            width: '48px',
+            height: '48px',
+            borderRadius: '50%',
+            backgroundColor: 'white',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            boxShadow: '0 2px 12px rgba(0,0,0,0.08)'
+          }}
+        >
+          <DeleteForever color="error" fontSize="medium" />
+        </Box>
+        
+        <DialogTitle 
+          id="delete-dialog-title"
+          sx={{ 
+            pt: 4,
+            textAlign: 'center',
+            fontWeight: 500,
+            fontSize: '1.25rem',
+            color: 'text.primary'
+          }}
+        >
+          Supprimer cette réunion ?
         </DialogTitle>
-        <DialogContent>
-          <Typography variant="body1">
-            Êtes-vous sûr de vouloir supprimer cette réunion ? Cette action est irréversible.
+        
+        <DialogContent sx={{ pt: 1, px: 4, pb: 2 }}>
+          <Typography 
+            variant="body2" 
+            color="text.secondary" 
+            align="center"
+            sx={{ 
+              mb: 2, 
+              maxWidth: '320px', 
+              mx: 'auto',
+              lineHeight: 1.6
+            }}
+          >
+            Les transcriptions et comptes rendus associés seront définitivement supprimés. Cette action est irréversible.
           </Typography>
         </DialogContent>
-        <DialogActions>
-          <Button onClick={cancelDeleteMeeting} color="primary">
+        
+        <DialogActions 
+          sx={{ 
+            justifyContent: 'center', 
+            gap: 2, 
+            pb: 4, 
+            px: 4
+          }}
+        >
+          <Button 
+            onClick={cancelDeleteMeeting} 
+            variant="text"
+            sx={{ 
+              color: 'text.secondary',
+              textTransform: 'none',
+              fontWeight: 500,
+              px: 3
+            }}
+          >
             Annuler
           </Button>
-          <Button onClick={handleDeleteMeeting} color="error" variant="contained">
+          <Button 
+            onClick={handleDeleteMeeting} 
+            color="error" 
+            variant="contained"
+            disableElevation
+            sx={{ 
+              borderRadius: '24px',
+              textTransform: 'none',
+              fontWeight: 500,
+              px: 3,
+              py: 1
+            }}
+          >
             Supprimer
           </Button>
         </DialogActions>
