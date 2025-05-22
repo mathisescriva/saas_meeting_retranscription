@@ -18,6 +18,7 @@
     "docx-templates": "^4.14.1",
     "docxtemplater": "^3.61.1",
     "file-saver": "^2.0.5",
+    "framer-motion": "^12.12.1",
     "html-docx-js": "^0.3.1",
     "jspdf": "^3.0.1",
     "jspdf-autotable": "^5.0.2",

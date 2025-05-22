@@ -1,0 +1,63 @@
+/**
+ * Génère un compte rendu pour une réunion spécifique
+ * @param meetingId ID de la réunion pour laquelle générer un compte rendu
+ * @param clientId ID du client pour utiliser son template (optionnel)
+ * @returns La réunion mise à jour avec le statut du compte rendu
+ */
+export async function generateMeetingSummary(meetingId: string, clientId?: string | null): Promise<Meeting> {
+  try {
+    console.log(`Generating summary for meeting ID: ${meetingId}${clientId ? ` with client template: ${clientId}` : ' with default template'}`);
+    
+    // Récupérer le token d'authentification
+    const token = localStorage.getItem('auth_token');
+    if (!token) {
+      throw new Error('Authentication token not found');
+    }
+    
+    let data;
+    
+    // Étape 1: Associer la réunion au client choisi (si un client est spécifié)
+    if (clientId !== undefined) {
+      try {
+        console.log(`Étape 1: Associer la réunion ${meetingId} au client ${clientId === null ? 'null (template par défaut)' : clientId}`);
+        await apiClient.put(`/meetings/${meetingId}`, {
+          client_id: clientId
+        });
+        console.log('Association réunion-client mise à jour avec succès');
+      } catch (err: any) {
+        console.error('Erreur lors de l\'association avec le client:', err);
+        throw new Error(`Erreur lors de l'association de la réunion avec le client: ${err.status || err.message}`);
+      }
+    }
+    
+    // Étape 2: Générer le résumé
+    try {
+      // Endpoint exact selon la documentation: POST /meetings/{meeting_id}/generate-summary
+      console.log(`Étape 2: Génération du résumé pour la réunion ${meetingId}`);
+      const endpoint = `/meetings/${meetingId}/generate-summary`;
+      data = await apiClient.post(endpoint);
+      console.log('Réponse API de génération de résumé:', data);
+    } catch (err: any) {
+      console.error('Erreur lors de la génération du résumé:', err);
+      throw new Error(`Erreur lors de la génération du résumé: ${err.status || err.message}`);
+    }
+    
+    console.log(`Génération du résumé initiée pour la réunion ${meetingId}:`, data);
+    
+    // Mettre à jour le cache avec le statut de génération du compte rendu
+    const meetingsCache = getMeetingsFromCache();
+    if (meetingsCache[meetingId]) {
+      meetingsCache[meetingId].summary_status = 'processing';
+      if (clientId !== undefined) {
+        meetingsCache[meetingId].client_id = clientId;
+      }
+      saveMeetingsCache(meetingsCache);
+    }
+    
+    // Récupérer les détails mis à jour de la réunion
+    return await getMeetingDetails(meetingId);
+  } catch (error) {
+    console.error(`Error generating summary for meeting ${meetingId}:`, error);
+    throw error;
+  }
+}
