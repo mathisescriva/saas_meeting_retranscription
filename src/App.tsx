@@ -1,12 +1,14 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { ThemeProvider } from '@mui/material/styles';
-import { Box, CssBaseline, Snackbar, Alert, Typography, Grid, Dialog, DialogTitle, DialogContent, DialogActions, Button } from '@mui/material';
+import { Box, CssBaseline, Snackbar, Alert, Typography, Grid, Dialog, DialogTitle, DialogContent, DialogActions, Button, useMediaQuery } from '@mui/material';
 import theme from './styles/theme';
 import Sidebar from './components/Sidebar';
 import MainContent from './components/MainContent';
 import AuthForm from './components/AuthForm';
 import { isAuthenticated, getUserProfile, User, logoutUser } from './services/authService';
 import { NotificationProvider } from './contexts/NotificationContext';
+// Import de la feuille de style globale pour corriger la barre de séparation
+import './styles/global.css';
 
 function App() {
   const [currentView, setCurrentView] = useState<'dashboard' | 'meetings'>('dashboard');
@@ -17,6 +19,10 @@ function App() {
   const [isRecording, setIsRecording] = useState<boolean>(false);
   const [showConfirmNavigation, setShowConfirmNavigation] = useState<boolean>(false);
   const [pendingView, setPendingView] = useState<'dashboard' | 'meetings' | null>(null);
+  const [sidebarOpen, setSidebarOpen] = useState<boolean>(false);
+  
+  // Détection des breakpoints responsive
+  const isMobile = useMediaQuery(theme.breakpoints.down('md'));
 
   // Fonction pour gérer les erreurs d'authentification et déconnecter l'utilisateur
   const handleAuthError = useCallback((message: string) => {
@@ -134,12 +140,44 @@ function App() {
       <NotificationProvider>
         <CssBaseline />
         {isLoggedIn ? (
-          <Box sx={{ display: 'flex', height: '100vh', overflow: 'hidden', width: '100%' }}>
-            <Sidebar onViewChange={handleViewChange} user={currentUser} />
+          <Box
+            sx={{
+              display: 'flex',
+              height: '100vh',
+              overflow: 'hidden',
+              width: '100%',
+              flexDirection: { xs: 'column', md: 'row' },
+              '& > *': { borderColor: '#e0e0e0 !important' },
+              // Supprime toute séparation visuelle entre sidebar et contenu
+              '&::before, &::after': { display: 'none !important' },
+              '& > div': {
+                borderLeft: 'none !important',
+                borderRight: '1px solid #e0e0e0 !important',
+                boxShadow: 'none !important'
+              },
+              // Appliquer des coins arrondis au contenu principal en mode mobile
+              '@media (max-width: 899px)': {
+                '& > div:not(:first-child)': {
+                  borderTopLeftRadius: 16,
+                  borderTopRightRadius: 16,
+                  overflow: 'hidden',
+                  backgroundColor: 'white'
+                }
+              }
+            }}>
+            <Sidebar 
+              onViewChange={handleViewChange} 
+              user={currentUser}
+              isMobile={isMobile}
+              open={sidebarOpen}
+              onToggle={() => setSidebarOpen(!sidebarOpen)}
+            />
             <MainContent 
               currentView={currentView} 
               currentUser={currentUser} 
-              onRecordingStateChange={handleRecordingStateChange} 
+              onRecordingStateChange={handleRecordingStateChange}
+              isMobile={isMobile}
+              onToggleSidebar={() => setSidebarOpen(!sidebarOpen)}
             />
             
             {/* Dialogue de confirmation pour la navigation pendant l'enregistrement */}
@@ -168,7 +206,12 @@ function App() {
             </Dialog>
           </Box>
         ) : (
-          <Box sx={{ height: '100vh', display: 'flex', flexDirection: 'column' }}>
+          <Box sx={{ 
+            height: '100vh', 
+            display: 'flex', 
+            flexDirection: 'column',
+            overflow: { xs: 'auto', md: 'hidden' }
+          }}>
             <Box sx={{ flex: 1 }}>
               <AuthForm onAuthSuccess={handleAuthSuccess} />
             </Box>

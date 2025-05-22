@@ -1,0 +1,33 @@
+/* Style global pour corriger la barre de séparation */
+
+/* Cibler uniquement la barre de séparation entre sidebar et contenu */
+.MuiBox-root > .MuiBox-root:nth-child(1) {
+  border-right-color: #e0e0e0 !important;
+}
+
+/* Correction ciblée pour la barre entre sidebar et contenu principal */
+.MuiBox-root[style*="flex-direction: row"] > div:first-child {
+  border-right: 1px solid #e0e0e0 !important;
+  box-shadow: none !important;
+}
+
+/* Correction spécifique pour la bordure du drawer */
+.MuiDrawer-root .MuiDrawer-paper {
+  border-right: 1px solid #e0e0e0 !important;
+  box-shadow: none !important;
+}
+
+/* Supprimer toutes les bordures noires potentielles */
+div[style*="border-right: 1px solid rgb(0, 0, 0)"] {
+  border-right: 1px solid #e0e0e0 !important;
+}
+
+/* Restaurer les styles normaux pour les sections internes */
+.MuiBox-root .MuiAvatar-root {
+  border: 4px solid white !important;
+  box-shadow: 0 4px 12px rgba(0,0,0,0.15) !important;
+}
+
+.MuiIconButton-root {
+  box-shadow: 0 2px 8px rgba(0,0,0,0.1) !important;
+}

@@ -17,6 +17,7 @@ const theme = createTheme({
       default: '#F8FAFC',
       paper: '#FFFFFF',
     },
+    divider: '#e0e0e0', // S'assurer que toutes les bordures utilisent cette couleur
     text: {
       primary: '#1E293B',
       secondary: '#64748B',

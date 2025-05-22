@@ -77,10 +77,11 @@ interface Meeting extends Omit<ApiMeeting, 'summary_status'> {
 }
 
 interface MyMeetingsProps {
-  user: User | null;
+  user?: User | null;
+  isMobile?: boolean;
 }
 
-const MyMeetings: React.FC<MyMeetingsProps> = ({ user }) => {
+const MyMeetings: React.FC<MyMeetingsProps> = ({ user, isMobile = false }) => {
   const theme = useTheme();
   const { showSuccessPopup, showErrorPopup, showNotification } = useNotification();
   const [meetings, setMeetings] = useState<Meeting[]>([]);
@@ -1610,30 +1611,41 @@ const MyMeetings: React.FC<MyMeetingsProps> = ({ user }) => {
         >
           <Box
             sx={{
-              width: '60px',
-              height: '60px',
+              width: '70px',
+              height: '70px',
               borderRadius: '50%',
-              backgroundColor: 'rgba(244, 67, 54, 0.08)',
+              background: 'linear-gradient(135deg, rgba(244, 67, 54, 0.06) 0%, rgba(244, 67, 54, 0.12) 100%)',
               display: 'flex',
               alignItems: 'center',
               justifyContent: 'center',
-              mb: 2
+              mb: 2,
+              position: 'relative',
+              boxShadow: '0 4px 12px rgba(244, 67, 54, 0.08)'
             }}
           >
-            <Typography sx={{ fontSize: '28px' }}>🗑</Typography>
+            <Box
+              sx={{
+                position: 'absolute',
+                width: '56px',
+                height: '56px',
+                borderRadius: '50%',
+                border: '1px solid rgba(244, 67, 54, 0.2)',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center'
+              }}
+            />
+            <Typography sx={{ fontSize: '30px', position: 'relative' }}>🗑</Typography>
           </Box>
           Supprimer cette réunion ?
         </DialogTitle>
         
-        <DialogContent sx={{ pt: 1, px: 4, pb: 2 }}>
-          <Typography 
-            variant="body2" 
-            color="text.secondary" 
-            align="center"
-            sx={{ 
-              mb: 2, 
-              maxWidth: '320px', 
-              mx: 'auto',
+        <DialogContent sx={{ px: 3 }}>
+          <Typography
+            variant="body2"
+            sx={{
+              color: 'text.secondary',
+              textAlign: 'center',
               lineHeight: 1.6
             }}
           >
@@ -1641,37 +1653,43 @@ const MyMeetings: React.FC<MyMeetingsProps> = ({ user }) => {
           </Typography>
         </DialogContent>
         
-        <DialogActions 
-          sx={{ 
-            justifyContent: 'center', 
-            gap: 2, 
-            pb: 4, 
-            px: 4
-          }}
-        >
-          <Button 
-            onClick={cancelDeleteMeeting} 
-            variant="text"
-            sx={{ 
-              color: 'text.secondary',
+        <DialogActions sx={{ pb: 4, px: 3, justifyContent: 'center', gap: 2 }}>
+          <Button
+            onClick={cancelDeleteMeeting}
+            sx={{
+              borderRadius: '28px',
               textTransform: 'none',
               fontWeight: 500,
-              px: 3
+              px: 3,
+              py: 1.2,
+              border: '1px solid rgba(0, 0, 0, 0.12)',
+              minWidth: '120px',
+              transition: 'all 0.2s ease-in-out',
+              '&:hover': {
+                backgroundColor: 'rgba(0, 0, 0, 0.03)',
+                borderColor: 'rgba(0, 0, 0, 0.2)'
+              }
             }}
           >
             Annuler
           </Button>
-          <Button 
-            onClick={handleDeleteMeeting} 
-            color="error" 
+          <Button
+            onClick={handleDeleteMeeting}
+            color="error"
             variant="contained"
-            disableElevation
-            sx={{ 
-              borderRadius: '24px',
+            sx={{
+              borderRadius: '28px',
               textTransform: 'none',
               fontWeight: 500,
               px: 3,
-              py: 1
+              py: 1.2,
+              minWidth: '120px',
+              boxShadow: '0 4px 10px rgba(244, 67, 54, 0.2)',
+              transition: 'all 0.2s ease-in-out',
+              '&:hover': {
+                boxShadow: '0 6px 12px rgba(244, 67, 54, 0.3)',
+                backgroundColor: '#d32f2f'
+              }
             }}
           >
             Supprimer

@@ -71,8 +71,9 @@ import {
 } from '../services/meetingService';
 
 interface DashboardProps {
-  user: User | null;
+  user?: User | null;
   onRecordingStateChange?: (recording: boolean) => void;
+  isMobile?: boolean;
 }
 
 interface RecentMeeting {

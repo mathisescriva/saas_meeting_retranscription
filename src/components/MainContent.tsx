@@ -25,6 +25,7 @@ import {
   Grid,
   LinearProgress,
   CircularProgress,
+  AppBar,
 } from '@mui/material';
 import LoadingModal from './LoadingModal';
 import MeetingStats from './MeetingStats';
@@ -36,6 +37,7 @@ import {
   Business as BusinessIcon,
   Code as CodeIcon,
   Edit as EditIcon,
+  Menu as MenuIcon,
 } from '@mui/icons-material';
 
 interface AudioFile {
@@ -54,6 +56,8 @@ interface MainContentProps {
   currentUser: User | null;
   currentView: 'dashboard' | 'meetings';
   onRecordingStateChange: (recording: boolean) => void;
+  isMobile?: boolean;
+  onToggleSidebar?: () => void;
 }
 
 const formatDuration = (seconds: number): string => {
@@ -529,12 +533,71 @@ Ce résumé a été généré le ${new Date().toLocaleString()}`;
   );
 };
 
-const MainContent: React.FC<MainContentProps> = ({ currentUser, currentView, onRecordingStateChange }) => {
+const MainContent: React.FC<MainContentProps> = ({ 
+  currentView, 
+  currentUser, 
+  onRecordingStateChange, 
+  isMobile = false,
+  onToggleSidebar 
+}) => {
   return (
-    <Box sx={{ flexGrow: 1, overflow: 'auto', width: 'calc(100% - 330px)' }}>
-      {currentView === 'dashboard' && <Dashboard user={currentUser} onRecordingStateChange={onRecordingStateChange} />}
-      {currentView === 'meetings' && <MyMeetings user={currentUser} />}
-      {currentView !== 'dashboard' && currentView !== 'meetings' && <Dashboard user={currentUser} onRecordingStateChange={onRecordingStateChange} />}
+    <Box sx={{ 
+      flexGrow: 1, 
+      height: '100%', 
+      overflow: 'auto',
+      width: { xs: '100%', md: 'calc(100% - 280px)' },
+      display: 'flex',
+      flexDirection: 'column',
+      borderLeft: 'none !important',
+      boxShadow: 'none !important'
+    }}>
+      {/* Header avec bouton menu en mode mobile */}
+      {isMobile && (
+        <AppBar position="static" color="default" elevation={0} sx={{
+          borderBottom: '1px solid',
+          borderColor: 'divider',
+          backgroundColor: 'white',
+          borderTopLeftRadius: 16,
+          borderTopRightRadius: 16
+        }}>
+          <Toolbar sx={{ minHeight: { xs: '56px' }, px: { xs: 1, sm: 2 } }}>
+            <IconButton 
+              edge="start" 
+              color="inherit" 
+              aria-label="menu"
+              onClick={onToggleSidebar}
+              sx={{ mr: 2 }}
+            >
+              <MenuIcon />
+            </IconButton>
+            <Typography variant="h6" component="div" sx={{ flexGrow: 1 }}>
+              {currentView === 'dashboard' ? 'Tableau de bord' : 'Mes réunions'}
+            </Typography>
+          </Toolbar>
+        </AppBar>
+      )}
+      
+      {/* Contenu principal */}
+      <Box sx={{ 
+        flexGrow: 1, 
+        overflow: 'auto', 
+        p: { xs: 1, sm: 2, md: 3 },
+        backgroundColor: 'white',
+        borderRadius: { xs: '16px 16px 0 0', md: 0 }  // Coins arrondis uniquement en haut en mode mobile
+      }}>
+        {currentView === 'dashboard' ? (
+          <Dashboard 
+            user={currentUser}
+            onRecordingStateChange={onRecordingStateChange} 
+            isMobile={isMobile}
+          />
+        ) : (
+          <MyMeetings 
+            user={currentUser}
+            isMobile={isMobile}
+          />
+        )}
+      </Box>
     </Box>
   );
 };
