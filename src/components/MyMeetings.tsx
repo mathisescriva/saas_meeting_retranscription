@@ -2262,6 +2262,54 @@ const MyMeetings: React.FC<MyMeetingsProps> = ({ user, isMobile = false }) => {
           </Box>
         </Box>
       </Dialog>
+      
+      {/* Template Selector Modal */}
+      <TemplateSelectorModal
+        open={templateSelectorOpen}
+        onClose={() => setTemplateSelectorOpen(false)}
+        meetingId={currentMeetingId || ''}
+        onTemplateSelect={(templateId: string | null) => {
+          // Logique pour traiter la sélection du template
+          if (currentMeetingId) {
+            console.log(`Template ${templateId} selected for meeting ${currentMeetingId}`);
+            // Appel avec le clientId (templateId) - corriger pour s'assurer qu'il accepte null aussi
+            generateMeetingSummary(currentMeetingId, templateId === '' ? null : templateId)
+              .then((updatedMeeting) => {
+                console.log(`Summary generation started for meeting ${currentMeetingId}`);
+                if (currentMeetingId) {
+                  setGeneratingSummaryId(currentMeetingId);
+                }
+                fetchMeetings();
+                // Setup a watcher for summary status
+                if (currentMeetingId) {
+                  // Vérifier les arguments requis pour watchSummaryStatus
+                  const unwatch = watchSummaryStatus(
+                    currentMeetingId,
+                    (status, updatedMeeting) => {
+                      console.log(`Summary status updated: ${status}`);
+                      // Update meetings in state with type safety
+                      setMeetings(prev => {
+                        return prev.map(m => {
+                          if (m.id === currentMeetingId) {
+                            return updatedMeeting as Meeting;
+                          }
+                          return m;
+                        });
+                      });
+                    }
+                  );
+                  // Store the unwatch function
+                  setSummaryWatchers(prev => ({ ...prev, [currentMeetingId]: unwatch }));
+                }
+              })
+              .catch(error => {
+                console.error(`Error starting summary generation: ${error}`);
+                showErrorPopup('Erreur lors du démarrage de la génération du compte rendu');
+              });
+          }
+          setTemplateSelectorOpen(false);
+        }}
+      />
     </>
   );
 };
