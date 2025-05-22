@@ -23,6 +23,8 @@ import {
   useTheme,
   Grid,
   Alert,
+  InputBase,
+  LinearProgress
 } from '@mui/material';
 import { alpha } from '@mui/material/styles';
 import MeetingSummaryRenderer from './MeetingSummaryRenderer';
@@ -34,6 +36,7 @@ import {
   Refresh as RefreshIcon,
   EventNote as EventNoteIcon,
   Warning as WarningIcon,
+  Clear as ClearIcon,
   Close as CloseIcon,
   FileDownload as FileDownloadIcon,
   People as PeopleIcon,
@@ -85,6 +88,9 @@ const MyMeetings: React.FC<MyMeetingsProps> = ({ user, isMobile = false }) => {
   const theme = useTheme();
   const { showSuccessPopup, showErrorPopup, showNotification } = useNotification();
   const [meetings, setMeetings] = useState<Meeting[]>([]);
+  const [filteredMeetings, setFilteredMeetings] = useState<Meeting[]>([]);
+  const [searchQuery, setSearchQuery] = useState('');
+  // Toujours du00e9marrer avec loading = true pour u00e9viter de montrer 'No meetings found' pru00e9maturu00e9ment
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [currentAudioUrl, setCurrentAudioUrl] = useState<string | null>(null);
@@ -98,6 +104,116 @@ const MyMeetings: React.FC<MyMeetingsProps> = ({ user, isMobile = false }) => {
   const [audioDialogOpen, setAudioDialogOpen] = useState(false);
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [refreshingMetadataId, setRefreshingMetadataId] = useState<string | null>(null);
+
+  // Fonction de recherche intelligente pour filtrer les réunions
+  const handleSearch = useCallback((query: string) => {
+    setSearchQuery(query);
+    
+    if (!query.trim()) {
+      setFilteredMeetings(meetings);
+      return;
+    }
+    
+    const lowercaseQuery = query.toLowerCase().trim();
+    
+    // Recherche par mois/année (formats: 'janvier 2023', 'jan 2023', '01 2023', etc.)
+    const monthNames = [
+      'janvier', 'février', 'mars', 'avril', 'mai', 'juin',
+      'juillet', 'août', 'septembre', 'octobre', 'novembre', 'décembre'
+    ];
+    const shortMonthNames = [
+      'jan', 'fév', 'mar', 'avr', 'mai', 'juin',
+      'juil', 'août', 'sept', 'oct', 'nov', 'déc'
+    ];
+    
+    let monthFilter: number | null = null;
+    let yearFilter: number | null = null;
+    
+    // Recherche d'un pattern de date (mois année)
+    const dateRegex = /(jan|fév|mar|avr|mai|juin|juil|août|sept|oct|nov|déc|janvier|février|mars|avril|mai|juin|juillet|août|septembre|octobre|novembre|décembre|\d{1,2})\s+(\d{4})/i;
+    const dateMatch = lowercaseQuery.match(dateRegex);
+    
+    if (dateMatch) {
+      const monthPart = dateMatch[1].toLowerCase();
+      const yearPart = parseInt(dateMatch[2]);
+      
+      // Vérifier si c'est un nombre de mois (1-12)
+      if (/^\d{1,2}$/.test(monthPart)) {
+        const monthNum = parseInt(monthPart);
+        if (monthNum >= 1 && monthNum <= 12) {
+          monthFilter = monthNum - 1; // Convertir en index base 0
+          yearFilter = yearPart;
+        }
+      } else {
+        // Vérifier si c'est un nom de mois
+        const fullMonthIndex = monthNames.findIndex(m => m.startsWith(monthPart));
+        const shortMonthIndex = shortMonthNames.findIndex(m => m.startsWith(monthPart));
+        
+        if (fullMonthIndex !== -1) {
+          monthFilter = fullMonthIndex;
+          yearFilter = yearPart;
+        } else if (shortMonthIndex !== -1) {
+          monthFilter = shortMonthIndex;
+          yearFilter = yearPart;
+        }
+      }
+    }
+    
+    // Filtrer les réunions en fonction des critères
+    const filtered = meetings.filter(meeting => {
+      // Si on a un filtre mois/année, l'appliquer en priorité
+      if (monthFilter !== null && yearFilter !== null && meeting.date) {
+        const meetingDate = new Date(meeting.date);
+        return meetingDate.getMonth() === monthFilter && meetingDate.getFullYear() === yearFilter;
+      }
+      
+      // Filtrer par titre
+      const titleMatch = meeting.title?.toLowerCase().includes(lowercaseQuery);
+      
+      // Filtrer par contenu de la transcription
+      const transcriptMatch = meeting.transcript_text?.toLowerCase().includes(lowercaseQuery);
+      
+      // Filtrer par nombre de participants (si la requête est un nombre)
+      const participantMatch = !isNaN(Number(query)) && meeting.participants === Number(query);
+      
+      // Filtrer par durée (format: '30min', '1h', '1h30', etc.)
+      const durationMatch = meeting.duration !== undefined && 
+      (() => {
+        const durationRegex = /(\d+)\s*(h|min|s|heures|minutes|secondes)?/i;
+        const durationMatch = lowercaseQuery.match(durationRegex);
+        
+        if (durationMatch) {
+          const value = parseInt(durationMatch[1]);
+          const unit = durationMatch[2]?.toLowerCase() || 'min'; // Par défaut en minutes
+          
+          let durationInSeconds = meeting.duration;
+          let queryInSeconds = 0;
+          
+          if (unit.startsWith('h')) {
+            queryInSeconds = value * 3600;
+          } else if (unit.startsWith('min')) {
+            queryInSeconds = value * 60;
+          } else if (unit.startsWith('s')) {
+            queryInSeconds = value;
+          }
+          
+          // Considérer une marge de 10% pour la durée
+          const lowerBound = queryInSeconds * 0.9;
+          const upperBound = queryInSeconds * 1.1;
+          
+          return durationInSeconds >= lowerBound && durationInSeconds <= upperBound;
+        }
+        
+        return false;
+      })();
+      
+      // Vérifier si au moins un critère correspond
+      return titleMatch || transcriptMatch || participantMatch || durationMatch;
+    });
+    
+    setFilteredMeetings(filtered);
+  }, [meetings]);
+  
   const [showPremiumDialog, setShowPremiumDialog] = useState(false);
   const [transcript, setTranscript] = useState<string | null>(null);
   const [formattedTranscript, setFormattedTranscript] = useState<Array<{speaker: string; text: string; timestamp?: string}> | null>(null);
@@ -178,9 +294,10 @@ const MyMeetings: React.FC<MyMeetingsProps> = ({ user, isMobile = false }) => {
     }
   `;
 
-  // Définir fetchMeetings au début avec useCallback
+  // Fonction pour récupérer les réunions avec un temps minimum d'animation de chargement
   const fetchMeetings = useCallback(async () => {
     try {
+      // S'assurer que l'état de chargement est actif
       setLoading(true);
       setIsRefreshing(true);
       setError(null);
@@ -231,6 +348,10 @@ const MyMeetings: React.FC<MyMeetingsProps> = ({ user, isMobile = false }) => {
         };
       });
       
+      // Mettre à jour les données des réunions
+      setMeetings(processedMeetings);
+      setFilteredMeetings(processedMeetings);
+      
       // Calculer le temps écoulé depuis le début de la requête
       const elapsedTime = Date.now() - startTime;
       const minLoadingTime = 800; // Temps minimum de chargement en millisecondes
@@ -239,18 +360,6 @@ const MyMeetings: React.FC<MyMeetingsProps> = ({ user, isMobile = false }) => {
       if (elapsedTime < minLoadingTime) {
         await new Promise(resolve => setTimeout(resolve, minLoadingTime - elapsedTime));
       }
-      
-      setMeetings(processedMeetings);
-      
-      // Pour chaque réunion complétée, mettre à jour les détails avec les informations les plus récentes
-      processedMeetings.forEach(meeting => {
-        if (meeting.transcript_status === 'completed' || meeting.transcription_status === 'completed') {
-          // Mettre à jour les détails de durée et de participants pour les réunions terminées
-          updateMeetingDetails(meeting.id).catch(err => {
-            console.error(`Failed to update details for meeting ${meeting.id}:`, err);
-          });
-        }
-      });
     } catch (err) {
       console.error('Failed to load meetings:', err);
       setError('Failed to load your meetings. Please try again.');
@@ -258,10 +367,15 @@ const MyMeetings: React.FC<MyMeetingsProps> = ({ user, isMobile = false }) => {
       setLoading(false);
       setIsRefreshing(false);
     }
-  }, [showErrorPopup]);
+  }, []);
 
-  // Load all meetings on component mount
+  // Charger les ru00e9unions au montage du composant
   useEffect(() => {
+    // Force loading state to true immediately on mount
+    setLoading(true);
+    // Reset error state
+    setError(null);
+    // Fetch meetings with guaranteed loading animation
     fetchMeetings();
   }, [fetchMeetings]);
 
@@ -1110,11 +1224,176 @@ const MyMeetings: React.FC<MyMeetingsProps> = ({ user, isMobile = false }) => {
           <EventNoteIcon sx={{ fontSize: 28, color: '#3B82F6' }} /> Réunions récentes
         </Typography>
 
-        {loading ? (
-          <Box sx={{ display: 'flex', justifyContent: 'center', my: 4 }}>
-            <CircularProgress />
+        {/* Barre de recherche intelligente */}
+        <Box sx={{ mb: 3 }}>
+          <Paper
+            component="form"
+            elevation={0}
+            sx={{
+              p: '12px 16px',
+              display: 'flex',
+              alignItems: 'center',
+              width: '100%',
+              borderRadius: 30,
+              background: 'rgba(255, 255, 255, 0.8)',
+              backdropFilter: 'blur(10px)',
+              border: '1px solid rgba(229, 231, 235, 0.8)',
+              boxShadow: '0 4px 20px rgba(0, 0, 0, 0.05)',
+              transition: 'all 0.3s ease',
+              '&:hover': {
+                boxShadow: '0 6px 25px rgba(0, 0, 0, 0.1)',
+                transform: 'translateY(-2px)',
+                background: 'rgba(255, 255, 255, 0.95)',
+              },
+              '&:focus-within': {
+                boxShadow: '0 8px 30px rgba(59, 130, 246, 0.2)',
+                borderColor: alpha(theme.palette.primary.main, 0.3),
+                background: 'rgba(255, 255, 255, 1)',
+              },
+            }}
+          >
+            <IconButton 
+              sx={{ 
+                p: '8px', 
+                borderRadius: '50%', 
+                color: theme.palette.primary.main,
+                fontSize: '1.2rem',
+                '&:hover': {
+                  background: alpha(theme.palette.primary.main, 0.1),
+                }
+              }} 
+              aria-label="search"
+            >
+              <Typography 
+                variant="h6" 
+                sx={{ 
+                  fontSize: '1.3rem', 
+                  display: 'flex', 
+                  alignItems: 'center', 
+                  justifyContent: 'center',
+                  transform: 'rotate(-5deg)'
+                }}
+              >
+                🔍
+              </Typography>
+            </IconButton>
+            <InputBase
+              sx={{ 
+                ml: 1.5, 
+                flex: 1,
+                fontSize: '0.95rem',
+                '& .MuiInputBase-input': {
+                  color: theme.palette.text.primary,
+                  '&::placeholder': {
+                    color: alpha(theme.palette.text.secondary, 0.6),
+                    fontStyle: 'italic',
+                    opacity: 0.8,
+                  }
+                }
+              }}
+              placeholder="Rechercher par titre, contenu, date (janv 2023), durée (30min), participants..."
+              value={searchQuery}
+              onChange={(e) => handleSearch(e.target.value)}
+            />
+            {searchQuery && (
+              <IconButton 
+                sx={{ 
+                  p: '8px', 
+                  color: alpha(theme.palette.text.secondary, 0.7),
+                  borderRadius: '50%',
+                  transition: 'all 0.2s ease',
+                  '&:hover': {
+                    color: theme.palette.error.main,
+                    background: alpha(theme.palette.error.main, 0.1),
+                  }
+                }} 
+                aria-label="clear" 
+                onClick={() => handleSearch('')}
+              >
+                <ClearIcon fontSize="small" />
+              </IconButton>
+            )}
+          </Paper>
+          {searchQuery && (
+            <Box sx={{ mt: 1.5, display: 'flex', alignItems: 'center', flexWrap: 'wrap', gap: 1 }}>
+              <Chip 
+                label={`${filteredMeetings.length} résultat(s) trouvé(s)`}
+                size="small"
+                color={filteredMeetings.length > 0 ? "primary" : "default"}
+                sx={{ 
+                  borderRadius: '20px',
+                  fontWeight: 500,
+                  boxShadow: '0 2px 8px rgba(0, 0, 0, 0.06)',
+                  background: filteredMeetings.length > 0 
+                    ? `linear-gradient(90deg, ${alpha(theme.palette.primary.main, 0.9)} 0%, ${alpha(theme.palette.primary.light, 0.9)} 100%)`
+                    : undefined,
+                  border: filteredMeetings.length > 0 
+                    ? 'none'
+                    : `1px solid ${alpha(theme.palette.divider, 0.7)}`,
+                  '& .MuiChip-label': {
+                    padding: '0 12px',
+                  }
+                }}
+              />
+              <Chip
+                label={`Recherche: "${searchQuery}"`}
+                size="small"
+                color="secondary"
+                onDelete={() => handleSearch('')}
+                sx={{ 
+                  borderRadius: '20px',
+                  border: `1px solid ${alpha(theme.palette.secondary.main, 0.3)}`,
+                  fontWeight: 500,
+                  background: `linear-gradient(45deg, ${alpha(theme.palette.secondary.light, 0.1)} 0%, ${alpha(theme.palette.secondary.main, 0.15)} 100%)`,
+                  '& .MuiChip-label': {
+                    padding: '0 12px',
+                  },
+                  '& .MuiChip-deleteIcon': {
+                    color: theme.palette.secondary.main,
+                    '&:hover': {
+                      color: theme.palette.secondary.dark,
+                    }
+                  }
+                }}
+              />
+            </Box>
+          )}
+        </Box>
+
+        {/* Animation de chargement - toujours prioritaire */}
+        {loading && (
+          <Box sx={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', my: 6, py: 4 }}>
+            <CircularProgress size={60} thickness={4} sx={{ 
+              color: theme.palette.primary.main,
+              mb: 3,
+              '& .MuiCircularProgress-circle': {
+                strokeLinecap: 'round',
+              }
+            }} />
+            <Typography variant="h6" color="primary" sx={{ fontWeight: 500, mb: 1, textAlign: 'center' }}>
+              Chargement de vos réunions...
+            </Typography>
+            <Typography variant="body2" color="text.secondary" sx={{ textAlign: 'center', maxWidth: '400px' }}>
+              Nous préparons l'affichage de vos réunions et transcriptions
+            </Typography>
+            <LinearProgress 
+              sx={{ 
+                mt: 4, 
+                width: '250px', 
+                height: 6, 
+                borderRadius: 3,
+                background: alpha(theme.palette.primary.main, 0.1),
+                '& .MuiLinearProgress-bar': {
+                  borderRadius: 3,
+                  background: `linear-gradient(90deg, ${theme.palette.primary.main} 0%, ${theme.palette.secondary.main} 100%)`,
+                }
+              }} 
+            />
           </Box>
-        ) : meetings.length === 0 ? (
+        )}
+        
+        {/* Pas de ru00e9unions trouvu00e9es - seulement si pas en chargement */}
+        {!loading && filteredMeetings.length === 0 ? (
           <Paper
             sx={{
               p: 4,
@@ -1132,8 +1411,27 @@ const MyMeetings: React.FC<MyMeetingsProps> = ({ user, isMobile = false }) => {
           </Paper>
         ) : (
           <Grid container spacing={3}>
-            {meetings.map((meeting) => (
-              <Grid item xs={12} key={meeting.id}>
+            {filteredMeetings.map((meeting, index) => (
+              <Grid 
+                item 
+                xs={12} 
+                key={meeting.id}
+                sx={{
+                  opacity: 0,
+                  transform: 'translateY(20px)',
+                  animation: `fadeIn 0.5s ease-out forwards ${index * 0.1}s`,
+                  '@keyframes fadeIn': {
+                    '0%': {
+                      opacity: 0,
+                      transform: 'translateY(20px)',
+                    },
+                    '100%': {
+                      opacity: 1,
+                      transform: 'translateY(0)',
+                    },
+                  },
+                }}
+              >
                 <Paper
                   sx={{
                     p: 3,
