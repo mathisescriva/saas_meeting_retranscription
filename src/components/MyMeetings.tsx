@@ -1080,10 +1080,10 @@ const MyMeetings: React.FC<MyMeetingsProps> = ({ user, isMobile = false }) => {
               WebkitTextFillColor: 'transparent',
               letterSpacing: '-0.5px'
             }}>
-            My Meetings
+            Mes réunions
           </Typography>
           <Typography variant="body1" color="text.secondary">
-            Manage your meetings and transcriptions from one place
+          Un seul endroit pour piloter vos réunions et comptes rendus
           </Typography>
         </Box>
 
@@ -1107,7 +1107,7 @@ const MyMeetings: React.FC<MyMeetingsProps> = ({ user, isMobile = false }) => {
             gap: 1
           }}
         >
-          <EventNoteIcon sx={{ fontSize: 28, color: '#3B82F6' }} /> My Recent Meetings
+          <EventNoteIcon sx={{ fontSize: 28, color: '#3B82F6' }} /> Réunions récentes
         </Typography>
 
         {loading ? (
@@ -1245,7 +1245,7 @@ const MyMeetings: React.FC<MyMeetingsProps> = ({ user, isMobile = false }) => {
                           }}
                           size="small"
                         >
-                          View Transcript
+                          Transcription
                         </Button>
                         
                         {/* Generate Summary button - only show for completed transcriptions */}
@@ -1284,8 +1284,8 @@ const MyMeetings: React.FC<MyMeetingsProps> = ({ user, isMobile = false }) => {
                             {meeting.summary_status === 'processing' 
                               ? 'Processing...' 
                               : meeting.summary_status === 'completed' 
-                                ? 'View Summary' 
-                                : 'Generate Summary'}
+                                ? 'Voir le résumé' 
+                                : 'Générer le résumé'}
                           </Button>
                         )}
                       </Stack>
@@ -1382,7 +1382,7 @@ const MyMeetings: React.FC<MyMeetingsProps> = ({ user, isMobile = false }) => {
         fullWidth
       >
         <DialogTitle sx={{ borderBottom: '1px solid #eee', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-          <Typography variant="h6">Transcript</Typography>
+          <Typography variant="h6">Transcription</Typography>
           <IconButton onClick={() => {
             setTranscriptDialogOpen(false);
             setTimeout(() => {
@@ -1469,7 +1469,7 @@ const MyMeetings: React.FC<MyMeetingsProps> = ({ user, isMobile = false }) => {
         fullWidth
       >
         <DialogTitle sx={{ borderBottom: '1px solid #eee', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-          <Typography variant="h6">Meeting Summary</Typography>
+          <Typography variant="h6">Compte rendu</Typography>
           <IconButton onClick={handleCloseSummary}>
             <CloseIcon />
           </IconButton>

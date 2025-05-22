@@ -448,7 +448,7 @@ const Sidebar: React.FC<SidebarProps> = ({ onViewChange, user, isMobile = false,
       {/* Powered by texte en bas de la sidebar */}
       <Box sx={{ p: 2, mt: 'auto', textAlign: 'center', borderTop: '1px solid', borderColor: 'divider' }}>
         <Typography variant="caption" color="text.secondary" sx={{ display: 'block', fontSize: '0.7rem' }}>
-          Powered by Lexia France
+          Propulsé par Lexia France
         </Typography>
         <Typography variant="caption" color="text.secondary" sx={{ display: 'block', fontSize: '0.65rem', mt: 0.5 }}>
           Version beta

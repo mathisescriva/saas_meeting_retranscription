@@ -90,41 +90,41 @@ interface RecentMeeting {
 
 const features = [
   {
-    title: '🎙️ Real-time Transcription',
-    description: 'Transcribe meetings in real-time with high accuracy',
+    title: '🎙️ Transcription en temps réel',
+    description: 'Transcrivez les réunions en temps réel avec une grande précision',
     icon: <MicIcon sx={{ color: '#3B82F6' }} />,
-    action: 'Start Recording',
+    action: 'Commencer l\'enregistrement',
     highlight: true,
   },
   {
-    title: '🌍 Multi-language Support',
-    description: 'Support for 100+ languages and dialects',
+    title: '🌍 Support multi-langues',
+    description: 'Support pour plus de 100 langues et dialectes',
     icon: <UploadFileIcon sx={{ color: '#10B981' }} />,
-    action: 'Change Language',
+    action: 'Changer de langue',
   },
   {
-    title: '✨ Smart Summaries',
-    description: 'AI-powered meeting summaries and key points',
+    title: '✨ Résumés intelligents',
+    description: 'Résumés de réunions et points clés propulsés par l\'IA',
     icon: <DescriptionIcon sx={{ color: '#6366F1' }} />,
-    action: 'View Demo',
+    action: 'Voir la démo',
   },
   {
-    title: '👥 Speaker Recognition',
-    description: 'Automatically identify different speakers',
+    title: '👥 Reconnaissance des orateurs',
+    description: 'Identifiez automatiquement les différents orateurs',
     icon: <ShareIcon sx={{ color: '#8B5CF6' }} />,
-    action: 'Setup Voices',
+    action: 'Partager maintenant',
   },
   {
-    title: 'Sentiment Analysis',
-    description: 'Analyze meeting tone and participant engagement',
+    title: 'Analyse des sentiments',
+    description: 'Analysez le ton des réunions et l\'engagement des participants',
     icon: <StopIcon />,
-    action: 'View Analytics',
+    action: 'Afficher les analyses',
   },
   {
-    title: 'Meeting Duration',
-    description: 'Track and manage meeting length',
+    title: 'Durée de la réunion',
+    description: 'Suivi automatique du temps de réunion',
     icon: <RefreshIcon />,
-    action: 'View Stats',
+    action: 'Voir les statistiques',
   },
 ];
 
@@ -1103,12 +1103,12 @@ const Dashboard: React.FC<DashboardProps> = ({ user, onRecordingStateChange }) =
                 letterSpacing: '-0.5px',
                 ml: 0.5
               }}>
-              👋 Welcome back!
+              👋 Content de te revoir
             </Typography>
           </Box>
         </Box>
         <Typography variant="body1" color="text.secondary">
-          Manage your meetings and transcriptions from one place
+           Gilbert travaille pour toi : retrouve tes réunions résumées et prêtes à l'emploi.
         </Typography>
       </Box>
 
@@ -1134,10 +1134,10 @@ const Dashboard: React.FC<DashboardProps> = ({ user, onRecordingStateChange }) =
             >
               <Box sx={{ flexGrow: 1 }}>
                 <Typography variant="h6" sx={{ mb: 1 }}>
-                  🎯 Start New Meeting
+                  🎯 Lancer l'enregistrement
                 </Typography>
                 <Typography variant="body2" sx={{ mb: 2, opacity: 0.8 }}>
-                  Begin recording and transcribing instantly
+                  Commence à enregistrer instantanément.
                 </Typography>
                 {isRecording ? (
                   <Box>
@@ -1177,7 +1177,7 @@ const Dashboard: React.FC<DashboardProps> = ({ user, onRecordingStateChange }) =
                       },
                     }}
                   >
-                    Start Now
+                    Démarrer
                   </Button>
                 )}
               </Box>
@@ -1201,10 +1201,10 @@ const Dashboard: React.FC<DashboardProps> = ({ user, onRecordingStateChange }) =
             >
               <Box sx={{ flexGrow: 1 }}>
                 <Typography variant="h6" sx={{ mb: 1 }}>
-                  📁 Upload Recording
+                  📁 Importer un enregistrement
                 </Typography>
                 <Typography variant="body2" sx={{ mb: 2, color: 'text.secondary' }}>
-                  Transcribe existing audio files
+                  Glisse ton audio, on s'en charge.
                 </Typography>
                 <input
                   type="file"
@@ -1219,7 +1219,7 @@ const Dashboard: React.FC<DashboardProps> = ({ user, onRecordingStateChange }) =
                   onClick={() => fileInputRef.current?.click()}
                   disabled={isUploading}
                 >
-                  {isUploading ? 'Uploading...' : 'Upload File'}
+                  {isUploading ? 'Importation en cours...' : 'Téléverser un fichier'}
                 </Button>
                 {uploadProgress > 0 && uploadProgress < 100 && (
                   <LinearProgress 
@@ -1248,17 +1248,17 @@ const Dashboard: React.FC<DashboardProps> = ({ user, onRecordingStateChange }) =
             >
               <Box sx={{ flexGrow: 1 }}>
                 <Typography variant="h6" sx={{ mb: 1 }}>
-                  Share Transcripts
+                🔗 Partager les réunions
                 </Typography>
                 <Typography variant="body2" sx={{ mb: 2, color: 'text.secondary' }}>
-                  Collaborate with your team
+                  Collaborez avec votre équipe
                 </Typography>
                 <Button 
                   variant="outlined" 
                   startIcon={<ShareIcon />}
                   onClick={handleOpenPremiumDialog}
                 >
-                  Manage Access
+                  Obtenir
                 </Button>
               </Box>
             </Paper>
@@ -1268,7 +1268,7 @@ const Dashboard: React.FC<DashboardProps> = ({ user, onRecordingStateChange }) =
 
       {/* Features Grid */}
       <Typography variant="h5" sx={{ mb: 3, fontWeight: 600 }}>
-        Available Features
+      Fonctionnalités disponibles
       </Typography>
       <Grid container spacing={3} sx={{ mb: 6 }}>
         {features.map((feature) => (
@@ -1312,17 +1312,7 @@ const Dashboard: React.FC<DashboardProps> = ({ user, onRecordingStateChange }) =
               <CardActions>
                 <Button 
                   size="small"
-                  onClick={
-                    feature.action === 'Start Recording' 
-                      ? startRecording 
-                      : feature.action === 'Change Language' || 
-                        feature.action === 'View Demo' || 
-                        feature.action === 'Setup Voices' || 
-                        feature.action === 'View Analytics' || 
-                        feature.action === 'View Stats'
-                        ? handleOpenSettings
-                        : undefined
-                  }
+                  onClick={handleOpenSettings}
                 >
                   {feature.action}
                 </Button>
