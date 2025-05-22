@@ -3,6 +3,7 @@ import {
   Box,
   Typography,
   Button,
+  TextField,
   Table,
   TableBody,
   TableCell,
@@ -24,7 +25,17 @@ import {
   Grid,
   Alert,
   InputBase,
-  LinearProgress
+  LinearProgress,
+  Card,
+  CardContent,
+  CardActionArea,
+  CardActions,
+  Menu,
+  MenuItem,
+  DialogContentText,
+  Fade,
+  Collapse,
+  Zoom
 } from '@mui/material';
 import { alpha } from '@mui/material/styles';
 import MeetingSummaryRenderer from './MeetingSummaryRenderer';
@@ -38,6 +49,7 @@ import {
   Warning as WarningIcon,
   Clear as ClearIcon,
   Close as CloseIcon,
+  NewReleases as NewReleasesIcon,
   FileDownload as FileDownloadIcon,
   People as PeopleIcon,
   Person as PersonIcon,
@@ -90,7 +102,7 @@ const MyMeetings: React.FC<MyMeetingsProps> = ({ user, isMobile = false }) => {
   const [meetings, setMeetings] = useState<Meeting[]>([]);
   const [filteredMeetings, setFilteredMeetings] = useState<Meeting[]>([]);
   const [searchQuery, setSearchQuery] = useState('');
-  // Toujours du00e9marrer avec loading = true pour u00e9viter de montrer 'No meetings found' pru00e9maturu00e9ment
+  // Toujours démarrer avec loading = true pour éviter de montrer 'No meetings found' prématurément
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [currentAudioUrl, setCurrentAudioUrl] = useState<string | null>(null);
@@ -104,6 +116,7 @@ const MyMeetings: React.FC<MyMeetingsProps> = ({ user, isMobile = false }) => {
   const [audioDialogOpen, setAudioDialogOpen] = useState(false);
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [refreshingMetadataId, setRefreshingMetadataId] = useState<string | null>(null);
+  const [showGilbertPopup, setShowGilbertPopup] = useState(false);
 
   // Fonction de recherche intelligente pour filtrer les réunions
   const handleSearch = useCallback((query: string) => {
@@ -1184,21 +1197,146 @@ const MyMeetings: React.FC<MyMeetingsProps> = ({ user, isMobile = false }) => {
         minHeight: '100vh'
       }}>
         <Box sx={{ mb: 4 }}>
-          <Typography 
-            variant="h4" 
-            sx={{ 
-              mb: 1, 
-              fontWeight: 700,
-              background: 'linear-gradient(90deg, #3B82F6 0%, #8B5CF6 100%)',
-              WebkitBackgroundClip: 'text',
-              WebkitTextFillColor: 'transparent',
-              letterSpacing: '-0.5px'
-            }}>
-            Mes réunions
-          </Typography>
-          <Typography variant="body1" color="text.secondary">
-          Un seul endroit pour piloter vos réunions et comptes rendus
-          </Typography>
+          {/* En-tu00eate avec logo et titre */}
+          <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 2 }}>
+            <Box>
+              <Typography 
+                variant="h4" 
+                sx={{ 
+                  mb: 1, 
+                  fontWeight: 700,
+                  background: 'linear-gradient(90deg, #3B82F6 0%, #8B5CF6 100%)',
+                  WebkitBackgroundClip: 'text',
+                  WebkitTextFillColor: 'transparent',
+                  letterSpacing: '-0.5px'
+                }}>
+                Mes réunions
+              </Typography>
+              <Typography variant="body1" color="text.secondary">
+                Un seul endroit pour piloter vos réunions et comptes rendus
+              </Typography>
+            </Box>
+            
+            {/* Logo de l'assistant IA comme bouton interactif */}
+            <Box 
+              component="button"
+              onClick={() => {
+                // Ouvre le popup u00e9lu00e9gant lors du clic sur le logo
+                setShowGilbertPopup(true);
+              }}
+              sx={{ 
+                display: 'flex', 
+                alignItems: 'center',
+                justifyContent: 'center',
+                position: 'relative',
+                zIndex: 5,
+                background: 'transparent',
+                border: 'none',
+                padding: '8px',
+                borderRadius: '50%',
+                cursor: 'pointer',
+                overflow: 'visible',
+                transition: 'all 0.3s ease',
+                // Animation d'entru00e9e u00e9lu00e9gante pour l'arrivée sur la page
+                animation: 'logoEntrance 1.6s cubic-bezier(0.21, 1.11, 0.58, 1) forwards',
+                
+                // Animation d'entru00e9e sophistiquée
+                '@keyframes logoEntrance': {
+                  '0%': { 
+                    transform: 'scale(0.85) translateY(15px)', 
+                    opacity: 0,
+                    filter: 'blur(5px)'
+                  },
+                  '30%': { 
+                    opacity: 0.7,
+                    filter: 'blur(0px)'
+                  },
+                  '100%': { 
+                    transform: 'scale(1) translateY(0)', 
+                    opacity: 1
+                  },
+                },
+                
+                // Effet de survol ultra-élégant
+                '&:hover': {
+                  transform: 'scale(1.03) translateY(-2px)',
+                  '& img': {
+                    filter: 'drop-shadow(0px 6px 12px rgba(0, 0, 0, 0.18))',
+                    transform: 'rotate(2deg)',
+                  },
+                  '&::after': {
+                    opacity: 0.7,
+                    transform: 'scale(1.08)',
+                    background: 'radial-gradient(circle, rgba(139,92,246,0.15) 0%, rgba(59,130,246,0.08) 45%, rgba(59,130,246,0) 70%)',
+                  },
+                  '&::before': {
+                    opacity: 0.9,
+                    transform: 'scale(1.15) rotate(10deg)',
+                  }
+                },
+                
+                // Effet au clic raffiné
+                '&:active': {
+                  transform: 'scale(0.97) translateY(1px)',
+                  transition: 'all 0.2s cubic-bezier(0.175, 0.885, 0.32, 1.275)',
+                  '& img': {
+                    filter: 'drop-shadow(0px 2px 4px rgba(0, 0, 0, 0.15))',
+                    transform: 'rotate(-1deg)',
+                  },
+                  '&::after': {
+                    opacity: 0.5,
+                    transform: 'scale(0.95)',
+                  }
+                },
+                
+                // Premier halo élégant autour du logo (visible en permanence)
+                '&::after': {
+                  content: '""',
+                  position: 'absolute',
+                  top: '-8px',
+                  left: '-8px',
+                  right: '-8px',
+                  bottom: '-8px',
+                  borderRadius: '50%',
+                  background: 'radial-gradient(circle, rgba(139,92,246,0.12) 0%, rgba(59,130,246,0.04) 45%, rgba(59,130,246,0) 70%)',
+                  boxShadow: '0 0 20px 5px rgba(139,92,246,0.03)',
+                  zIndex: -1,
+                  transition: 'all 0.5s cubic-bezier(0.165, 0.84, 0.44, 1)',
+                  opacity: 0.5,
+                },
+                
+                // Second halo pour effet spécial au survol - plus sophistiqué
+                '&::before': {
+                  content: '""',
+                  position: 'absolute',
+                  top: '-4px',
+                  left: '-4px',
+                  right: '-4px',
+                  bottom: '-4px',
+                  borderRadius: '50%',
+                  background: 'conic-gradient(from 135deg, rgba(139,92,246,0.08), rgba(59,130,246,0.1), rgba(139,92,246,0.08), rgba(59,130,246,0), rgba(139,92,246,0.08))',
+                  backdropFilter: 'blur(3px)',
+                  zIndex: -2,
+                  transition: 'all 0.6s cubic-bezier(0.19, 1, 0.22, 1)',
+                  opacity: 0,
+                  transform: 'scale(0.85) rotate(0deg)',
+                }
+              }}
+              aria-label="Activer l'assistant IA Gilbert"
+            >
+              <img 
+                src="/img/dis_gilbert.png" 
+                alt="Assistant IA Gilbert" 
+                style={{ 
+                  width: '90px', 
+                  height: '90px', 
+                  objectFit: 'contain',
+                  filter: 'drop-shadow(0px 4px 8px rgba(0, 0, 0, 0.15))',
+                  transition: 'all 0.3s ease',
+                }} 
+              />
+            </Box>
+          </Box>
         </Box>
 
         {error && (
@@ -1995,13 +2133,135 @@ const MyMeetings: React.FC<MyMeetingsProps> = ({ user, isMobile = false }) => {
         </DialogActions>
       </Dialog>
 
-      {/* Modale de sélection de template */}
-      <TemplateSelectorModal
-        open={templateSelectorOpen}
-        onClose={() => setTemplateSelectorOpen(false)}
-        onTemplateSelect={handleTemplateSelect}
-        meetingId={currentMeetingId || ''}
-      />
+      {/* Popup élégant pour Gilbert IA */}
+      <Dialog
+        open={showGilbertPopup}
+        onClose={() => setShowGilbertPopup(false)}
+        TransitionComponent={Zoom}
+        PaperProps={{
+          sx: {
+            borderRadius: '16px',
+            boxShadow: '0 10px 40px rgba(0, 0, 0, 0.15)',
+            overflow: 'hidden',
+            background: 'linear-gradient(135deg, #ffffff 0%, #f8f9ff 100%)',
+            maxWidth: '400px',
+            width: '100%'
+          }
+        }}
+      >
+        <Box
+          sx={{
+            position: 'relative',
+            p: 3,
+            display: 'flex',
+            flexDirection: 'column',
+            alignItems: 'center',
+            textAlign: 'center'
+          }}
+        >
+          <IconButton
+            onClick={() => setShowGilbertPopup(false)}
+            sx={{
+              position: 'absolute',
+              right: 8,
+              top: 8,
+              color: 'text.secondary',
+              '&:hover': {
+                color: 'primary.main',
+                backgroundColor: 'rgba(59, 130, 246, 0.08)'
+              }
+            }}
+          >
+            <CloseIcon fontSize="small" />
+          </IconButton>
+
+          <Box
+            sx={{
+              mb: 2,
+              mt: 1,
+              position: 'relative',
+              display: 'inline-block'
+            }}
+          >
+            <img
+              src="/img/dis_gilbert.png"
+              alt="Assistant IA Gilbert"
+              style={{
+                width: '100px',
+                height: '100px',
+                objectFit: 'contain',
+                filter: 'drop-shadow(0px 4px 8px rgba(0, 0, 0, 0.15))'
+              }}
+            />
+            <Box
+              sx={{
+                position: 'absolute',
+                top: -5,
+                right: -5,
+                backgroundColor: '#3B82F6',
+                color: 'white',
+                borderRadius: '50%',
+                width: 30,
+                height: 30,
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                boxShadow: '0 2px 10px rgba(59, 130, 246, 0.5)',
+                zIndex: 2
+              }}
+            >
+              <NewReleasesIcon fontSize="small" />
+            </Box>
+          </Box>
+
+          <Typography
+            variant="h5"
+            sx={{
+              fontWeight: 600,
+              mb: 1,
+              background: 'linear-gradient(90deg, #3B82F6 0%, #8B5CF6 100%)',
+              WebkitBackgroundClip: 'text',
+              WebkitTextFillColor: 'transparent',
+            }}
+          >
+            Gilbert IA arrive bientôt !
+          </Typography>
+
+          <Typography variant="body1" color="text.secondary" sx={{ mb: 3 }}>
+            Notre assistant intelligent pour faciliter la gestion de vos réunions est en cours de développement.
+            Restez à l'écoute pour découvrir ses fonctionnalités innovantes !
+          </Typography>
+          
+          <Box
+            sx={{
+              display: 'flex',
+              justifyContent: 'center',
+              gap: 2,
+              width: '100%'
+            }}
+          >
+            <Button
+              variant="contained"
+              color="primary"
+              onClick={() => setShowGilbertPopup(false)}
+              sx={{
+                borderRadius: '8px',
+                textTransform: 'none',
+                fontWeight: 600,
+                py: 1,
+                px: 3,
+                background: 'linear-gradient(90deg, #3B82F6 0%, #8B5CF6 100%)',
+                '&:hover': {
+                  background: 'linear-gradient(90deg, #2563EB 0%, #7C3AED 100%)',
+                  boxShadow: '0 4px 12px rgba(59, 130, 246, 0.3)'
+                }
+              }}
+            >
+              J'ai hâte de découvrir !
+            </Button>
+          </Box>
+        </Box>
+      </Dialog>
     </>
   );
 };
