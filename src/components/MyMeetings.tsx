@@ -1502,55 +1502,86 @@ const MyMeetings: React.FC<MyMeetingsProps> = ({ user, isMobile = false }) => {
 
         {/* Animation de chargement - toujours prioritaire */}
         {loading && (
-          <Box sx={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', my: 6, py: 4 }}>
-            <CircularProgress size={60} thickness={4} sx={{ 
-              color: theme.palette.primary.main,
-              mb: 3,
-              '& .MuiCircularProgress-circle': {
-                strokeLinecap: 'round',
-              }
-            }} />
-            <Typography variant="h6" color="primary" sx={{ fontWeight: 500, mb: 1, textAlign: 'center' }}>
-              Chargement de vos réunions...
-            </Typography>
-            <Typography variant="body2" color="text.secondary" sx={{ textAlign: 'center', maxWidth: '400px' }}>
-              Nous préparons l'affichage de vos réunions et transcriptions
-            </Typography>
-            <LinearProgress 
+          <Fade in={loading} timeout={400}>
+            <Box 
               sx={{ 
-                mt: 4, 
-                width: '250px', 
-                height: 6, 
-                borderRadius: 3,
-                background: alpha(theme.palette.primary.main, 0.1),
-                '& .MuiLinearProgress-bar': {
-                  borderRadius: 3,
-                  background: `linear-gradient(90deg, ${theme.palette.primary.main} 0%, ${theme.palette.secondary.main} 100%)`,
+                display: 'flex', 
+                flexDirection: 'column', 
+                alignItems: 'center', 
+                justifyContent: 'center', 
+                my: 6, 
+                py: 4,
+                animation: isRefreshing ? 'pulseAnimation 1.5s infinite ease-in-out' : 'none',
+                '@keyframes pulseAnimation': {
+                  '0%': { opacity: 0.9 },
+                  '50%': { opacity: 1 },
+                  '100%': { opacity: 0.9 },
                 }
-              }} 
-            />
-          </Box>
+              }}
+            >
+              <CircularProgress size={60} thickness={4} sx={{ 
+                color: theme.palette.primary.main,
+                mb: 3,
+                '& .MuiCircularProgress-circle': {
+                  strokeLinecap: 'round',
+                  animation: isRefreshing ? 'rotateAnimation 1.5s infinite ease-in-out' : 'none',
+                  '@keyframes rotateAnimation': {
+                    '0%': { animationTimingFunction: 'ease-in' },
+                    '50%': { animationTimingFunction: 'ease-out' },
+                    '100%': { animationTimingFunction: 'ease-in' }
+                  }
+                }
+              }} />
+              <Typography variant="h6" color="primary" sx={{ fontWeight: 500, mb: 1, textAlign: 'center' }}>
+                {isRefreshing ? 'Rafraîchissement des réunions...' : 'Chargement de vos réunions...'}
+              </Typography>
+              <Typography variant="body2" color="text.secondary" sx={{ textAlign: 'center', maxWidth: '400px' }}>
+                {isRefreshing ? 'Mise à jour des données en cours' : "Nous préparons l'affichage de vos réunions et transcriptions"}
+              </Typography>
+              <LinearProgress 
+                sx={{ 
+                  mt: 4, 
+                  width: '250px', 
+                  height: 6, 
+                  borderRadius: 3,
+                  background: alpha(theme.palette.primary.main, 0.1),
+                  '& .MuiLinearProgress-bar': {
+                    borderRadius: 3,
+                    background: `linear-gradient(90deg, ${theme.palette.primary.main} 0%, ${theme.palette.secondary.main} 100%)`,
+                    animation: isRefreshing ? 'progressAnimation 1.5s infinite ease-in-out' : 'none',
+                    '@keyframes progressAnimation': {
+                      '0%': { opacity: 0.7 },
+                      '50%': { opacity: 1 },
+                      '100%': { opacity: 0.7 }
+                    }
+                  }
+                }} 
+              />
+            </Box>
+          </Fade>
         )}
         
-        {/* Pas de ru00e9unions trouvu00e9es - seulement si pas en chargement */}
-        {!loading && filteredMeetings.length === 0 ? (
-          <Paper
-            sx={{
-              p: 4,
-              borderRadius: '16px',
-              textAlign: 'center',
-              boxShadow: '0 4px 12px rgba(0,0,0,0.05)',
-            }}
-          >
-            <Typography variant="h6" sx={{ mb: 2 }}>
-              No meetings found
-            </Typography>
-            <Typography color="text.secondary" sx={{ mb: 3 }}>
-              Start by uploading an audio recording or recording a new meeting
-            </Typography>
-          </Paper>
-        ) : (
-          <Grid container spacing={3}>
+        {/* Pas de ru00e9unions trouvu00e9es ou affichage des cartes - seulement si pas en chargement */}
+        {!loading ? (
+          filteredMeetings.length === 0 ? (
+            <Paper
+              sx={{
+                p: 4,
+                borderRadius: '16px',
+                textAlign: 'center',
+                boxShadow: '0 4px 12px rgba(0,0,0,0.05)',
+              }}
+            >
+              <Typography variant="h6" sx={{ mb: 2 }}>
+                No meetings found
+              </Typography>
+              <Typography color="text.secondary" sx={{ mb: 3 }}>
+                Start by uploading an audio recording or recording a new meeting
+              </Typography>
+            </Paper>
+          ) : (
+            <Fade in={!loading} timeout={500}>
+              <Grid container spacing={3}>
             {filteredMeetings.map((meeting, index) => (
               <Grid 
                 item 
@@ -1790,7 +1821,9 @@ const MyMeetings: React.FC<MyMeetingsProps> = ({ user, isMobile = false }) => {
               </Button>
             </Grid>
           </Grid>
-        )}
+            </Fade>
+          )
+        ) : null}
       </Box>
 
       {/* Dialogue pour la lecture audio */}
