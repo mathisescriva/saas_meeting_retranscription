@@ -26,69 +26,47 @@ const exportSummaryToPDF = async (
   meetingName: string,
   meetingDate: string
 ): Promise<void> => {
-  // Créer un document PDF directement avec jsPDF
-  const doc = new jsPDF({
-    orientation: 'portrait',
-    unit: 'mm',
-    format: 'a4'
-  });
-
-  // Configurer la police et les marges
-  doc.setFont('helvetica', 'normal');
-  const margin = 20; // marge en mm
-  const pageWidth = 210 - (margin * 2); // largeur utile sur une page A4
+  // Créer un document PDF
+  const doc = new jsPDF();
   
   // Ajouter le titre
-  doc.setFontSize(22);
-  doc.text(meetingName, margin, margin);
+  doc.setFontSize(18);
+  doc.text(meetingName, 20, 20);
   
   // Ajouter la date
   doc.setFontSize(12);
-  doc.text(`Date: ${meetingDate}`, margin, margin + 10);
+  doc.text(`Date: ${meetingDate}`, 20, 30);
   
-  // Préparer le texte du compte rendu
-  // Nettoyer le texte pour éviter les problèmes d'affichage
-  // Remplacer les caractères spéciaux par des équivalents lisibles
-  const cleanText = summaryText
-    .replace(/Ø=ÜA/g, 'Réunion')
-    .replace(/Ø=Üe/g, 'Participants')
-    .replace(/Ø=YR/g, 'Durée estimée')
-    .replace(/Ø>Yà/g, 'Résumé express')
-    .replace(/Ø=YÂb/g, 'Ordre du jour')
-    .replace(/Ø=Üá/g, 'Point 1')
-    .replace(/Ø=Ü°/g, 'Point 2')
-    .replace(/Ø=Üd/g, 'Point 3')
-    .replace(/Ø=Y/g, 'Actions')
-    .replace(/Ø=Ü°/g, 'Décision')
-    .replace(/Ø=Üe/g, 'Décision')
-    .replace(/Ø=Ül/g, 'Tâche')
-    .replace(/Ø=Üd/g, 'Responsable');
-
-  // Ajouter le contenu du compte rendu avec retour à la ligne automatique
-  doc.setFontSize(11);
-  const textLines = doc.splitTextToSize(cleanText, pageWidth);
+  // Remplacer les caractères spéciaux
+  let processedText = summaryText;
   
-  // Position de départ pour le texte
-  let yPos = margin + 20;
+  // Tableau de remplacements
+  const replacements = [
+    { search: 'Ø=ÜA', replace: 'Réunion' },
+    { search: 'Ø=Üe', replace: 'Participants' },
+    { search: 'Ø=YR', replace: 'Durée estimée' },
+    { search: 'Ø>Yà', replace: 'Résumé express' },
+    { search: 'Ø=YÂb', replace: 'Ordre du jour' },
+    { search: 'Ø=Üá', replace: 'Point 1' },
+    { search: 'Ø=Ü°', replace: 'Point 2' },
+    { search: 'Ø=Üd', replace: 'Point 3' },
+    { search: 'Ø=Y', replace: 'Actions' },
+    { search: 'Ø=Ül', replace: 'Tâche' },
+    { search: '#ñb', replace: 'Point 4' },
+    { search: '---', replace: ' ' }
+  ];
   
-  // Ajouter les lignes de texte avec gestion des sauts de page
-  const linesPerPage = 45; // approximation du nombre de lignes par page
-  let currentPage = 1;
-  
-  for (let i = 0; i < textLines.length; i++) {
-    // Vérifier si nous avons besoin d'une nouvelle page
-    if (i > 0 && i % linesPerPage === 0) {
-      doc.addPage();
-      currentPage++;
-      yPos = margin; // Réinitialiser la position Y pour la nouvelle page
-    }
-    
-    // Ajouter la ligne de texte
-    doc.text(textLines[i], margin, yPos);
-    yPos += 5; // Espacement entre les lignes
+  // Appliquer les remplacements
+  for (const item of replacements) {
+    processedText = processedText.split(item.search).join(item.replace);
   }
   
-  // Générer un nom de fichier basé sur le nom de la réunion et la date
+  // Ajouter le contenu avec retour à la ligne automatique
+  doc.setFontSize(11);
+  const textLines = doc.splitTextToSize(processedText, 170);
+  doc.text(textLines, 20, 40);
+  
+  // Générer un nom de fichier
   const fileName = `Compte_rendu_${meetingName.replace(/[^a-zA-Z0-9]/g, '_')}_${new Date().toISOString().slice(0, 10)}.pdf`;
   
   // Télécharger le PDF
