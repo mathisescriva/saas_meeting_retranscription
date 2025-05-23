@@ -183,9 +183,6 @@ const MyMeetings: React.FC<MyMeetingsProps> = ({ user, isMobile = false }) => {
       // Filtrer par titre
       const titleMatch = meeting.title?.toLowerCase().includes(lowercaseQuery);
       
-      // Filtrer par contenu de la transcription
-      const transcriptMatch = meeting.transcript_text?.toLowerCase().includes(lowercaseQuery);
-      
       // Filtrer par nombre de participants (si la requête est un nombre)
       const participantMatch = !isNaN(Number(query)) && meeting.participants === Number(query);
       
@@ -221,7 +218,7 @@ const MyMeetings: React.FC<MyMeetingsProps> = ({ user, isMobile = false }) => {
       })();
       
       // Vérifier si au moins un critère correspond
-      return titleMatch || transcriptMatch || participantMatch || durationMatch;
+      return titleMatch || participantMatch || durationMatch;
     });
     
     setFilteredMeetings(filtered);
@@ -1429,9 +1426,14 @@ const MyMeetings: React.FC<MyMeetingsProps> = ({ user, isMobile = false }) => {
                   }
                 }
               }}
-              placeholder="Rechercher par titre, contenu, date (janv 2023), durée (30min), participants..."
+              placeholder="Rechercher par titre, date (janv 2023), durée (30min), participants..."
               value={searchQuery}
               onChange={(e) => handleSearch(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter') {
+                  e.preventDefault(); // Empêche le comportement par défaut (soumission du formulaire)
+                }
+              }}
             />
             {searchQuery && (
               <IconButton 
