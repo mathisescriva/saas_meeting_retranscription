@@ -87,11 +87,11 @@ export async function exportTranscriptToWord(
       </html>
     `;
     
-    // Créer un blob pour le téléchargement
-    const blob = new Blob([wordXml], { type: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document;charset=utf-8' });
+    // Créer un blob avec le type MIME correct pour Word
+    const blob = new Blob([wordXml], { type: 'application/msword' });
     
     // Générer un nom de fichier basé sur le nom de la réunion et la date
-    const fileName = `Transcription_${meetingName.replace(/[^a-zA-Z0-9]/g, '_')}_${new Date().toISOString().slice(0, 10)}.docx`;
+    const fileName = `Transcription_${meetingName.replace(/[^a-zA-Z0-9]/g, '_')}_${new Date().toISOString().slice(0, 10)}.doc`;
     
     // Télécharger le fichier
     console.log('Téléchargement du fichier Word:', fileName);

@@ -1,34 +1,30 @@
 import { saveAs } from 'file-saver';
 
 /**
- * Exporte un compte rendu au format Word (.docx) en utilisant une conversion HTML
+ * Exporte un compte rendu au format Word (.docx)
  * @param summaryText Le texte du compte rendu (format Markdown)
- * @param meetingName Le nom de la ru00e9union
- * @param meetingDate La date de la ru00e9union
+ * @param meetingName Le nom de la réunion
+ * @param meetingDate La date de la réunion
  */
 export async function exportSummaryToWord(
   summaryText: string,
   meetingName: string,
   meetingDate: string
 ): Promise<void> {
-  console.log('Du00e9but de la fonction exportSummaryToWord (version directe) avec:', {
+  console.log('Début de l\'exportation Word avec:', {
     summaryTextLength: summaryText.length,
     meetingName,
     meetingDate
   });
 
   try {
-    // Cru00e9er un u00e9lu00e9ment <a> pour le tu00e9lu00e9chargement
-    const link = document.createElement('a');
+    // Créer un contenu HTML propre
+    const cleanedText = cleanMarkdownText(summaryText);
     
-    // Convertir le Markdown en texte riche pour Word
-    const richText = markdownToRichText(summaryText);
-    
-    // Cru00e9er le contenu du document Word au format XML
-    const wordXml = `
-      <html xmlns:o='urn:schemas-microsoft-com:office:office' 
-            xmlns:w='urn:schemas-microsoft-com:office:word' 
-            xmlns='http://www.w3.org/TR/REC-html40'>
+    // Utiliser un format HTML simple pour Word
+    const wordContent = `<html xmlns:o="urn:schemas-microsoft-com:office:office" 
+            xmlns:w="urn:schemas-microsoft-com:office:word" 
+            xmlns="http://www.w3.org/TR/REC-html40">
       <head>
         <meta charset="utf-8">
         <title>Compte rendu - ${meetingName}</title>
@@ -67,34 +63,25 @@ export async function exportSummaryToWord(
           <div class="meeting-date">Date: ${meetingDate}</div>
         </div>
         <div class="content">
-          ${richText}
+          ${cleanedText}
         </div>
       </body>
       </html>
     `;
     
-    // Cru00e9er un blob pour le tu00e9lu00e9chargement
-    const blob = new Blob([wordXml], { type: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document;charset=utf-8' });
+    // Créer un blob avec le type MIME correct pour Word
+    const blob = new Blob([wordContent], { 
+      type: 'application/msword'
+    });
     
-    // Gu00e9nu00e9rer un nom de fichier basu00e9 sur le nom de la ru00e9union et la date
-    const fileName = `${meetingName.replace(/[^a-zA-Z0-9]/g, '_')}_${new Date().toISOString().slice(0, 10)}.docx`;
+    // Générer un nom de fichier
+    const fileName = `Transcription_${meetingName.replace(/[^a-zA-Z0-9]/g, '_')}_${new Date().toISOString().slice(0, 10)}.doc`;
     
-    // Tu00e9lu00e9charger le fichier
-    console.log('Tu00e9lu00e9chargement du fichier Word:', fileName);
-    
-    // Cru00e9er une URL pour le blob
-    const url = URL.createObjectURL(blob);
-    
-    // Utiliser saveAs pour tu00e9lu00e9charger le fichier
+    // Télécharger le fichier
+    console.log('Téléchargement du fichier Word:', fileName);
     saveAs(blob, fileName);
     
-    // Nettoyer
-    setTimeout(() => {
-      document.body.removeChild(link);
-      URL.revokeObjectURL(url);
-    }, 100);
-    
-    console.log('Fichier Word tu00e9lu00e9chargu00e9 avec succu00e8s');
+    console.log('Fichier Word téléchargé avec succès');
     return Promise.resolve();
   } catch (error) {
     console.error('Erreur lors de l\'exportation du compte rendu:', error);
@@ -103,13 +90,34 @@ export async function exportSummaryToWord(
 }
 
 /**
- * Convertit le texte Markdown en texte riche pour Word
+ * Nettoie et convertit le texte Markdown en HTML pour Word
  * @param markdown Texte au format Markdown
- * @returns HTML riche compatible avec Word
+ * @returns HTML compatible avec Word
  */
-function markdownToRichText(markdown: string): string {
-  // Fonction simplifiu00e9e de conversion Markdown -> HTML riche pour Word
+function cleanMarkdownText(markdown: string): string {
+  // Fonction de conversion Markdown -> HTML pour Word
   let html = markdown;
+  
+  // Remplacer les caractères spéciaux
+  const replacements = [
+    { search: 'Ø=ÜA', replace: 'Réunion' },
+    { search: 'Ø=Üe', replace: 'Participants' },
+    { search: 'Ø=YR', replace: 'Durée estimée' },
+    { search: 'Ø>Yà', replace: 'Résumé express' },
+    { search: 'Ø=YÂb', replace: 'Ordre du jour' },
+    { search: 'Ø=Üá', replace: 'Point 1' },
+    { search: 'Ø=Ü°', replace: 'Point 2' },
+    { search: 'Ø=Üd', replace: 'Point 3' },
+    { search: 'Ø=Y', replace: 'Actions' },
+    { search: 'Ø=Ül', replace: 'Tâche' },
+    { search: '#ñb', replace: 'Point 4' },
+    { search: '---', replace: ' ' }
+  ];
+  
+  // Appliquer les remplacements
+  for (const item of replacements) {
+    html = html.split(item.search).join(item.replace);
+  }
   
   // Titres
   html = html.replace(/^# (.+)$/gm, '<h1>$1</h1>');
@@ -135,7 +143,7 @@ function markdownToRichText(markdown: string): string {
   // Liens
   html = html.replace(/\[(.+?)\]\((.+?)\)/g, '<a href="$2">$1</a>');
   
-  // Nettoyer les balises p imbriquu00e9es
+  // Nettoyer les balises p imbriquées
   html = html.replace(/<p><h(\d)>/g, '<h$1>');
   html = html.replace(/<\/h(\d)><\/p>/g, '</h$1>');
   
