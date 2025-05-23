@@ -3,13 +3,6 @@ import {
   Box,
   Typography,
   Button,
-  TextField,
-  Table,
-  TableBody,
-  TableCell,
-  TableContainer,
-  TableHead,
-  TableRow,
   Paper,
   Chip,
   IconButton,
@@ -19,50 +12,32 @@ import {
   DialogActions,
   CircularProgress,
   Stack,
-  Divider,
   Tooltip,
   useTheme,
   Grid,
   Alert,
   InputBase,
   LinearProgress,
-  Card,
-  CardContent,
-  CardActionArea,
-  CardActions,
-  Menu,
-  MenuItem,
-  DialogContentText,
   Fade,
-  Collapse,
   Zoom
 } from '@mui/material';
 import { alpha } from '@mui/material/styles';
 import MeetingSummaryRenderer from './MeetingSummaryRenderer';
 import TemplateSelectorModal from './TemplateSelectorModal';
 import {
-  PlayArrow as PlayArrowIcon,
-  Description as DescriptionIcon,
   Delete as DeleteIcon,
   Refresh as RefreshIcon,
   EventNote as EventNoteIcon,
   Warning as WarningIcon,
   Clear as ClearIcon,
   Close as CloseIcon,
-  NewReleases as NewReleasesIcon,
-  FileDownload as FileDownloadIcon,
-  People as PeopleIcon,
-  Person as PersonIcon,
-  Summarize as SummarizeIcon,
-  Assignment as AssignmentIcon,
+  Description as DescriptionIcon,
   Share as ShareIcon,
   Update as UpdateIcon,
-  MoreVert,
-  Cancel,
-  DeleteForever,
-  Close
+  FileDownload as FileDownloadIcon,
+  NewReleases as NewReleasesIcon
 } from '@mui/icons-material';
-import { 
+import {
   getAllMeetings, 
   deleteMeeting, 
   generateMeetingSummary,
@@ -75,11 +50,13 @@ import {
   Meeting as ApiMeeting
 } from '../services/meetingService';
 import apiClient, { API_BASE_URL } from '../services/apiClient';
-import { exportSummaryToWord } from '../services/exportServiceDirect';
-// L'import exportActionsToExcel a été supprimé car il n'est plus utilisé
+// Les exportations sont maintenant gu00e9ru00e9es par les composants du00e9diu00e9s
+import { exportTranscriptToWord, exportTranscriptToPDF, exportTranscriptToMarkdown } from '../services/exportTranscriptService';
 import { useNotification } from '../contexts/NotificationContext';
 import { User } from '../services/authService';
 import MeetingAudioPlayer from './MeetingAudioPlayer';
+import TranscriptExportButton from './TranscriptExportButton';
+import SummaryExportButton from './SummaryExportButton';
 
 interface Meeting extends Omit<ApiMeeting, 'summary_status'> {
   summary?: {
@@ -107,6 +84,16 @@ const MyMeetings: React.FC<MyMeetingsProps> = ({ user, isMobile = false }) => {
   const [error, setError] = useState<string | null>(null);
   const [currentAudioUrl, setCurrentAudioUrl] = useState<string | null>(null);
   const [currentAudioTitle, setCurrentAudioTitle] = useState<string | null>(null);
+  const [transcript, setTranscript] = useState<string | null>(null);
+  const [formattedTranscript, setFormattedTranscript] = useState<Array<{speaker: string; text: string; timestamp?: string}> | null>(null);
+  const [selectedMeeting, setSelectedMeeting] = useState<Meeting | null>(null);
+  const [meetingToDelete, setMeetingToDelete] = useState<Meeting | null>(null);
+  const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false);
+  const [showPremiumDialog, setShowPremiumDialog] = useState(false);
+  const [currentMeetingId, setCurrentMeetingId] = useState<string | null>(null);
+  const [templateSelectorOpen, setTemplateSelectorOpen] = useState(false);
+  const [closingSummary, setClosingSummary] = useState<boolean>(false);
+  const [selectedMeetingId, setSelectedMeetingId] = useState<string | null>(null);
   const [generatingSummaryId, setGeneratingSummaryId] = useState<string | null>(null);
   const [summaryWatchers, setSummaryWatchers] = useState<Record<string, () => void>>({});
   const [transcriptDialogOpen, setTranscriptDialogOpen] = useState<boolean>(false);
@@ -223,86 +210,6 @@ const MyMeetings: React.FC<MyMeetingsProps> = ({ user, isMobile = false }) => {
     
     setFilteredMeetings(filtered);
   }, [meetings]);
-  
-  const [showPremiumDialog, setShowPremiumDialog] = useState(false);
-  const [transcript, setTranscript] = useState<string | null>(null);
-  const [formattedTranscript, setFormattedTranscript] = useState<Array<{speaker: string; text: string; timestamp?: string}> | null>(null);
-  const [closingSummary, setClosingSummary] = useState(false);
-  
-  // États pour la modale de sélection de template
-  const [templateSelectorOpen, setTemplateSelectorOpen] = useState(false);
-  const [currentMeetingId, setCurrentMeetingId] = useState<string | null>(null);
-
-  // États pour la confirmation de suppression
-  const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false);
-  const [meetingToDelete, setMeetingToDelete] = useState<string | null>(null);
-
-  // CSS styles for Markdown content
-  const markdownStyles = `
-    .markdown-content p {
-      margin-bottom: 16px;
-      line-height: 1.6;
-    }
-    .markdown-content h1 {
-      font-size: 28px;
-      font-weight: 700;
-      margin-top: 24px;
-      margin-bottom: 16px;
-    }
-    .markdown-content h2 {
-      font-size: 24px;
-      font-weight: 600;
-      margin-top: 20px;
-      margin-bottom: 12px;
-    }
-    .markdown-content h3 {
-      font-size: 20px;
-      font-weight: 600;
-      margin-top: 16px;
-      margin-bottom: 10px;
-    }
-    .markdown-content ul, .markdown-content ol {
-      margin-bottom: 16px;
-      padding-left: 24px;
-    }
-    .markdown-content li {
-      margin-bottom: 8px;
-    }
-    .markdown-content code {
-      background-color: rgba(0, 0, 0, 0.05);
-      padding: 2px 4px;
-      border-radius: 4px;
-      font-family: monospace;
-    }
-    .markdown-content pre {
-      background-color: rgba(0, 0, 0, 0.05);
-      padding: 16px;
-      border-radius: 4px;
-      overflow-x: auto;
-      margin-bottom: 16px;
-    }
-    .markdown-content blockquote {
-      border-left: 4px solid #e0e0e0;
-      padding-left: 16px;
-      margin-left: 0;
-      margin-bottom: 16px;
-      color: #616161;
-    }
-    .markdown-content table {
-      width: 100%;
-      border-collapse: collapse;
-      margin-bottom: 16px;
-    }
-    .markdown-content table th, .markdown-content table td {
-      border: 1px solid #e0e0e0;
-      padding: 8px 12px;
-      text-align: left;
-    }
-    .markdown-content table th {
-      background-color: rgba(0, 0, 0, 0.05);
-      font-weight: 600;
-    }
-  `;
 
   // Fonction pour récupérer les réunions avec un temps minimum d'animation de chargement
   const fetchMeetings = useCallback(async () => {
@@ -435,8 +342,15 @@ const MyMeetings: React.FC<MyMeetingsProps> = ({ user, isMobile = false }) => {
   };
 
   const handleViewTranscript = async (meetingId: string) => {
+    console.log(`Viewing transcript for meeting ${meetingId}`);
+    
     // Indiquer que le chargement est en cours
     setIsLoadingTranscript(true);
+    // Stocker la réunion sélectionnée
+    const meeting = meetings.find(m => m.id === meetingId);
+    if (meeting) {
+      setSelectedMeeting(meeting);
+    }
     // Ouvrir le dialogue immédiatement pour montrer que quelque chose se passe
     setTranscriptDialogOpen(true);
     try {
@@ -676,8 +590,8 @@ const MyMeetings: React.FC<MyMeetingsProps> = ({ user, isMobile = false }) => {
   };
 
   // Ouvrir la boîte de dialogue de confirmation de suppression
-  const confirmDeleteMeeting = (id: string) => {
-    setMeetingToDelete(id);
+  const confirmDeleteMeeting = (meeting: Meeting) => {
+    setMeetingToDelete(meeting);
     setDeleteConfirmOpen(true);
   };
 
@@ -696,10 +610,10 @@ const MyMeetings: React.FC<MyMeetingsProps> = ({ user, isMobile = false }) => {
       setDeleteConfirmOpen(false);
       
       // Call the API to delete the meeting
-      await deleteMeeting(meetingToDelete);
+      await deleteMeeting(meetingToDelete.id);
       
       // Remove the meeting from the state
-      setMeetings(meetings.filter(meeting => meeting.id !== meetingToDelete));
+      setMeetings(meetings.filter(meeting => meeting.id !== meetingToDelete.id));
       showNotification('Meeting successfully deleted', 'success');
 
       // Réinitialiser l'ID de réunion à supprimer
@@ -1076,56 +990,6 @@ const MyMeetings: React.FC<MyMeetingsProps> = ({ user, isMobile = false }) => {
     }, 300);
   };
 
-  // Fonction pour exporter le compte rendu au format Word
-  const handleExportToWord = (meetingId: string) => {
-    console.log('Début de l\'exportation Word pour la réunion:', meetingId);
-    // Trouver la réunion concernée
-    const meeting = meetings.find(m => m.id === meetingId);
-    if (!meeting) {
-      console.error('Réunion non trouvée pour l\'exportation:', meetingId);
-      showErrorPopup('Erreur', 'Réunion non trouvée');
-      return;
-    }
-    
-    console.log('Données de la réunion pour exportation:', {
-      id: meeting.id,
-      name: meeting.name || meeting.title,
-      summary_status: meeting.summary_status,
-      summary_text_length: meeting.summary_text ? meeting.summary_text.length : 0
-    });
-    
-    if (!meeting.summary_text && meeting.summary_status !== 'completed') {
-      console.error('Compte rendu non disponible pour l\'exportation');
-      showErrorPopup('Erreur', 'Le compte rendu n\'est pas disponible pour l\'exportation');
-      return;
-    }
-    
-    try {
-      // Formater la date de la réunion
-      const meetingDate = formatDate(meeting.created_at);
-      console.log('Tentative d\'exportation avec les paramètres:', {
-        summary_text_length: meeting.summary_text ? meeting.summary_text.substring(0, 50) + '...' : 'vide',
-        meeting_name: meeting.name || meeting.title || 'Sans titre',
-        meeting_date: meetingDate
-      });
-      
-      // Exporter le compte rendu au format Word
-      exportSummaryToWord(
-        meeting.summary_text || '',
-        meeting.name || meeting.title || 'Sans titre',
-        meetingDate
-      );
-      console.log('Exportation Word réussie');
-      showSuccessPopup('Succès', 'Le compte rendu a été exporté au format Word');
-    } catch (error) {
-      console.error('Erreur lors de l\'exportation du compte rendu:', error);
-      showErrorPopup('Erreur', `Erreur lors de l'exportation: ${error instanceof Error ? error.message : 'Erreur inconnue'}`);
-    }
-  };
-
-  // Fonction pour exporter les actions au format Excel
-  // La fonction handleExportToExcel a été supprimée car elle n'est plus utilisée
-
   // Nettoyer les watchers lors du démontage du composant
   useEffect(() => {
     return () => {
@@ -1187,14 +1051,78 @@ const MyMeetings: React.FC<MyMeetingsProps> = ({ user, isMobile = false }) => {
 
   return (
     <>
-      <style dangerouslySetInnerHTML={{ __html: markdownStyles }} />
+      <style dangerouslySetInnerHTML={{ __html: `
+        .markdown-content p {
+          margin-bottom: 16px;
+          line-height: 1.6;
+        }
+        .markdown-content h1 {
+          font-size: 28px;
+          font-weight: 700;
+          margin-top: 24px;
+          margin-bottom: 16px;
+        }
+        .markdown-content h2 {
+          font-size: 24px;
+          font-weight: 600;
+          margin-top: 20px;
+          margin-bottom: 12px;
+        }
+        .markdown-content h3 {
+          font-size: 20px;
+          font-weight: 600;
+          margin-top: 16px;
+          margin-bottom: 10px;
+        }
+        .markdown-content ul, .markdown-content ol {
+          margin-bottom: 16px;
+          padding-left: 24px;
+        }
+        .markdown-content li {
+          margin-bottom: 8px;
+        }
+        .markdown-content code {
+          background-color: rgba(0, 0, 0, 0.05);
+          padding: 2px 4px;
+          border-radius: 4px;
+          font-family: monospace;
+        }
+        .markdown-content pre {
+          background-color: rgba(0, 0, 0, 0.05);
+          padding: 16px;
+          border-radius: 4px;
+          overflow-x: auto;
+          margin-bottom: 16px;
+        }
+        .markdown-content blockquote {
+          border-left: 4px solid #e0e0e0;
+          padding-left: 16px;
+          margin-left: 0;
+          margin-bottom: 16px;
+          color: #616161;
+        }
+        .markdown-content table {
+          width: 100%;
+          border-collapse: collapse;
+          margin-bottom: 16px;
+        }
+        .markdown-content table th, .markdown-content table td {
+          border: 1px solid #e0e0e0;
+          padding: 8px 12px;
+          text-align: left;
+        }
+        .markdown-content table th {
+          background-color: rgba(0, 0, 0, 0.05);
+          font-weight: 600;
+        }
+      ` }} />
       <Box sx={{ 
         p: 4,
         background: 'linear-gradient(145deg, rgba(255,255,255,0.9) 0%, rgba(249,250,251,0.9) 100%)',
         minHeight: '100vh'
       }}>
         <Box sx={{ mb: 4 }}>
-          {/* En-tu00eate avec logo et titre */}
+          {/* En-tête avec logo et titre */}
           <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 2 }}>
             <Box>
               <Typography 
@@ -1218,7 +1146,7 @@ const MyMeetings: React.FC<MyMeetingsProps> = ({ user, isMobile = false }) => {
             <Box 
               component="button"
               onClick={() => {
-                // Ouvre le popup u00e9lu00e9gant lors du clic sur le logo
+                // Ouvre le popup éluégent lors du clic sur le logo
                 setShowGilbertPopup(true);
               }}
               sx={{ 
@@ -1234,10 +1162,10 @@ const MyMeetings: React.FC<MyMeetingsProps> = ({ user, isMobile = false }) => {
                 cursor: 'pointer',
                 overflow: 'visible',
                 transition: 'all 0.3s ease',
-                // Animation d'entru00e9e u00e9lu00e9gante pour l'arrivée sur la page
+                // Animation d'entrée élégante pour l'arrivée sur la page
                 animation: 'logoEntrance 1.6s cubic-bezier(0.21, 1.11, 0.58, 1) forwards',
                 
-                // Animation d'entru00e9e sophistiquée
+                // Animation d'entrée sophistiquée
                 '@keyframes logoEntrance': {
                   '0%': { 
                     transform: 'scale(0.85) translateY(15px)', 
@@ -1299,6 +1227,8 @@ const MyMeetings: React.FC<MyMeetingsProps> = ({ user, isMobile = false }) => {
                   boxShadow: '0 0 20px 5px rgba(139,92,246,0.03)',
                   zIndex: -1,
                   transition: 'all 0.5s cubic-bezier(0.165, 0.84, 0.44, 1)',
+                  // Animation d'entrée élégante pour l'arrivée sur la page
+                  animation: 'logoEntrance 1.6s cubic-bezier(0.21, 1.11, 0.58, 1) forwards',
                   opacity: 0.5,
                 },
                 
@@ -1325,8 +1255,8 @@ const MyMeetings: React.FC<MyMeetingsProps> = ({ user, isMobile = false }) => {
                 src="/img/dis_gilbert.png" 
                 alt="Assistant IA Gilbert" 
                 style={{ 
-                  width: '90px', 
-                  height: '90px', 
+                  width: '65px', 
+                  height: '65px', 
                   objectFit: 'contain',
                   filter: 'drop-shadow(0px 4px 8px rgba(0, 0, 0, 0.15))',
                   transition: 'all 0.3s ease',
@@ -1373,7 +1303,7 @@ const MyMeetings: React.FC<MyMeetingsProps> = ({ user, isMobile = false }) => {
               background: 'rgba(255, 255, 255, 0.8)',
               backdropFilter: 'blur(10px)',
               border: '1px solid rgba(229, 231, 235, 0.8)',
-              boxShadow: '0 4px 20px rgba(0, 0, 0, 0.05)',
+              boxShadow: '0 4px 20px rgba(0, 0, 0, 0.06)',
               transition: 'all 0.3s ease',
               '&:hover': {
                 boxShadow: '0 6px 25px rgba(0, 0, 0, 0.1)',
@@ -1480,19 +1410,18 @@ const MyMeetings: React.FC<MyMeetingsProps> = ({ user, isMobile = false }) => {
                 size="small"
                 color="secondary"
                 onDelete={() => handleSearch('')}
-                sx={{ 
-                  borderRadius: '20px',
-                  border: `1px solid ${alpha(theme.palette.secondary.main, 0.3)}`,
+                sx={{
+                  bgcolor: alpha('#F59E0B', 0.1),
+                  color: '#F59E0B',
                   fontWeight: 500,
-                  background: `linear-gradient(45deg, ${alpha(theme.palette.secondary.light, 0.1)} 0%, ${alpha(theme.palette.secondary.main, 0.15)} 100%)`,
+                  maxWidth: '100%',
                   '& .MuiChip-label': {
-                    padding: '0 12px',
-                  },
-                  '& .MuiChip-deleteIcon': {
-                    color: theme.palette.secondary.main,
-                    '&:hover': {
-                      color: theme.palette.secondary.dark,
-                    }
+                    whiteSpace: 'normal',
+                    overflow: 'visible',
+                    textOverflow: 'clip',
+                    display: 'block',
+                    lineHeight: 1.2,
+                    py: 0.5
                   }
                 }}
               />
@@ -1783,7 +1712,7 @@ const MyMeetings: React.FC<MyMeetingsProps> = ({ user, isMobile = false }) => {
                       <IconButton 
                         size="small" 
                         sx={{ color: '#EF4444' }}
-                        onClick={() => confirmDeleteMeeting(meeting.id)}
+                        onClick={() => confirmDeleteMeeting(meeting)}
                         disabled={isDeleting}
                       >
                         <DeleteIcon />
@@ -1847,22 +1776,42 @@ const MyMeetings: React.FC<MyMeetingsProps> = ({ user, isMobile = false }) => {
             setTranscript(null);
             setFormattedTranscript(null);
             setIsLoadingTranscript(false);
+            setSelectedMeetingId(null);
           }, 300); // Délai légèrement supérieur à la durée de l'animation de fermeture du dialogue
         }}
         maxWidth="md"
         fullWidth
+        sx={{ 
+          '& .MuiDialog-paper': { 
+            borderRadius: 2,
+            overflow: 'hidden'
+          }
+        }}
       >
         <DialogTitle sx={{ borderBottom: '1px solid #eee', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
           <Typography variant="h6">Transcription</Typography>
-          <IconButton onClick={() => {
-            setTranscriptDialogOpen(false);
-            setTimeout(() => {
-              setTranscript(null);
-              setFormattedTranscript(null);
-            }, 300);
-          }}>
-            <CloseIcon />
-          </IconButton>
+          <Box sx={{ display: 'flex', alignItems: 'center' }}>
+            {/* Bouton d'exportation de transcription */}
+            {selectedMeeting && (
+              <TranscriptExportButton 
+                transcript={formattedTranscript}
+                meetingId={selectedMeeting.id}
+                meetingName={selectedMeeting.title || 'Réunion'}
+                meetingDate={new Date(selectedMeeting.created_at).toLocaleDateString()}
+                onSuccess={(message) => showSuccessPopup('Succès', message)}
+                onError={(message) => showErrorPopup('Erreur', message)}
+              />
+            )}
+            <IconButton onClick={() => {
+              setTranscriptDialogOpen(false);
+              setTimeout(() => {
+                setTranscript(null);
+                setFormattedTranscript(null);
+              }, 300);
+            }}>
+              <CloseIcon />
+            </IconButton>
+          </Box>
         </DialogTitle>
         <DialogContent sx={{ mt: 2, minHeight: '300px', maxHeight: '60vh', overflowY: 'auto' }}>
           {isLoadingTranscript ? (
@@ -1932,6 +1881,8 @@ const MyMeetings: React.FC<MyMeetingsProps> = ({ user, isMobile = false }) => {
         </DialogActions>
       </Dialog>
 
+      {/* Le menu d'exportation est maintenant géré par le composant TranscriptExportButton */}
+
       {/* Dialogue pour afficher le compte rendu */}
       <Dialog 
         open={!!generatingSummaryId} 
@@ -1941,35 +1892,33 @@ const MyMeetings: React.FC<MyMeetingsProps> = ({ user, isMobile = false }) => {
       >
         <DialogTitle sx={{ borderBottom: '1px solid #eee', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
           <Typography variant="h6">Compte rendu</Typography>
-          <IconButton onClick={handleCloseSummary}>
-            <CloseIcon />
-          </IconButton>
+          <Box sx={{ display: 'flex', alignItems: 'center' }}>
+            {/* Bouton d'exportation de compte rendu */}
+            {(() => {
+              const meeting = meetings.find(m => m.id === generatingSummaryId);
+              if (meeting?.summary_status === 'completed' && meeting?.summary_text) {
+                return (
+                  <SummaryExportButton
+                    summaryText={meeting.summary_text}
+                    meetingId={meeting.id}
+                    meetingName={meeting.title || 'Réunion'}
+                    meetingDate={new Date(meeting.created_at).toLocaleDateString()}
+                    onSuccess={(message) => showSuccessPopup('Succès', message)}
+                    onError={(message) => showErrorPopup('Erreur', message)}
+                  />
+                );
+              }
+              return null;
+            })()}
+            <IconButton onClick={handleCloseSummary}>
+              <CloseIcon />
+            </IconButton>
+          </Box>
         </DialogTitle>
         <DialogContent sx={{ mt: 2, minHeight: '300px', maxHeight: '60vh', overflowY: 'auto' }}>
           {renderSummary()}
         </DialogContent>
         <DialogActions>
-          {/* Boutons d'exportation */}
-          {(() => {
-            const meeting = meetings.find(m => m.id === generatingSummaryId);
-            if (meeting?.summary_status === 'completed' && meeting?.summary_text) {
-              return (
-                <>
-                  <Button 
-                    startIcon={<FileDownloadIcon />}
-                    variant="outlined" 
-                    color="primary" 
-                    onClick={() => meeting.id && handleExportToWord(meeting.id)}
-                    sx={{ mr: 1 }}
-                  >
-                    Exporter en Word
-                  </Button>
-
-                </>
-              );
-            }
-            return null;
-          })()}
           <Button onClick={handleCloseSummary}>Fermer</Button>
         </DialogActions>
       </Dialog>
@@ -2222,8 +2171,8 @@ const MyMeetings: React.FC<MyMeetingsProps> = ({ user, isMobile = false }) => {
               src="/img/dis_gilbert.png"
               alt="Assistant IA Gilbert"
               style={{
-                width: '100px',
-                height: '100px',
+                width: '75px',
+                height: '75px',
                 objectFit: 'contain',
                 filter: 'drop-shadow(0px 4px 8px rgba(0, 0, 0, 0.15))'
               }}

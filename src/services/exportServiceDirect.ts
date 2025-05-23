@@ -74,10 +74,10 @@ export async function exportSummaryToWord(
     `;
     
     // Cru00e9er un blob pour le tu00e9lu00e9chargement
-    const blob = new Blob([wordXml], { type: 'application/msword;charset=utf-8' });
+    const blob = new Blob([wordXml], { type: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document;charset=utf-8' });
     
     // Gu00e9nu00e9rer un nom de fichier basu00e9 sur le nom de la ru00e9union et la date
-    const fileName = `${meetingName.replace(/[^a-zA-Z0-9]/g, '_')}_${new Date().toISOString().slice(0, 10)}.doc`;
+    const fileName = `${meetingName.replace(/[^a-zA-Z0-9]/g, '_')}_${new Date().toISOString().slice(0, 10)}.docx`;
     
     // Tu00e9lu00e9charger le fichier
     console.log('Tu00e9lu00e9chargement du fichier Word:', fileName);
@@ -85,14 +85,8 @@ export async function exportSummaryToWord(
     // Cru00e9er une URL pour le blob
     const url = URL.createObjectURL(blob);
     
-    // Configurer le lien de tu00e9lu00e9chargement
-    link.href = url;
-    link.download = fileName;
-    link.style.display = 'none';
-    
-    // Ajouter le lien au document et cliquer dessus
-    document.body.appendChild(link);
-    link.click();
+    // Utiliser saveAs pour tu00e9lu00e9charger le fichier
+    saveAs(blob, fileName);
     
     // Nettoyer
     setTimeout(() => {

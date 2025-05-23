@@ -317,7 +317,7 @@ const Sidebar: React.FC<SidebarProps> = ({ onViewChange, user, isMobile = false,
           src="/img/logo_gilbert.png"
           alt="Gilbert"
           sx={{
-            height: '35px',
+            height: '28px',
             width: 'auto',
             display: 'block',
             marginTop: '2px',
