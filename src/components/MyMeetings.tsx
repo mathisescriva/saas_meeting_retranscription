@@ -25,6 +25,7 @@ import {
 import { alpha } from '@mui/material/styles';
 import MeetingSummaryRenderer from './MeetingSummaryRenderer';
 import TemplateSelectorModal from './TemplateSelectorModal';
+import SpeakerNameAutocomplete from './SpeakerNameAutocomplete';
 import {
   Delete as DeleteIcon,
   Refresh as RefreshIcon,
@@ -2068,21 +2069,19 @@ const MyMeetings: React.FC<MyMeetingsProps> = ({ user, isMobile = false }) => {
                               
                               <Box sx={{ flex: 1 }}>
                                 {isEditing ? (
-                                  <InputBase
+                                  <SpeakerNameAutocomplete
                                     value={editingName}
-                                    onChange={(e) => setEditingName(e.target.value)}
+                                    onChange={(value) => setEditingName(value)}
                                     placeholder="Nom du locuteur"
-                                    sx={{
-                                      width: '100%',
-                                      px: 1.5,
-                                      py: 0.5,
-                                      border: '1px solid #3B82F6',
-                                      borderRadius: 1,
-                                      fontSize: '0.9rem',
-                                      fontWeight: 500,
-                                      bgcolor: 'white'
-                                    }}
                                     autoFocus
+                                    onKeyPress={(e) => {
+                                      if (e.key === 'Enter') {
+                                        handleSaveSpeakerName(speaker, editingName);
+                                      } else if (e.key === 'Escape') {
+                                        cancelEditing();
+                                      }
+                                    }}
+                                    size="small"
                                   />
                                 ) : (
                                   <Box>

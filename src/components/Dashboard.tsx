@@ -1440,7 +1440,7 @@ const Dashboard: React.FC<DashboardProps> = ({ user, onRecordingStateChange }) =
                       mb: 1
                     }}
                   >
-                    Votre score d'engagement Gilbert
+                    Score Gilbert
                   </Typography>
                   <Typography variant="body1" color="text.secondary" sx={{ mb: 2, lineHeight: 1.6 }}>
                     Félicitations ! Vous faites partie des <Box component="span" sx={{ color: '#3B82F6', fontWeight: 600 }}>{topPercentage}% d'utilisateurs les plus actifs</Box> de Gilbert.
