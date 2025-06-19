@@ -47,13 +47,9 @@ import {
   Delete as DeleteIcon,
 } from '@mui/icons-material';
 
-import {
-  transcribeAudio 
-} from '../services/transcriptionService';
 import { User } from '../services/authService';
 import { getUserProfile } from '../services/profileService';
 import { useNotification } from '../contexts/NotificationContext';
-import { formatDuration } from '../utils/formatters';
 import SettingsDialog from './SettingsDialog';
 
 import {
@@ -67,7 +63,8 @@ import {
   getMeetingDetails,
   syncMeetingsCache,
   getMeetingsFromCache,
-  onTranscriptionCompleted
+  onTranscriptionCompleted,
+  Meeting
 } from '../services/meetingService';
 
 interface DashboardProps {
@@ -210,8 +207,8 @@ const Dashboard: React.FC<DashboardProps> = ({ user, onRecordingStateChange }) =
     const unsubscribe = onTranscriptionCompleted((meeting) => {
       console.log("Transcription completed event received for:", meeting.name || meeting.title);
       showSuccessPopup(
-        "Good news!",
-        `The transcription "${meeting.name || meeting.title || 'Untitled meeting'}" has been completed.`
+        "Bonne nouvelle !",
+        `La transcription "${meeting.name || meeting.title || 'Réunion sans titre'}" est terminée.`
       );
     });
     
@@ -244,13 +241,15 @@ const Dashboard: React.FC<DashboardProps> = ({ user, onRecordingStateChange }) =
         id: meeting.id,
         title: meeting.name || meeting.title || `Meeting ${meeting.id.substring(0, 8)}`,
         date: meeting.created_at ? new Date(meeting.created_at).toLocaleDateString() : 'Unknown date',
-        transcript_url: meeting.transcript_url || '',
         // Prendre en charge les deux formats de statut (transcript_status et transcription_status)
         status: meeting.transcript_status || meeting.transcription_status || 'unknown',
-        error_message: meeting.error_message || '',
         // Ces champs peuvent être undefined, c'est normal
         duration: meeting.duration_seconds || meeting.audio_duration,
-        participants: meeting.speakers_count
+        participants: meeting.speakers_count || 0,
+        // Calculer le progress basé sur le statut
+        progress: meeting.transcript_status === 'completed' || meeting.transcription_status === 'completed' ? 100 :
+                 meeting.transcript_status === 'processing' || meeting.transcription_status === 'processing' ? 50 :
+                 meeting.transcript_status === 'pending' || meeting.transcription_status === 'pending' ? 25 : 0
       }));
       
       console.log('Processed meetings:', processedMeetings);
@@ -296,6 +295,13 @@ const Dashboard: React.FC<DashboardProps> = ({ user, onRecordingStateChange }) =
       setIsLoading(false);
     }
   };
+
+  // Charger les meetings au montage du composant
+  useEffect(() => {
+    if (user) {
+      fetchMeetings();
+    }
+  }, [user]);
 
   // Charger le profil utilisateur
   useEffect(() => {
@@ -556,6 +562,91 @@ const Dashboard: React.FC<DashboardProps> = ({ user, onRecordingStateChange }) =
     }
   };
 
+  // Fonction helper pour convertir Meeting en RecentMeeting
+  const convertMeetingToRecentMeeting = (meeting: Meeting): RecentMeeting => {
+    return {
+      id: meeting.id,
+      title: meeting.title || meeting.name || 'Untitled',
+      date: meeting.created_at,
+      duration: meeting.audio_duration || meeting.duration_seconds || meeting.duration,
+      audio_duration: meeting.audio_duration,
+      participants: meeting.speakers_count || meeting.participants || 0,
+      progress: 0, // Valeur par défaut
+      status: meeting.transcript_status || meeting.transcription_status
+    };
+  };
+
+  // Fonction pour calculer le score d'engagement basé sur l'activité réelle
+  const calculateEngagementScore = (): number => {
+    if (meetingsList.length === 0) return 0;
+    
+    // Statistiques de base
+    const totalMeetings = meetingsList.length;
+    const totalMinutes = Math.floor(
+      meetingsList.reduce((total, meeting) => {
+        const duration = meeting.duration || meeting.audio_duration || 0;
+        return total + (typeof duration === 'number' ? duration : 0);
+      }, 0) / 60
+    );
+    const completedTranscriptions = meetingsList.filter(m => 
+      m.status === 'completed' || 
+      (m as any).transcript_status === 'completed' || 
+      (m as any).transcription_status === 'completed'
+    ).length;
+    
+    // Calcul du score (sur 100)
+    let score = 0;
+    
+    // Points pour les réunions (max 30 points)
+    score += Math.min(totalMeetings * 5, 30);
+    
+    // Points pour les minutes d'écoute (max 25 points)
+    score += Math.min(totalMinutes * 0.5, 25);
+    
+    // Points pour les transcriptions complétées (max 30 points)
+    score += Math.min(completedTranscriptions * 10, 30);
+    
+    // Bonus de régularité si l'utilisateur a des réunions récentes (max 10 points)
+    const recentMeetings = meetingsList.filter(meeting => {
+      const meetingDate = new Date(meeting.date);
+      const thirtyDaysAgo = new Date();
+      thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
+      return meetingDate >= thirtyDaysAgo;
+    }).length;
+    score += Math.min(recentMeetings * 2, 10);
+    
+    // Bonus de diversité si différentes durées de réunion (max 5 points)
+    const uniqueDurations = new Set(meetingsList.map(m => Math.floor((m.duration || 0) / 300))); // Groupes de 5 minutes
+    score += Math.min(uniqueDurations.size, 5);
+    
+    return Math.min(Math.round(score), 100);
+  };
+
+  // Fonction pour déterminer le niveau d'engagement basé sur le score
+  const getEngagementLevel = (score: number): string => {
+    if (score >= 90) return "Expert Gilbert 🏆";
+    if (score >= 75) return "Utilisateur avancé 🚀";
+    if (score >= 50) return "Utilisateur actif 🔥";
+    if (score >= 25) return "Débutant motivé 🌱";
+    return "Nouveau utilisateur 👋";
+  };
+
+  // Fonction pour calculer le pourcentage d'utilisateurs moins actifs
+  const getTopPercentage = (score: number): number => {
+    // Simulation basée sur le score - en réalité, cela viendrait d'une API
+    if (score >= 85) return 10; // Top 10%
+    if (score >= 70) return 25; // Top 25%
+    if (score >= 50) return 50; // Top 50%
+    if (score >= 30) return 75; // Top 75%
+    return 90; // Top 90%
+  };
+
+  // Calcul des métriques d'engagement
+  const engagementScore = calculateEngagementScore();
+  const topPercentage = getTopPercentage(engagementScore);
+  const engagementLevel = getEngagementLevel(engagementScore);
+  const pointsToNextLevel = engagementScore < 100 ? Math.ceil((Math.ceil(engagementScore / 10) * 10 + 10) - engagementScore) : 0;
+
   // Fonction pour sauvegarder l'enregistrement
   const saveRecording = async () => {
     if (!latestAudioFile || !titleInput.trim()) return;
@@ -566,7 +657,6 @@ const Dashboard: React.FC<DashboardProps> = ({ user, onRecordingStateChange }) =
     
     try {
       // Conserver le type MIME original du fichier audio
-      // La conversion forcée vers WAV peut causer des problèmes car le contenu ne correspond pas au type déclaré
       const originalMimeType = latestAudioFile.type;
       let fileExtension = 'webm'; // Extension par défaut
       
@@ -591,8 +681,6 @@ const Dashboard: React.FC<DashboardProps> = ({ user, onRecordingStateChange }) =
       console.log('Taille du fichier original:', Math.round(latestAudioFile.size / 1024) + ' KB');
       
       // Créer un nouveau fichier audio directement à partir du contenu brut
-      // plutôt que d'encapsuler le fichier existant, ce qui peut causer des problèmes
-      // Lire le contenu du fichier original
       const arrayBuffer = await latestAudioFile.arrayBuffer();
       console.log('Contenu du fichier lu avec succès, taille:', Math.round(arrayBuffer.byteLength / 1024) + ' KB');
       
@@ -609,65 +697,97 @@ const Dashboard: React.FC<DashboardProps> = ({ user, onRecordingStateChange }) =
       });
       
       // Vérifier que le fichier est valide avant de l'envoyer
-      if (audioFile.size < 1000) { // Moins de 1 KB est probablement un enregistrement vide ou corrompu
+      if (audioFile.size < 1000) {
         throw new Error("L'enregistrement audio est trop petit ou corrompu. Veuillez réessayer.");
       }
+
+      console.log(`Uploading recording "${titleInput}" (${audioFile.type}, ${(audioFile.size / 1024 / 1024).toFixed(2)} MB)...`);
       
-      // Simuler une progression d'upload
-      const interval = setInterval(() => {
-        setUploadProgress(prev => {
-          if (prev >= 90) {
-            clearInterval(interval);
-            return 90;
-          }
-          return prev + 10;
-        });
-      }, 300);
+      // Uploader la réunion en utilisant la même logique que transcribeAudio
+      const meeting = await uploadMeeting(audioFile, titleInput.trim(), {
+        onProgress: (progress) => {
+          setUploadProgress(progress);
+        }
+      });
       
-      // Uploader le fichier et démarrer la transcription
-      try {
-        // Importer la fonction transcribeAudio du service assemblyAI
-        const { transcribeAudio } = await import('../services/assemblyAI');
-        
-        // Ajouter des options supplémentaires pour le débogage
-        const options = {
-          onProgress: (progress: number) => {
-            console.log(`Upload progress: ${progress}%`);
-            setUploadProgress(Math.min(90, progress));
-          },
-          onError: (error: Error) => {
-            console.error('Upload error callback:', error);
-          },
-          // Utiliser le titre comme paramètre pour l'upload
-          title: titleInput.trim(),
-          // Forcer le format audio pour AssemblyAI
-          format: fileExtension
-        };
-        
-        // Appeler la fonction avec les bons paramètres
-        await transcribeAudio(audioFile, options);
-        
-        clearInterval(interval);
-        setUploadProgress(100);
-        
-        // Réinitialiser l'état
-        setTimeout(() => {
-          setShowDialog(false);
-          setTitleInput('');
-          setLatestAudioFile(null);
-          setIsUploading(false);
-          setUploadProgress(0);
-        }, 1000);
-      } catch (transcriptionError) {
-        console.error('Erreur de transcription détaillée:', transcriptionError);
-        clearInterval(interval);
-        setErrorState({ message: `Erreur lors de la transcription: ${transcriptionError instanceof Error ? transcriptionError.message : 'Erreur inconnue'}` });
-        setIsUploading(false);
+      // Vérifier que l'upload a réussi et que nous avons un ID valide
+      if (!meeting || !meeting.id) {
+        throw new Error("L'upload a réussi mais aucun ID de réunion n'a été retourné par le serveur");
       }
+      
+      console.log(`Recording uploaded successfully with ID: ${meeting.id}`);
+      setUploadProgress(100);
+      
+      // Afficher un message de succès immédiat
+      showSuccessPopup(
+        "Upload réussi !",
+        `Votre enregistrement "${titleInput}" a été uploadé. Vous pouvez le retrouver dans "Mes réunions récentes".`
+      );
+      
+      // Commencer à surveiller le statut de la transcription en arrière-plan
+      const stopPolling = watchTranscriptionStatus(
+        meeting.id,
+        (status, updatedMeeting) => {
+          console.log(`Transcription status update: ${status}`);
+          
+          // Mettre à jour les réunions avec la dernière version
+          if (status === 'completed') {
+            setMeetingsList(prev => {
+              // Créer une copie pour éviter de modifier l'état directement
+              const updated = [...prev];
+              // Trouver l'index de la réunion mise à jour
+              const index = updated.findIndex(m => m.id === updatedMeeting.id);
+              // Convertir Meeting en RecentMeeting
+              const recentMeeting = convertMeetingToRecentMeeting(updatedMeeting);
+              // Remplacer ou ajouter
+              if (index >= 0) {
+                updated[index] = recentMeeting;
+              } else {
+                updated.unshift(recentMeeting);
+              }
+              return updated;
+            });
+            
+            // Afficher une notification de succès
+            showSuccessPopup(
+              "Transcription terminée !",
+              `La transcription de "${updatedMeeting.title || updatedMeeting.name}" est prête.`
+            );
+          } else if (status === 'error') {
+            // Notification d'erreur
+            showSuccessPopup(
+              "Erreur de transcription",
+              "Une erreur est survenue pendant la transcription."
+            );
+          }
+        }
+      );
+      
+      // Mise à jour immédiate de la liste sans attendre la prochaine requête
+      const recentMeeting = convertMeetingToRecentMeeting(meeting);
+      setMeetingsList(prev => [recentMeeting, ...prev]);
+      
+      // Réinitialiser l'état et fermer la modal après succès
+      setTimeout(() => {
+        setShowDialog(false);
+        setTitleInput('');
+        setLatestAudioFile(null);
+        setIsUploading(false);
+        setUploadProgress(0);
+        setErrorState(null);
+      }, 1500); // Délai de 1.5 secondes pour laisser le temps de voir le message de succès
+      
     } catch (error) {
-      console.error('Erreur lors de la création du fichier audio:', error);
-      setErrorState({ message: `Erreur lors de la préparation de l'enregistrement: ${error instanceof Error ? error.message : 'Erreur inconnue'}` });
+      console.error('Error during recording upload:', error);
+      let errorMessage = "Une erreur est survenue pendant l'upload de l'enregistrement.";
+      
+      if (error instanceof Error) {
+        errorMessage = error.message;
+      }
+      
+      setErrorState({ message: errorMessage });
       setIsUploading(false);
+      setUploadProgress(0);
     }
   };
 
@@ -905,8 +1025,8 @@ const Dashboard: React.FC<DashboardProps> = ({ user, onRecordingStateChange }) =
       
       // Afficher un message de succès
       showSuccessPopup(
-        "Upload successful!",
-        `Your meeting "${title}" has been uploaded. You can find it in "My Recent Meetings".`
+        "Upload réussi !",
+        `Votre enregistrement "${title}" a été uploadé. Vous pouvez le retrouver dans "Mes réunions récentes".`
       );
       
       // Commencer à surveiller le statut de la transcription
@@ -922,11 +1042,13 @@ const Dashboard: React.FC<DashboardProps> = ({ user, onRecordingStateChange }) =
               const updated = [...prev];
               // Trouver l'index de la réunion mise à jour
               const index = updated.findIndex(m => m.id === updatedMeeting.id);
+              // Convertir Meeting en RecentMeeting
+              const recentMeeting = convertMeetingToRecentMeeting(updatedMeeting);
               // Remplacer ou ajouter
               if (index >= 0) {
-                updated[index] = updatedMeeting;
+                updated[index] = recentMeeting;
               } else {
-                updated.unshift(updatedMeeting);
+                updated.unshift(recentMeeting);
               }
               return updated;
             });
@@ -934,22 +1056,21 @@ const Dashboard: React.FC<DashboardProps> = ({ user, onRecordingStateChange }) =
             // Afficher une notification de succès
             showSuccessPopup(
               "Transcription terminée !",
-              `La transcription de "${updatedMeeting.title || updatedMeeting.name}" est prête.`,
-              'success'
+              `La transcription de "${updatedMeeting.title || updatedMeeting.name}" est prête.`
             );
-          } else if (status === 'error' || status === 'failed') {
+          } else if (status === 'error') {
             // Notification d'erreur
             showSuccessPopup(
               "Erreur de transcription",
-              updatedMeeting.error_message || "Une erreur est survenue pendant la transcription.",
-              'error'
+              "Une erreur est survenue pendant la transcription."
             );
           }
         }
       );
       
       // Mise à jour immédiate de la liste sans attendre la prochaine requête
-      setMeetingsList(prev => [meeting, ...prev]);
+      const recentMeeting = convertMeetingToRecentMeeting(meeting);
+      setMeetingsList(prev => [recentMeeting, ...prev]);
       
     } catch (error) {
       console.error('Error during upload/transcription:', error);
@@ -1102,7 +1223,8 @@ const Dashboard: React.FC<DashboardProps> = ({ user, onRecordingStateChange }) =
                 WebkitTextFillColor: 'transparent',
                 letterSpacing: '-0.5px',
                 ml: 0.5
-              }}>
+              }}
+            >
               👋 Content de te revoir
             </Typography>
           </Box>
@@ -1266,6 +1388,319 @@ const Dashboard: React.FC<DashboardProps> = ({ user, onRecordingStateChange }) =
         </Grid>
       </Box>
 
+      {/* Carte d'engagement utilisateur */}
+      <Box sx={{ mb: 6 }}>
+        <Paper
+          sx={{
+            p: 4,
+            borderRadius: '16px',
+            background: 'linear-gradient(135deg, rgba(59, 130, 246, 0.02) 0%, rgba(99, 102, 241, 0.02) 50%, rgba(168, 85, 247, 0.02) 100%)',
+            border: '1px solid rgba(0, 0, 0, 0.05)',
+            boxShadow: '0 4px 12px rgba(0, 0, 0, 0.05)',
+            transition: 'all 0.3s ease-in-out',
+            overflow: 'hidden',
+            position: 'relative',
+            '&:hover': {
+              transform: 'translateY(-2px)',
+              boxShadow: '0 8px 24px rgba(0, 0, 0, 0.1)',
+            }
+          }}
+        >
+          <Grid container spacing={3} alignItems="center">
+            {/* Section principale avec statistiques */}
+            <Grid item xs={12} md={8}>
+              <Box sx={{ display: 'flex', alignItems: 'flex-start', mb: 3 }}>
+                {/* Avatar Gilbert avec animation */}
+                <Box
+                  sx={{
+                    width: 60,
+                    height: 60,
+                    borderRadius: '50%',
+                    background: 'linear-gradient(135deg, #3B82F6 0%, #6366F1 100%)',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    mr: 3,
+                    flexShrink: 0,
+                    boxShadow: '0 8px 20px rgba(59, 130, 246, 0.15)',
+                    position: 'relative'
+                  }}
+                >
+                  <Typography sx={{ fontSize: '28px', filter: 'drop-shadow(0 2px 4px rgba(0,0,0,0.1))' }}>
+                    🏆
+                  </Typography>
+                </Box>
+
+                <Box sx={{ flex: 1 }}>
+                  <Typography 
+                    variant="h5" 
+                    sx={{ 
+                      fontWeight: 600,
+                      color: 'text.primary',
+                      mb: 1
+                    }}
+                  >
+                    Votre score d'engagement Gilbert
+                  </Typography>
+                  <Typography variant="body1" color="text.secondary" sx={{ mb: 2, lineHeight: 1.6 }}>
+                    Félicitations ! Vous faites partie des <Box component="span" sx={{ color: '#3B82F6', fontWeight: 600 }}>{topPercentage}% d'utilisateurs les plus actifs</Box> de Gilbert.
+                    Continuez sur cette lancée ! 🚀
+                  </Typography>
+
+                  {/* Statistiques détaillées */}
+                  <Box sx={{ mb: 3 }}>
+                    <Grid container spacing={2}>
+                      <Grid item xs={6} sm={3}>
+                        <Box sx={{ textAlign: 'center' }}>
+                          <Typography 
+                            variant="h4" 
+                            sx={{ 
+                              fontWeight: 700,
+                              color: '#3B82F6',
+                              mb: 0.5
+                            }}
+                          >
+                            {meetingsList.length}
+                          </Typography>
+                          <Typography variant="caption" color="text.secondary" sx={{ fontWeight: 500 }}>
+                            Réunions
+                          </Typography>
+                        </Box>
+                      </Grid>
+                      <Grid item xs={6} sm={3}>
+                        <Box sx={{ textAlign: 'center' }}>
+                          <Typography 
+                            variant="h4" 
+                            sx={{ 
+                              fontWeight: 700,
+                              color: '#6366F1',
+                              mb: 0.5
+                            }}
+                          >
+                            {Math.floor(
+                              meetingsList.reduce((total, meeting) => {
+                                const duration = meeting.duration || meeting.audio_duration || 0;
+                                return total + (typeof duration === 'number' ? duration : 0);
+                              }, 0) / 60
+                            )}
+                          </Typography>
+                          <Typography variant="caption" color="text.secondary" sx={{ fontWeight: 500 }}>
+                            Minutes
+                          </Typography>
+                        </Box>
+                      </Grid>
+                      <Grid item xs={6} sm={3}>
+                        <Box sx={{ textAlign: 'center' }}>
+                          <Typography 
+                            variant="h4" 
+                            sx={{ 
+                              fontWeight: 700,
+                              color: '#8B5CF6',
+                              mb: 0.5
+                            }}
+                          >
+                            {meetingsList.filter(m => 
+                              m.status === 'completed' || 
+                              (m as any).transcript_status === 'completed' || 
+                              (m as any).transcription_status === 'completed'
+                            ).length}
+                          </Typography>
+                          <Typography variant="caption" color="text.secondary" sx={{ fontWeight: 500 }}>
+                            Transcrites
+                          </Typography>
+                        </Box>
+                      </Grid>
+                      <Grid item xs={6} sm={3}>
+                        <Box sx={{ textAlign: 'center' }}>
+                          <Typography 
+                            variant="h4" 
+                            sx={{ 
+                              fontWeight: 700,
+                              color: '#F97316',
+                              mb: 0.5
+                            }}
+                          >
+                            {engagementScore}
+                          </Typography>
+                          <Typography variant="caption" color="text.secondary" sx={{ fontWeight: 500 }}>
+                            Score
+                          </Typography>
+                        </Box>
+                      </Grid>
+                    </Grid>
+                  </Box>
+
+                  {/* Barre de progression du score */}
+                  <Box sx={{ mb: 2 }}>
+                    <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 1 }}>
+                      <Typography variant="body2" sx={{ fontWeight: 600, color: 'text.primary' }}>
+                        Niveau d'engagement
+                      </Typography>
+                      <Typography variant="body2" sx={{ fontWeight: 600, color: '#3B82F6' }}>
+                        {engagementScore}/100
+                      </Typography>
+                    </Box>
+                    <LinearProgress 
+                      variant="determinate" 
+                      value={engagementScore} 
+                      sx={{ 
+                        height: 8,
+                        borderRadius: 4,
+                        backgroundColor: 'rgba(59, 130, 246, 0.1)',
+                        '& .MuiLinearProgress-bar': {
+                          background: 'linear-gradient(90deg, #3B82F6 0%, #6366F1 100%)',
+                          borderRadius: 4,
+                        }
+                      }}
+                    />
+                    <Typography 
+                      variant="caption" 
+                      color="text.secondary" 
+                      sx={{ 
+                        display: 'block', 
+                        mt: 1,
+                        fontStyle: 'italic'
+                      }}
+                    >
+                      {pointsToNextLevel > 0 ? `Prochain niveau dans ${pointsToNextLevel} points ! 🎯` : 'Félicitations ! Vous avez atteint le niveau maximum ! 🏆'}
+                    </Typography>
+                  </Box>
+
+                  {/* Badges de récompenses */}
+                  <Stack direction="row" spacing={1} sx={{ flexWrap: 'wrap', gap: 1 }}>
+                    <Chip 
+                      icon={<span>🔥</span>} 
+                      label={engagementLevel} 
+                      size="small"
+                      sx={{ 
+                        bgcolor: 'rgba(239, 68, 68, 0.1)',
+                        color: '#DC2626',
+                        fontWeight: 500,
+                        '& .MuiChip-icon': { fontSize: '14px' }
+                      }}
+                    />
+                    <Chip 
+                      icon={<span>⭐</span>} 
+                      label={`Top ${topPercentage}%`} 
+                      size="small"
+                      sx={{ 
+                        bgcolor: 'rgba(245, 158, 11, 0.1)',
+                        color: '#D97706',
+                        fontWeight: 500,
+                        '& .MuiChip-icon': { fontSize: '14px' }
+                      }}
+                    />
+                    {engagementScore >= 75 && (
+                      <Chip 
+                        icon={<span>🎯</span>} 
+                        label="Expert Gilbert" 
+                        size="small"
+                        sx={{ 
+                          bgcolor: 'rgba(59, 130, 246, 0.1)',
+                          color: '#2563EB',
+                          fontWeight: 500,
+                          '& .MuiChip-icon': { fontSize: '14px' }
+                        }}
+                      />
+                    )}
+                  </Stack>
+                </Box>
+              </Box>
+            </Grid>
+
+            {/* Graphique circulaire du score */}
+            <Grid item xs={12} md={4}>
+              <Box sx={{ 
+                display: 'flex', 
+                justifyContent: 'center',
+                alignItems: 'center',
+                position: 'relative'
+              }}>
+                <Box
+                  sx={{
+                    width: 140,
+                    height: 140,
+                    borderRadius: '50%',
+                    background: `conic-gradient(#3B82F6 0% ${engagementScore}%, rgba(59, 130, 246, 0.08) ${engagementScore}% 100%)`,
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    position: 'relative',
+                    boxShadow: '0 8px 32px rgba(59, 130, 246, 0.15)',
+                    transition: 'all 0.3s ease',
+                    '&:hover': {
+                      transform: 'scale(1.05)',
+                      boxShadow: '0 12px 40px rgba(59, 130, 246, 0.25)',
+                    },
+                    '&::before': {
+                      content: '""',
+                      width: 105,
+                      height: 105,
+                      borderRadius: '50%',
+                      backgroundColor: 'background.paper',
+                      position: 'absolute',
+                      boxShadow: 'inset 0 2px 8px rgba(0, 0, 0, 0.05)',
+                    },
+                    // Effet de brillance
+                    '&::after': {
+                      content: '""',
+                      position: 'absolute',
+                      top: '15px',
+                      left: '15px',
+                      width: '40px',
+                      height: '40px',
+                      borderRadius: '50%',
+                      background: 'linear-gradient(135deg, rgba(255, 255, 255, 0.3) 0%, rgba(255, 255, 255, 0.1) 100%)',
+                      filter: 'blur(8px)',
+                      opacity: 0.8,
+                    }
+                  }}
+                >
+                  <Box sx={{ 
+                    position: 'relative', 
+                    zIndex: 1, 
+                    textAlign: 'center',
+                    display: 'flex',
+                    flexDirection: 'column',
+                    alignItems: 'center',
+                    justifyContent: 'center'
+                  }}>
+                    <Typography 
+                      variant="h2" 
+                      sx={{ 
+                        fontWeight: 800,
+                        background: 'linear-gradient(135deg, #3B82F6 0%, #6366F1 100%)',
+                        backgroundClip: 'text',
+                        WebkitBackgroundClip: 'text',
+                        color: 'transparent',
+                        WebkitTextFillColor: 'transparent',
+                        filter: 'drop-shadow(0 2px 4px rgba(59, 130, 246, 0.2))',
+                        lineHeight: 0.9,
+                        mb: 0.5
+                      }}
+                    >
+                      {engagementScore}
+                    </Typography>
+                    <Typography 
+                      variant="caption" 
+                      sx={{ 
+                        color: 'text.secondary',
+                        fontWeight: 600,
+                        fontSize: '10px',
+                        letterSpacing: '0.5px',
+                        textTransform: 'uppercase'
+                      }}
+                    >
+                      SCORE
+                    </Typography>
+                  </Box>
+                </Box>
+              </Box>
+            </Grid>
+          </Grid>
+        </Paper>
+      </Box>
+
       {/* Features Grid */}
       <Typography variant="h5" sx={{ mb: 3, fontWeight: 600 }}>
       Fonctionnalités disponibles
@@ -1324,15 +1759,15 @@ const Dashboard: React.FC<DashboardProps> = ({ user, onRecordingStateChange }) =
 
       {/* Dialogue pour nommer l'enregistrement */}
       <Dialog open={showDialog} onClose={() => !isUploading && setShowDialog(false)}>
-        <DialogTitle>Save Recording</DialogTitle>
+        <DialogTitle>Sauvegarder l'enregistrement</DialogTitle>
         <DialogContent>
           <Typography variant="body2" sx={{ mb: 2 }}>
-            Please name your recording to save it.
+            Veuillez nommer votre enregistrement pour le sauvegarder.
           </Typography>
           <TextField
             autoFocus
             margin="dense"
-            label="Recording Name"
+            label="Nom de l'enregistrement"
             fullWidth
             variant="outlined"
             value={titleInput}
@@ -1347,7 +1782,7 @@ const Dashboard: React.FC<DashboardProps> = ({ user, onRecordingStateChange }) =
                 sx={{ borderRadius: 1 }}
               />
               <Typography variant="caption" sx={{ display: 'block', mt: 1, textAlign: 'center' }}>
-                {uploadProgress < 100 ? 'Uploading and processing...' : 'Complete!'}
+                {uploadProgress < 100 ? 'Upload et traitement en cours...' : 'Terminé !'}
               </Typography>
             </Box>
           )}
@@ -1359,14 +1794,14 @@ const Dashboard: React.FC<DashboardProps> = ({ user, onRecordingStateChange }) =
         </DialogContent>
         <DialogActions>
           <Button onClick={() => setShowDialog(false)} disabled={isUploading}>
-            Cancel
+            Annuler
           </Button>
           <Button 
             onClick={saveRecording} 
             variant="contained" 
             disabled={!titleInput.trim() || isUploading}
           >
-            {isUploading ? 'Processing...' : 'Save'}
+            {isUploading ? 'Traitement...' : 'Sauvegarder'}
           </Button>
         </DialogActions>
       </Dialog>

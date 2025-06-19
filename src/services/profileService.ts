@@ -1,4 +1,4 @@
-import apiClient from './apiClient';
+import apiClient, { API_BASE_URL } from './apiClient';
 
 // Interface pour les données de profil
 export interface ProfileData {
@@ -12,30 +12,44 @@ export interface ProfileData {
 /**
  * Formate l'URL d'une image si nécessaire
  * Si l'URL est relative, on utilise l'URL de base de l'API
+ * Ajoute un cache-buster pour forcer le rafraîchissement de l'image
  */
 function formatImageUrl(url: string | null): string | null {
   if (!url) return null;
   
+  let fullUrl: string;
+  
+  console.log(`Formatage de l'URL d'image - URL originale: ${url}, API_BASE_URL: ${API_BASE_URL}`);
+  
   // Si l'URL est déjà absolue (commence par http:// ou https://), la retourner telle quelle
   if (url.startsWith('http://') || url.startsWith('https://')) {
-    return url;
+    fullUrl = url;
+    console.log('URL déjà absolue, pas de transformation nécessaire');
+  } else {
+    // Pour les URLs relatives, utiliser l'URL de base de l'API
+    const apiBaseUrl = API_BASE_URL;
+    
+    // Assurer que nous n'avons pas de barres obliques en double
+    if (url.startsWith('/') && apiBaseUrl.endsWith('/')) {
+      fullUrl = `${apiBaseUrl}${url.substring(1)}`;
+    } else if (!url.startsWith('/') && !apiBaseUrl.endsWith('/')) {
+      // Gérer le cas où apiBaseUrl n'a pas de barre oblique finale et url n'a pas de barre initiale
+      fullUrl = `${apiBaseUrl}/${url}`;
+    } else {
+      fullUrl = `${apiBaseUrl}${url}`;
+    }
+    console.log(`URL relative transformée: ${url} -> ${fullUrl}`);
   }
   
-  // Pour les URLs relatives, utiliser la base de l'API
-  // Récupérer la base URL du service API client pour être cohérent
-  const apiBaseUrl = import.meta.env.VITE_API_URL || '';
+  // Ajouter un cache-buster (timestamp) pour forcer le rafraîchissement de l'image
+  // Cela évite les problèmes de cache du navigateur lorsque l'image est mise à jour
+  const separator = fullUrl.includes('?') ? '&' : '?';
+  const cacheBuster = `v=${Date.now()}`;
+  const finalUrl = `${fullUrl}${separator}${cacheBuster}`;
   
-  // Assurer que nous n'avons pas de barres obliques en double
-  if (url.startsWith('/') && apiBaseUrl.endsWith('/')) {
-    return `${apiBaseUrl}${url.substring(1)}`;
-  }
+  console.log(`Image URL finale avec cache-buster: ${finalUrl}`);
   
-  // Gérer le cas où apiBaseUrl n'a pas de barre oblique finale et url n'a pas de barre initiale
-  if (!url.startsWith('/') && !apiBaseUrl.endsWith('/')) {
-    return `${apiBaseUrl}/${url}`;
-  }
-  
-  return `${apiBaseUrl}${url}`;
+  return finalUrl;
 }
 
 /**
@@ -90,8 +104,11 @@ export async function uploadProfilePicture(file: File): Promise<ProfileData> {
   );
   
   // Log de la réponse pour déboguer
-  console.log('Réponse du serveur après upload:', response);
+  console.log('Réponse brute du serveur après upload:', response);
   
   // Formater l'URL de l'image si nécessaire
-  return formatProfileData(response);
+  const formattedProfile = formatProfileData(response);
+  console.log('Profil formatté avec cache-buster:', formattedProfile);
+  
+  return formattedProfile;
 }

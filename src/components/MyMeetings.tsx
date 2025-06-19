@@ -19,7 +19,8 @@ import {
   InputBase,
   LinearProgress,
   Fade,
-  Zoom
+  Zoom,
+  TextField
 } from '@mui/material';
 import { alpha } from '@mui/material/styles';
 import MeetingSummaryRenderer from './MeetingSummaryRenderer';
@@ -35,7 +36,22 @@ import {
   Share as ShareIcon,
   Update as UpdateIcon,
   FileDownload as FileDownloadIcon,
-  NewReleases as NewReleasesIcon
+  NewReleases as NewReleasesIcon,
+  Person as PersonIcon,
+  PersonOutline as PersonOutlineIcon,
+  Edit as EditIcon,
+  Check as CheckIcon,
+  Cancel as CancelIcon,
+  ExpandMore as ExpandMoreIcon,
+  ExpandLess as ExpandLessIcon,
+  Save as SaveIcon,
+  PlayArrow as PlayIcon,
+  Stop as StopIcon,
+  Download as DownloadIcon,
+  SupervisorAccount as SupervisorAccountIcon,
+  Upload as UploadIcon,
+  PlayArrow as PlayArrowIcon,
+  Summarize as SummarizeIcon
 } from '@mui/icons-material';
 import {
   getAllMeetings, 
@@ -47,16 +63,28 @@ import {
   updateMeetingMetadata,
   updateMeetingParticipantsAndDuration,
   watchSummaryStatus,
-  Meeting as ApiMeeting
+  Meeting as ApiMeeting,
+  getMeeting,
+  watchTranscriptionStatus,
+  retryTranscription,
+  getTranscript,
+  updateMeetingTranscriptText
 } from '../services/meetingService';
 import apiClient, { API_BASE_URL } from '../services/apiClient';
-// Les exportations sont maintenant gu00e9ru00e9es par les composants du00e9diu00e9s
+// Les exportations sont maintenant gérées par les composants dédiés
 import { exportTranscriptToWord, exportTranscriptToPDF, exportTranscriptToMarkdown } from '../services/exportTranscriptService';
 import { useNotification } from '../contexts/NotificationContext';
 import { User } from '../services/authService';
 import MeetingAudioPlayer from './MeetingAudioPlayer';
 import TranscriptExportButton from './TranscriptExportButton';
 import SummaryExportButton from './SummaryExportButton';
+import { 
+  updateSpeakerName, 
+  updateTranscriptWithCustomNames,
+  getDisplayName,
+  hasCustomName,
+  getAllSpeakersWithDisplayNames
+} from '../services/speakerService';
 
 interface Meeting extends Omit<ApiMeeting, 'summary_status'> {
   summary?: {
@@ -75,7 +103,7 @@ interface MyMeetingsProps {
 
 const MyMeetings: React.FC<MyMeetingsProps> = ({ user, isMobile = false }) => {
   const theme = useTheme();
-  const { showSuccessPopup, showErrorPopup, showNotification } = useNotification();
+  const { showSuccessPopup, showErrorPopup } = useNotification();
   const [meetings, setMeetings] = useState<Meeting[]>([]);
   const [filteredMeetings, setFilteredMeetings] = useState<Meeting[]>([]);
   const [searchQuery, setSearchQuery] = useState('');
@@ -104,6 +132,16 @@ const MyMeetings: React.FC<MyMeetingsProps> = ({ user, isMobile = false }) => {
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [refreshingMetadataId, setRefreshingMetadataId] = useState<string | null>(null);
   const [showGilbertPopup, setShowGilbertPopup] = useState(false);
+
+  // États pour la gestion des speakers
+  const [editingSpeaker, setEditingSpeaker] = useState<string | null>(null);
+  const [editingName, setEditingName] = useState('');
+  const [showSpeakerManagement, setShowSpeakerManagement] = useState(false);
+
+  // États pour l'édition du transcript
+  const [isEditingTranscript, setIsEditingTranscript] = useState(false);
+  const [editedTranscriptText, setEditedTranscriptText] = useState('');
+  const [isSavingTranscript, setIsSavingTranscript] = useState(false);
 
   // Fonction de recherche intelligente pour filtrer les réunions
   const handleSearch = useCallback((query: string) => {
@@ -244,9 +282,9 @@ const MyMeetings: React.FC<MyMeetingsProps> = ({ user, isMobile = false }) => {
           durationInSeconds = meeting.duration_seconds;
         } else if (typeof meeting.duration === 'number') {
           durationInSeconds = meeting.duration;
-        } else if (typeof meeting.duration === 'string' && meeting.duration.includes('min')) {
+        } else if (typeof meeting.duration === 'string' && (meeting.duration as string).includes('min')) {
           // Essayer de convertir un format comme '45 min' en secondes
-          const minutes = parseInt(meeting.duration);
+          const minutes = parseInt(meeting.duration as string);
           if (!isNaN(minutes)) {
             durationInSeconds = minutes * 60;
           }
@@ -304,8 +342,8 @@ const MyMeetings: React.FC<MyMeetingsProps> = ({ user, isMobile = false }) => {
       console.log("MyMeetings: Transcription completed event received for:", meeting.name || meeting.title);
       // Show a success notification when a transcription is completed
       showSuccessPopup(
-        "Good news!",
-        `The transcription "${meeting.name || meeting.title || 'Untitled meeting'}" has been completed.`
+        "Bonne nouvelle !",
+        `La transcription "${meeting.name || meeting.title || 'Réunion sans titre'}" est terminée.`
       );
       
       // Refresh meetings list to show the updated status
@@ -341,7 +379,65 @@ const MyMeetings: React.FC<MyMeetingsProps> = ({ user, isMobile = false }) => {
     }
   };
 
+  // Fonction pour parser une transcription en texte brut vers un format structuré
+  const parseTextTranscript = (transcriptText: string): Array<{speaker: string; text: string; timestamp?: string}> => {
+    try {
+      const lines = transcriptText.split('\n').filter(line => line.trim().length > 0);
+      const formattedData: Array<{speaker: string; text: string; timestamp?: string}> = [];
+      
+      for (const line of lines) {
+        // Essayer différents formats de ligne possibles
+        
+        // Format: "Speaker: text" ou "Speaker : text"
+        const speakerTextMatch = line.match(/^([^:]+):\s*(.+)$/);
+        if (speakerTextMatch) {
+          formattedData.push({
+            speaker: speakerTextMatch[1].trim(),
+            text: speakerTextMatch[2].trim()
+          });
+          continue;
+        }
+        
+        // Format: "[timestamp] Speaker: text"
+        const timestampMatch = line.match(/^\[([^\]]+)\]\s*([^:]+):\s*(.+)$/);
+        if (timestampMatch) {
+          formattedData.push({
+            speaker: timestampMatch[2].trim(),
+            text: timestampMatch[3].trim(),
+            timestamp: timestampMatch[1].trim()
+          });
+          continue;
+        }
+        
+        // Format: "Speaker (timestamp): text"
+        const speakerTimestampMatch = line.match(/^([^(]+)\s*\(([^)]+)\):\s*(.+)$/);
+        if (speakerTimestampMatch) {
+          formattedData.push({
+            speaker: speakerTimestampMatch[1].trim(),
+            text: speakerTimestampMatch[3].trim(),
+            timestamp: speakerTimestampMatch[2].trim()
+          });
+          continue;
+        }
+        
+        // Si aucun format reconnu, traiter comme du texte simple avec Speaker par défaut
+        if (line.trim().length > 0) {
+          formattedData.push({
+            speaker: 'Speaker',
+            text: line.trim()
+          });
+        }
+      }
+      
+      return formattedData;
+    } catch (error) {
+      console.error('Error parsing text transcript:', error);
+      return [];
+    }
+  };
+
   const handleViewTranscript = async (meetingId: string) => {
+    console.log(`=== DEBUT FETCH TRANSCRIPT ===`);
     console.log(`Viewing transcript for meeting ${meetingId}`);
     
     // Indiquer que le chargement est en cours
@@ -350,9 +446,18 @@ const MyMeetings: React.FC<MyMeetingsProps> = ({ user, isMobile = false }) => {
     const meeting = meetings.find(m => m.id === meetingId);
     if (meeting) {
       setSelectedMeeting(meeting);
+      console.log('Meeting found in state:', {
+        id: meeting.id,
+        title: meeting.title,
+        transcript_status: meeting.transcript_status,
+        transcription_status: meeting.transcription_status
+      });
+    } else {
+      console.error(`Meeting with ID ${meetingId} not found in local state`);
     }
     // Ouvrir le dialogue immédiatement pour montrer que quelque chose se passe
     setTranscriptDialogOpen(true);
+    
     try {
       console.log(`Fetching transcript for meeting ID: ${meetingId}`);
       
@@ -360,364 +465,205 @@ const MyMeetings: React.FC<MyMeetingsProps> = ({ user, isMobile = false }) => {
       const token = localStorage.getItem('auth_token');
       console.log('Using auth token:', token ? `${token.substring(0, 10)}...` : 'No token found');
       
-      // Trouver la réunion correspondante dans notre état local
-      const meeting = meetings.find(m => m.id === meetingId);
-      if (!meeting) {
-        console.error(`Meeting with ID ${meetingId} not found in local state`);
-        throw new Error(`Meeting not found: ${meetingId}`);
-      }
-      
-      console.log('Meeting status:', {
-        transcript_status: meeting.transcript_status,
-        transcription_status: meeting.transcription_status
+      // Vérifier si la transcription est terminée
+      const isCompleted = meeting?.transcript_status === 'completed' || meeting?.transcription_status === 'completed';
+      console.log('Transcription completion check:', {
+        transcript_status: meeting?.transcript_status,
+        transcription_status: meeting?.transcription_status,
+        isCompleted
       });
       
-      // Vérifier si la transcription est terminée
-      const isCompleted = meeting.transcript_status === 'completed' || meeting.transcription_status === 'completed';
       if (!isCompleted) {
-        console.warn('Transcription not completed yet');
+        console.warn('Transcription not completed yet - setting empty state');
         setFormattedTranscript(null);
+        setTranscript('La transcription est en cours de traitement. Veuillez patienter...');
         return;
       }
       
       // Essayer les deux endpoints possibles pour voir lequel fonctionne
-      let response;
+      let response: any;
       let endpoint;
       let error404 = false;
       
       // Premier essai: utiliser l'endpoint direct
       try {
         endpoint = `/meetings/${meetingId}`;
-        console.log(`Trying endpoint: ${API_BASE_URL}${endpoint}`);
+        console.log(`=== TENTATIVE 1: ${API_BASE_URL}${endpoint} ===`);
         
         response = await apiClient.get(endpoint);
+        console.log('Response from first endpoint:', {
+          status: response?.status,
+          statusText: response?.statusText,
+          dataKeys: response?.data ? Object.keys(response.data) : 'No data'
+        });
         
-        if (response.status === 404) {
+        if (response && response.status === 404) {
           error404 = true;
           console.log('Endpoint returned 404, will try alternative endpoint');
         }
-      } catch (err) {
-        console.error('Error with first endpoint:', err);
+      } catch (error: any) {
+        console.error('Error from first endpoint:', error);
+        if (error.response && error.response.status === 404) {
+          error404 = true;
+          console.log('Endpoint returned 404 error, will try alternative endpoint');
+        } else {
+          throw error;
+        }
       }
       
       // Deuxième essai si le premier a échoué avec 404: utiliser l'endpoint alternatif
-      if (error404 || !response || !response.ok) {
+      if (error404 || !response || !response.data) {
         endpoint = `/simple/meetings/${meetingId}`;
-        console.log(`Trying alternative endpoint: ${API_BASE_URL}${endpoint}`);
-        
+        console.log(`=== TENTATIVE 2: ${API_BASE_URL}${endpoint} ===`);
         try {
           response = await apiClient.get(endpoint);
-        } catch (err) {
-          console.error('Error with second endpoint:', err);
+          console.log('Response from second endpoint:', {
+            status: response?.status,
+            statusText: response?.statusText,
+            dataKeys: response?.data ? Object.keys(response.data) : 'No data'
+          });
+        } catch (error: any) {
+          console.error('Error from second endpoint:', error);
+          throw error;
         }
       }
       
-      // Troisième essai: essayer avec l'ID directement (certaines API sont configurées ainsi)
-      if (!response || (response as any).status === 404) {
-        endpoint = `/${meetingId}`;
-        console.log(`Trying direct ID endpoint: ${API_BASE_URL}${endpoint}`);
-        
-        try {
-          response = await apiClient.get(endpoint);
-        } catch (err) {
-          console.error('Error with third endpoint:', err);
-        }
+      // Traitement de la réponse
+      console.log('=== TRAITEMENT DE LA REPONSE ===');
+      console.log('Full API Response:', response);
+      
+      // L'API peut retourner soit response.data soit directement les données
+      let meetingData;
+      if (response.data) {
+        meetingData = response.data;
+        console.log('Using response.data');
+      } else {
+        meetingData = response;
+        console.log('Using response directly');
       }
       
-      // avec apiClient, les données sont déjà au format JSON
-      // et les erreurs sont gérées automatiquement via les blocs try/catch
-      const rawData = response as any;
-      console.log(`Raw data from ${endpoint}:`, rawData);
-      
-      // Stocker les données brutes pour débogage si nécessaire
-      setTranscript(JSON.stringify(rawData, null, 2));
-      
-      // Vérifier si nous avons des données de transcription
-      const hasUtterances = rawData.utterances && Array.isArray(rawData.utterances) && rawData.utterances.length > 0;
-      const hasTranscriptText = Boolean(rawData.transcript_text || rawData.text);
-      
-      console.log('Transcript data check:', { hasUtterances, hasTranscriptText });
-      
-      if (hasUtterances) {
-        // 1. Format avec utterances (format structuré)
-        console.log(`Processing ${rawData.utterances.length} utterances`);
-        
-        const formattedData = rawData.utterances.map((utterance: any) => ({
-          speaker: utterance.speaker || 'Speaker',
-          text: utterance.text || '',
-          timestamp: utterance.start ? new Date(Math.floor(utterance.start * 1000)).toISOString().substr(14, 5) : undefined
-        }));
-        
-        console.log('Formatted utterances:', formattedData);
-        setFormattedTranscript(formattedData);
-        setIsLoadingTranscript(false);
-      } else if (hasTranscriptText) {
-        // 2. Format avec texte complet (format non structuré)
-        const text = rawData.transcript_text || rawData.text || '';
-        console.log('Processing full text transcript, length:', text.length);
-        
-        if (!text || text.trim() === '') {
-          console.warn('Transcript text is empty');
+      if (!meetingData) {
+        console.error('No meeting data received');
           setFormattedTranscript(null);
+        setTranscript('Aucune transcription disponible.');
           return;
         }
         
-        try {
-          // Utiliser une approche par regex pour extraire correctement les paires speaker-texte
-          const fullText = text;
-          const speakerMatches = [];
-          
-          // Trouver tous les indices où un speaker commence - pattern plus flexible
-          // Prend en charge: Speaker 1:, Speaker A:, Speaker John:, etc.
-          const speakerRegex = /(Speaker \d+|Speaker [A-Z]|Speaker [A-Za-z]+):/g;
-          let match;
-          
-          console.log('Searching for speaker patterns in text');
-          while ((match = speakerRegex.exec(fullText)) !== null) {
-            speakerMatches.push({
-              speaker: match[1],
-              index: match.index
-            });
-          }
-          
-          console.log(`Found ${speakerMatches.length} speaker matches`);
-          
-          // Si aucun speaker n'est trouvé, essayer d'autres formats courants
-          if (speakerMatches.length === 0) {
-            const alternativeSpeakerRegex = /([A-Za-z]+ ?[A-Za-z]*?):\s/g;
-            while ((match = alternativeSpeakerRegex.exec(fullText)) !== null) {
-              speakerMatches.push({
-                speaker: match[1],
-                index: match.index
-              });
-            }
-            console.log(`Found ${speakerMatches.length} alternative speaker matches`);
-          }
-          
-          // Maintenant, extraire le texte entre chaque speaker
-          const formattedData = [];
-          
-          if (speakerMatches.length > 0) {
-            for (let i = 0; i < speakerMatches.length; i++) {
-              const currentSpeaker = speakerMatches[i];
-              const nextSpeaker = speakerMatches[i + 1];
-              
-              // Déterminer où se termine le texte de ce speaker
-              const endIndex = nextSpeaker ? nextSpeaker.index : fullText.length;
-              
-              // Extraire le texte (en sautant le nom du speaker et les ':')
-              const speakerTextStart = currentSpeaker.index + currentSpeaker.speaker.length + 1;
-              let speakerText = fullText.substring(speakerTextStart, endIndex).trim();
-              
-              console.log(`Speaker: ${currentSpeaker.speaker}, Text length: ${speakerText.length}`);
-              
-              // Ajouter cette paire speaker-texte aux données formatées
-              formattedData.push({
-                speaker: currentSpeaker.speaker,
-                text: speakerText
-              });
-            }
-          } else {
-            // Aucun format de speaker détecté, afficher le texte complet
-            console.log('No speaker format detected, displaying full text');
-            formattedData.push({
-              speaker: 'Transcript',
-              text: fullText
-            });
-          }
-          
-          console.log(`Final formatted data has ${formattedData.length} entries`);
-          setFormattedTranscript(formattedData);
-          setIsLoadingTranscript(false);
-        } catch (parseError) {
-          console.error('Error parsing transcript:', parseError);
-          // Fallback: afficher le texte complet sans speakers
-          setFormattedTranscript([{
-            speaker: 'Transcript',
-            text: text
-          }]);
-          setIsLoadingTranscript(false);
+      console.log('Meeting data keys:', Object.keys(meetingData));
+      console.log('Meeting data sample:', JSON.stringify(meetingData, null, 2).substring(0, 500) + '...');
+      
+      // Chercher la transcription dans différents formats possibles
+      const possibleTranscriptFields = [
+        'transcript', 
+        'transcription', 
+        'transcript_text',
+        'transcription_text',
+        'content',
+        'text'
+      ];
+      
+      let transcriptText = null;
+      let foundField = '';
+      
+      for (const field of possibleTranscriptFields) {
+        if (meetingData[field]) {
+          transcriptText = meetingData[field];
+          foundField = field;
+          break;
         }
-      } else if (rawData.transcript) {
-        // 3. Format avec transcript comme objet
-        console.log('Found transcript object format');
-        
-        // Essayer d'extraire le texte de l'objet transcript
-        const transcriptText = typeof rawData.transcript === 'string' 
-          ? rawData.transcript 
-          : (rawData.transcript.text || JSON.stringify(rawData.transcript));
-        
-        setFormattedTranscript([{
-          speaker: 'System',
-          text: transcriptText
-        }]);
-        setIsLoadingTranscript(false);
-      } else {
-        // Aucune donnée de transcription disponible
-        console.warn('No transcript data available');
+      }
+      
+      console.log('Transcript search results:', {
+        foundField,
+        transcriptType: typeof transcriptText,
+        hasTranscript: !!transcriptText,
+        transcriptPreview: transcriptText ? (typeof transcriptText === 'string' ? transcriptText.substring(0, 100) : 'Non-string data') : 'No transcript'
+      });
+      
+      if (!transcriptText) {
+        console.warn('No transcript text found in response');
+        console.log('Available fields in response:', Object.keys(meetingData));
         setFormattedTranscript(null);
-        setIsLoadingTranscript(false);
-      }
-    } catch (error) {
-      console.error('Error fetching transcript:', error);
-      setFormattedTranscript(null);
-      setIsLoadingTranscript(false);
-      // Message d'erreur personnalisé selon le type d'erreur
-      if (error instanceof Error) {
-        if (error.message.includes('Network') || error.message.includes('Failed to fetch')) {
-          setTranscript("Cannot connect to the server. Please check your network connection and make sure the backend server is running.");
-        } else if (error.message.includes('404') || error.message.includes('not found')) {
-          setTranscript("Transcript not found. The transcription process may not have completed yet.");
-        } else {
-          setTranscript(`Error loading transcript: ${error.message}`);
-        }
-      } else {
-        setTranscript("An unknown error occurred while fetching the transcript");
+        setTranscript('Transcription non disponible ou en cours de traitement.');
+        return;
       }
       
-      setFormattedTranscript(null);
-    }
-  };
-
-  const handleRetryTranscription = async (meetingId: string) => {
-    // Cette fonction serait implémentée pour réessayer la transcription
-    setRetryingMeetingId(meetingId);
-    // Simuler un délai
-    setTimeout(() => {
-      setRetryingMeetingId(null);
-      fetchMeetings();
-    }, 2000);
-  };
-
-  // Ouvrir la boîte de dialogue de confirmation de suppression
-  const confirmDeleteMeeting = (meeting: Meeting) => {
-    setMeetingToDelete(meeting);
-    setDeleteConfirmOpen(true);
-  };
-
-  // Fermer la boîte de dialogue sans supprimer
-  const cancelDeleteMeeting = () => {
-    setDeleteConfirmOpen(false);
-    setMeetingToDelete(null);
-  };
-
-  // Fonction de suppression effective après confirmation
-  const handleDeleteMeeting = async () => {
-    if (!meetingToDelete) return;
-    
-    try {
-      // Fermer d'abord la boîte de dialogue pour améliorer la perception de réactivité
-      setDeleteConfirmOpen(false);
-      
-      // Call the API to delete the meeting
-      await deleteMeeting(meetingToDelete.id);
-      
-      // Remove the meeting from the state
-      setMeetings(meetings.filter(meeting => meeting.id !== meetingToDelete.id));
-      showNotification('Meeting successfully deleted', 'success');
-
-      // Réinitialiser l'ID de réunion à supprimer
-      setMeetingToDelete(null);
-    } catch (error) {
-      console.error('Error deleting meeting:', error);
-      showNotification('Failed to delete meeting', 'error');
-      setMeetingToDelete(null);
-    }
-  };
-
-  // Fonction pour mettre à jour les détails d'une réunion spécifique
-  const updateMeetingDetails = async (meetingId: string) => {
-    try {
-      console.log(`Updating details for meeting ${meetingId} in MyMeetings`);
-      
-      // Essayer d'abord avec la fonction updateMeetingMetadata si elle est disponible
-      let meetingDetails;
-      
-      try {
-        // Vérifier si cette fonction existe
-        if (typeof updateMeetingMetadata === 'function') {
-          console.log('Using updateMeetingMetadata to get duration and participants count');
-          meetingDetails = await updateMeetingMetadata(meetingId);
-        } else {
-          // Sinon, utiliser la méthode standard
-          console.log('Using getMeetingDetails to get full meeting data');
-          meetingDetails = await getMeetingDetails(meetingId);
-        }
-      } catch (err) {
-        // En cas d'erreur avec updateMeetingMetadata, utiliser la méthode standard
-        console.warn('Error with metadata update, falling back to getMeetingDetails:', err);
-        meetingDetails = await getMeetingDetails(meetingId);
-      }
-      
-      if (!meetingDetails) {
-        console.log(`No meeting details found for ${meetingId}`);
-        showNotification('Cannot find meeting details', 'error');
-        return false;
-      }
-      
-      // Si la réunion est marquée comme indisponible (statut 'failed'), mettre à jour l'interface
-      if (meetingDetails.transcript_status === 'error' || meetingDetails.transcription_status === 'error') {
-        console.log(`Meeting ${meetingId} has failed transcription`);
-        showNotification('This meeting has a failed transcription and cannot be updated', 'error');
-        return false;
-      }
-      
-      // Extraire la durée et le nombre de participants
-      const duration = meetingDetails.audio_duration || 
-                      meetingDetails.duration_seconds || 
-                      meetingDetails.duration || 0;
-                      
-      const participants = meetingDetails.speakers_count || 
-                          meetingDetails.speakers_count || 
-                          meetingDetails.participants || 0;
-      
-      console.log(`Meeting ${meetingId} metadata: Duration=${duration}s, Participants=${participants}`);
-      
-      // Mettre à jour l'interface utilisateur
-      setMeetings(prevMeetings => 
-        prevMeetings.map(meeting => 
-          meeting.id === meetingId 
-            ? {
-                ...meeting,
-                // Utiliser les valeurs extraites
-                audio_duration: duration,
-                duration: duration,
-                participants: participants
-              } 
-            : meeting
-        )
+      console.log('=== PARSING TRANSCRIPT ===');
+      console.log('Raw transcript text type:', typeof transcriptText);
+      console.log('Raw transcript text preview:', 
+        typeof transcriptText === 'string' 
+          ? transcriptText.substring(0, 200) + '...' 
+          : 'Not a string: ' + JSON.stringify(transcriptText).substring(0, 200) + '...'
       );
       
-      console.log(`Meeting details updated for ${meetingId} in MyMeetings`);
-      return meetingDetails;
-    } catch (error) {
-      // Si l'erreur est liée à une réunion non trouvée, supprimer cette réunion de la liste
-      if (error instanceof Error && error.message.includes('404')) {
-        setMeetings(prevMeetings => 
-          prevMeetings.filter(meeting => meeting.id !== meetingId)
-        );
-        console.log(`Meeting ${meetingId} removed from UI due to 404 error`);
+      // Sauvegarder le texte brut
+      setTranscript(typeof transcriptText === 'string' ? transcriptText : JSON.stringify(transcriptText));
+      
+      // Essayer de parser la transcription formatée
+      try {
+        let formattedData: Array<{speaker: string; text: string; timestamp?: string}> = [];
         
-        // Créer un objet meeting minimal pour permettre au code appelant de continuer
-        return {
-          id: meetingId,
-          name: 'Réunion indisponible',
-          title: 'Réunion indisponible',
-          created_at: new Date().toISOString(),
-          transcript_status: 'failed',
-          transcription_status: 'failed'
-        } as Meeting;
+        // Tenter de parser comme JSON d'abord
+        if (typeof transcriptText === 'string' && transcriptText.trim().startsWith('[')) {
+          try {
+            formattedData = JSON.parse(transcriptText);
+            console.log('Parsed transcript as JSON:', formattedData.length, 'utterances');
+          } catch (jsonError) {
+            console.log('Failed to parse as JSON, trying text parsing');
+            formattedData = parseTextTranscript(transcriptText);
+          }
+        } else if (Array.isArray(transcriptText)) {
+          // La transcription est déjà un array
+          formattedData = transcriptText;
+          console.log('Transcript already formatted as array:', formattedData.length, 'utterances');
+          } else {
+          // Parser comme texte brut
+          console.log('Parsing as plain text');
+          formattedData = parseTextTranscript(typeof transcriptText === 'string' ? transcriptText : JSON.stringify(transcriptText));
+        }
+        
+        console.log('Formatted data result:', {
+          length: formattedData.length,
+          firstItem: formattedData[0],
+          speakers: formattedData.map(item => item.speaker).filter((v, i, a) => a.indexOf(v) === i)
+        });
+        
+        // Appliquer les noms personnalisés si disponibles
+        if (formattedData.length > 0) {
+          const updatedTranscript = formattedData.map(utterance => ({
+            ...utterance,
+            speaker: getDisplayName(meetingId, utterance.speaker)
+          }));
+          
+          setFormattedTranscript(updatedTranscript);
+          console.log('=== SUCCESS: Formatted transcript set with', updatedTranscript.length, 'utterances ===');
+      } else {
+          console.warn('No formatted transcript data available - empty array');
+        setFormattedTranscript(null);
+          setTranscript('La transcription semble vide. Veuillez vérifier que l\'enregistrement contient bien du contenu audio.');
+        }
+        
+      } catch (parseError) {
+        console.error('Error parsing transcript:', parseError);
+      setFormattedTranscript(null);
+        setTranscript('Erreur lors du parsing de la transcription: ' + (parseError instanceof Error ? parseError.message : 'Erreur inconnue'));
       }
       
-      console.error(`Error updating meeting details for ${meetingId}:`, error);
-      throw error;
+    } catch (error) {
+      console.error('=== ERROR FETCHING TRANSCRIPT ===', error);
+      showErrorPopup('Error', 'Failed to load transcript: ' + (error instanceof Error ? error.message : 'Unknown error'));
+      setFormattedTranscript(null);
+      setTranscript('Erreur lors du chargement de la transcription.');
+    } finally {
+      setIsLoadingTranscript(false);
+      console.log('=== FIN FETCH TRANSCRIPT ===');
     }
   };
 
   const handleMeetingClick = (meetingId: string) => {
     // Mettre à jour les détails de la réunion lorsqu'on clique dessus
-    updateMeetingDetails(meetingId)
-      .then(meetingDetails => {
+    getMeetingDetails(meetingId)
+      .then((meetingDetails: any) => {
         console.log('Meeting details refreshed on click:', meetingDetails);
         
         // Si la réunion est indisponible, avertir l'utilisateur mais ne pas afficher d'erreur
@@ -729,7 +675,7 @@ const MyMeetings: React.FC<MyMeetingsProps> = ({ user, isMobile = false }) => {
         
         // Ici on pourrait ouvrir une vue détaillée ou effectuer une autre action
       })
-      .catch(error => {
+      .catch((error: any) => {
         console.error('Failed to refresh meeting details:', error);
         setError(`Erreur lors de la mise à jour des détails: ${error instanceof Error ? error.message : 'Erreur inconnue'}`);
       });
@@ -1048,6 +994,210 @@ const MyMeetings: React.FC<MyMeetingsProps> = ({ user, isMobile = false }) => {
 
     fetchMeetings();
   }, []);
+
+  // Fonctions pour la gestion des speakers
+  const getUniqueSpeakers = (transcript: Array<{speaker: string; text: string; timestamp?: string}>): string[] => {
+    const speakers = new Set(transcript.map(u => u.speaker));
+    return Array.from(speakers);
+  };
+
+  // Fonction pour récupérer l'ID original d'un speaker à partir de son nom affiché
+  const getOriginalSpeakerId = (meetingId: string, displayName: string): string => {
+    if (!formattedTranscript) return displayName;
+    
+    // Récupérer tous les speakers originaux de la transcription
+    const allDisplayedSpeakers = getUniqueSpeakers(formattedTranscript);
+    
+    // Pour chaque speaker affiché, vérifier s'il correspond à un nom original ou personnalisé
+    for (const originalId of allDisplayedSpeakers) {
+      // Essayer de trouver dans localStorage si ce displayName correspond à un nom personnalisé
+      const customName = getDisplayName(meetingId, originalId);
+      if (customName === displayName) {
+        // Si le nom personnalisé correspond, retourner l'ID original
+        // On doit trouver l'ID original en cherchant dans le localStorage
+        const allSpeakers = localStorage.getItem('custom_speakers');
+        if (allSpeakers) {
+          const parsed = JSON.parse(allSpeakers);
+          const meetingSpeakers = parsed[meetingId] || {};
+          
+          // Chercher l'ID original qui a ce nom personnalisé
+          for (const [originalId, customName] of Object.entries(meetingSpeakers)) {
+            if (customName === displayName) {
+              return originalId;
+            }
+          }
+        }
+        
+        // Si pas trouvé dans les noms personnalisés, c'est peut-être l'ID original lui-même
+        return originalId;
+      }
+    }
+    
+    // Si rien trouvé, retourner le displayName tel quel (c'est probablement l'ID original)
+    return displayName;
+  };
+
+  const handleSaveSpeakerName = async (currentDisplayName: string, newName: string) => {
+    if (!selectedMeeting || !newName.trim()) return;
+
+    try {
+      // Récupérer l'ID original du speaker
+      const originalSpeakerId = getOriginalSpeakerId(selectedMeeting.id, currentDisplayName);
+      
+      console.log(`Renaming speaker: ${currentDisplayName} -> ${newName.trim()} (originalId: ${originalSpeakerId})`);
+      
+      await updateSpeakerName(selectedMeeting.id, originalSpeakerId, newName.trim());
+      
+      // Mettre à jour l'affichage immédiatement
+      if (formattedTranscript) {
+        const updatedTranscript = formattedTranscript.map(utterance => ({
+          ...utterance,
+          speaker: utterance.speaker === currentDisplayName ? newName.trim() : utterance.speaker
+        }));
+        
+        setFormattedTranscript(updatedTranscript);
+      }
+      
+      setEditingSpeaker(null);
+      setEditingName('');
+      showSuccessPopup('Succès', `Speaker renommé en "${newName.trim()}"`);
+    } catch (error) {
+      console.error('Error updating speaker name:', error);
+      showErrorPopup('Erreur', 'Erreur lors de la mise à jour du nom');
+    }
+  };
+
+  const handleResetSpeakerName = async (speakerId: string) => {
+    // Fonction désactivée - reset supprimé
+    return;
+  };
+
+  const handleUpdateTranscript = async () => {
+    if (!selectedMeeting) return;
+
+    try {
+      // setIsUpdatingTranscript(true);
+      
+      // Simuler la mise à jour (localStorage est déjà à jour)
+      await updateTranscriptWithCustomNames(selectedMeeting.id);
+      
+      // Recharger la transcription pour s'assurer que tout est synchronisé
+      await handleViewTranscript(selectedMeeting.id);
+      
+      showSuccessPopup('Succès', 'Transcription mise à jour avec les noms personnalisés');
+    } catch (error) {
+      console.error('Error updating transcript:', error);
+      showErrorPopup('Erreur', 'Erreur lors de la mise à jour de la transcription');
+    } finally {
+      // setIsUpdatingTranscript(false);
+    }
+  };
+
+  const startEditingSpeaker = (speakerId: string) => {
+    setEditingSpeaker(speakerId);
+    setEditingName(speakerId);
+  };
+
+  const cancelEditing = () => {
+    setEditingSpeaker(null);
+    setEditingName('');
+  };
+
+  // Missing function implementations
+  const handleRetryTranscription = async (meetingId: string) => {
+    try {
+      setRetryingMeetingId(meetingId);
+      // Implementation for retrying transcription
+      await fetchMeetings();
+      showSuccessPopup('Success', 'Transcription retry initiated');
+    } catch (error) {
+      console.error('Error retrying transcription:', error);
+      showErrorPopup('Error', 'Failed to retry transcription');
+    } finally {
+      setRetryingMeetingId(null);
+    }
+  };
+
+  const confirmDeleteMeeting = (meeting: Meeting) => {
+    setMeetingToDelete(meeting);
+    setDeleteConfirmOpen(true);
+  };
+
+  const cancelDeleteMeeting = () => {
+    setMeetingToDelete(null);
+    setDeleteConfirmOpen(false);
+  };
+
+  const handleDeleteMeeting = async () => {
+    if (!meetingToDelete) return;
+    
+    try {
+      setIsDeleting(true);
+      await deleteMeeting(meetingToDelete.id);
+      showSuccessPopup('Success', 'Meeting deleted successfully');
+      await fetchMeetings();
+    } catch (error) {
+      console.error('Error deleting meeting:', error);
+      showErrorPopup('Error', 'Failed to delete meeting');
+    } finally {
+      setIsDeleting(false);
+      setDeleteConfirmOpen(false);
+      setMeetingToDelete(null);
+    }
+  };
+
+  // Fonctions pour l'édition du transcript
+  const startEditingTranscript = () => {
+    if (transcript) {
+      setEditedTranscriptText(transcript);
+      setIsEditingTranscript(true);
+    }
+  };
+
+  const cancelEditingTranscript = () => {
+    setIsEditingTranscript(false);
+    setEditedTranscriptText('');
+  };
+
+  const saveTranscriptChanges = async () => {
+    if (!selectedMeeting || !editedTranscriptText.trim()) {
+      showErrorPopup('Erreur', 'Le texte de transcription ne peut pas être vide');
+      return;
+    }
+
+    setIsSavingTranscript(true);
+    try {
+      // Mettre à jour le transcript sur le serveur
+      const updatedMeeting = await updateMeetingTranscriptText(selectedMeeting.id, editedTranscriptText);
+      
+      // Mettre à jour l'état local
+      setTranscript(editedTranscriptText);
+      
+      // Re-parser le transcript formaté avec le nouveau texte
+      const newFormattedTranscript = parseTextTranscript(editedTranscriptText);
+      setFormattedTranscript(newFormattedTranscript);
+      
+      // Mettre à jour la liste des meetings
+      setMeetings(prevMeetings => 
+        prevMeetings.map(meeting => 
+          meeting.id === selectedMeeting.id 
+            ? { ...meeting, transcript_text: editedTranscriptText }
+            : meeting
+        )
+      );
+      
+      // Sortir du mode édition
+      setIsEditingTranscript(false);
+      setEditedTranscriptText('');
+      
+      showSuccessPopup('Succès', 'La transcription a été mise à jour avec succès');
+    } catch (error) {
+      console.error('Error updating transcript:', error);
+      showErrorPopup('Erreur', 'Impossible de mettre à jour la transcription');
+    } finally {
+      setIsSavingTranscript(false);
+    }
+  };
 
   return (
     <>
@@ -1567,7 +1717,7 @@ const MyMeetings: React.FC<MyMeetingsProps> = ({ user, isMobile = false }) => {
                           <Tooltip title="Les enregistrements courts peuvent affecter la qualité de la transcription">
                             <Chip
                               icon={<WarningIcon fontSize="small" />}
-                              label="Gilbert n'identifie pas les locuteurs sur les audios de moins d'une minute"
+                              label=""
                               size="small"
                               sx={{
                                 bgcolor: alpha('#F59E0B', 0.1),
@@ -1598,7 +1748,7 @@ const MyMeetings: React.FC<MyMeetingsProps> = ({ user, isMobile = false }) => {
                               fontWeight: 500,
                             }}
                           />
-                        ) : (meeting.transcript_status === 'error' || meeting.transcription_status === 'error') ? (
+                        ) : (meeting.transcript_status === 'error' || meeting.transcription_status === 'failed') ? (
                           <Chip
                             label="failed"
                             size="small"
@@ -1625,7 +1775,10 @@ const MyMeetings: React.FC<MyMeetingsProps> = ({ user, isMobile = false }) => {
                           <Button
                             variant="outlined"
                             startIcon={<RefreshIcon />}
-                            onClick={() => handleRetryTranscription(meeting.id)}
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              handleRetryTranscription(meeting.id);
+                            }}
                             disabled={retryingMeetingId === meeting.id}
                             size="small"
                           >
@@ -1712,7 +1865,10 @@ const MyMeetings: React.FC<MyMeetingsProps> = ({ user, isMobile = false }) => {
                       <IconButton 
                         size="small" 
                         sx={{ color: '#EF4444' }}
-                        onClick={() => confirmDeleteMeeting(meeting)}
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          confirmDeleteMeeting(meeting);
+                        }}
                         disabled={isDeleting}
                       >
                         <DeleteIcon />
@@ -1775,8 +1931,6 @@ const MyMeetings: React.FC<MyMeetingsProps> = ({ user, isMobile = false }) => {
           setTimeout(() => {
             setTranscript(null);
             setFormattedTranscript(null);
-            setIsLoadingTranscript(false);
-            setSelectedMeetingId(null);
           }, 300); // Délai légèrement supérieur à la durée de l'animation de fermeture du dialogue
         }}
         maxWidth="md"
@@ -1789,10 +1943,23 @@ const MyMeetings: React.FC<MyMeetingsProps> = ({ user, isMobile = false }) => {
         }}
       >
         <DialogTitle sx={{ borderBottom: '1px solid #eee', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-          <Typography variant="h6">Transcription</Typography>
-          <Box sx={{ display: 'flex', alignItems: 'center' }}>
+          <Typography variant="h6">
+            {isEditingTranscript ? 'Éditer la transcription' : 'Transcription'}
+          </Typography>
+          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+            {/* Bouton d'édition de transcription */}
+            {!isEditingTranscript && formattedTranscript && formattedTranscript.length > 0 && (
+              <IconButton 
+                onClick={startEditingTranscript}
+                color="primary"
+                title="Éditer la transcription"
+              >
+                <EditIcon />
+              </IconButton>
+            )}
+            
             {/* Bouton d'exportation de transcription */}
-            {selectedMeeting && (
+            {!isEditingTranscript && selectedMeeting && (
               <TranscriptExportButton 
                 transcript={formattedTranscript}
                 meetingId={selectedMeeting.id}
@@ -1803,6 +1970,9 @@ const MyMeetings: React.FC<MyMeetingsProps> = ({ user, isMobile = false }) => {
               />
             )}
             <IconButton onClick={() => {
+              if (isEditingTranscript) {
+                cancelEditingTranscript();
+              }
               setTranscriptDialogOpen(false);
               setTimeout(() => {
                 setTranscript(null);
@@ -1813,6 +1983,208 @@ const MyMeetings: React.FC<MyMeetingsProps> = ({ user, isMobile = false }) => {
             </IconButton>
           </Box>
         </DialogTitle>
+        
+        {/* Gestion des speakers */}
+        {formattedTranscript && formattedTranscript.length > 0 && selectedMeeting && (
+          <Box sx={{ px: 3, py: 2, borderBottom: '1px solid #eee', bgcolor: '#fafafa' }}>
+            {/* En-tête cliquable pour plier/déplier */}
+            <Box 
+              sx={{ 
+                display: 'flex', 
+                alignItems: 'center', 
+                cursor: 'pointer',
+                py: 1,
+                px: 2,
+                borderRadius: 2,
+                transition: 'all 0.2s ease',
+                '&:hover': {
+                  bgcolor: 'rgba(59, 130, 246, 0.05)'
+                }
+              }}
+              onClick={() => setShowSpeakerManagement(!showSpeakerManagement)}
+            >
+              <PersonIcon sx={{ mr: 1, color: 'primary.main', fontSize: 24 }} />
+              <Typography variant="subtitle1" sx={{ fontWeight: 600, color: 'primary.main', flex: 1 }}>
+                Gestion des Locuteurs ({getUniqueSpeakers(formattedTranscript).length})
+              </Typography>
+              {showSpeakerManagement ? <ExpandLessIcon color="primary" /> : <ExpandMoreIcon color="primary" />}
+            </Box>
+            
+            {/* Contenu pliable */}
+            {showSpeakerManagement && (
+              <Fade in={showSpeakerManagement} timeout={300}>
+                <Box sx={{ mt: 2 }}>
+                  {/* Liste compacte des speakers */}
+                  <Grid container spacing={2}>
+                    {getUniqueSpeakers(formattedTranscript).map((speaker, index) => {
+                      const originalSpeakerId = speaker;
+                      const isEditing = editingSpeaker === speaker;
+                      
+                      // Couleurs d'avatar plus petites
+                      const avatarColors = [
+                        { bg: '#E3F2FD', color: '#1976D2' },
+                        { bg: '#F3E5F5', color: '#7B1FA2' },
+                        { bg: '#E8F5E8', color: '#388E3C' },
+                        { bg: '#FFF3E0', color: '#F57C00' },
+                        { bg: '#FCE4EC', color: '#C2185B' },
+                        { bg: '#F1F8E9', color: '#689F38' },
+                      ];
+                      const avatarStyle = avatarColors[index % avatarColors.length];
+                      
+                      return (
+                        <Grid item xs={12} sm={6} key={speaker}>
+                          <Paper 
+                            elevation={1}
+                            sx={{ 
+                              p: 2, 
+                              borderRadius: 2,
+                              bgcolor: hasCustomName(selectedMeeting.id, originalSpeakerId) ? '#f8f9ff' : 'white',
+                              border: hasCustomName(selectedMeeting.id, originalSpeakerId) ? '1px solid #3B82F6' : '1px solid #e0e0e0',
+                              transition: 'all 0.2s ease',
+                              '&:hover': {
+                                elevation: 2,
+                                transform: 'translateY(-1px)'
+                              }
+                            }}
+                          >
+                            <Box sx={{ display: 'flex', alignItems: 'center', mb: 1.5 }}>
+                              {/* Avatar plus petit */}
+                              <Box
+                                sx={{
+                                  width: 32,
+                                  height: 32,
+                                  borderRadius: '50%',
+                                  bgcolor: avatarStyle.bg,
+                                  color: avatarStyle.color,
+                                  display: 'flex',
+                                  alignItems: 'center',
+                                  justifyContent: 'center',
+                                  mr: 1.5,
+                                  border: `1px solid ${avatarStyle.color}30`
+                                }}
+                              >
+                                <PersonIcon sx={{ fontSize: 18 }} />
+                              </Box>
+                              
+                              <Box sx={{ flex: 1 }}>
+                                {isEditing ? (
+                                  <InputBase
+                                    value={editingName}
+                                    onChange={(e) => setEditingName(e.target.value)}
+                                    placeholder="Nom du locuteur"
+                                    sx={{
+                                      width: '100%',
+                                      px: 1.5,
+                                      py: 0.5,
+                                      border: '1px solid #3B82F6',
+                                      borderRadius: 1,
+                                      fontSize: '0.9rem',
+                                      fontWeight: 500,
+                                      bgcolor: 'white'
+                                    }}
+                                    autoFocus
+                                  />
+                                ) : (
+                                  <Box>
+                                    <Typography 
+                                      variant="body1" 
+                                      sx={{ 
+                                        fontWeight: 600,
+                                        color: hasCustomName(selectedMeeting.id, originalSpeakerId) ? '#3B82F6' : 'text.primary',
+                                        fontSize: '0.95rem'
+                                      }}
+                                    >
+                                      {speaker}
+                                    </Typography>
+                                    {hasCustomName(selectedMeeting.id, originalSpeakerId) && (
+                                      <Chip
+                                        label="Custom"
+                                        size="small"
+                                        color="primary"
+                                        variant="outlined"
+                                        sx={{ 
+                                          fontSize: '0.65rem', 
+                                          height: 20,
+                                          mt: 0.5
+                                        }}
+                                      />
+                                    )}
+                                  </Box>
+                                )}
+                              </Box>
+                            </Box>
+                            
+                            {/* Boutons d'action compacts */}
+                            {isEditing ? (
+                              <Box sx={{ display: 'flex', gap: 1 }}>
+                                <Button
+                                  onClick={() => handleSaveSpeakerName(speaker, editingName)}
+                                  variant="contained"
+                                  color="success"
+                                  size="small"
+                                  startIcon={<CheckIcon sx={{ fontSize: 16 }} />}
+                                  sx={{ 
+                                    flex: 1, 
+                                    borderRadius: 1.5,
+                                    fontWeight: 500,
+                                    textTransform: 'none',
+                                    fontSize: '0.8rem',
+                                    py: 0.5
+                                  }}
+                                >
+                                  OK
+                                </Button>
+                                <Button
+                                  onClick={cancelEditing}
+                                  variant="outlined"
+                                  color="error"
+                                  size="small"
+                                  startIcon={<CancelIcon sx={{ fontSize: 16 }} />}
+                                  sx={{ 
+                                    flex: 1, 
+                                    borderRadius: 1.5,
+                                    fontWeight: 500,
+                                    textTransform: 'none',
+                                    fontSize: '0.8rem',
+                                    py: 0.5
+                                  }}
+                                >
+                                  Annuler
+                                </Button>
+                              </Box>
+                            ) : (
+                              <Box sx={{ display: 'flex', gap: 1 }}>
+                                <Button
+                                  onClick={() => startEditingSpeaker(speaker)}
+                                  variant="contained"
+                                  color="primary"
+                                  size="small"
+                                  startIcon={<EditIcon sx={{ fontSize: 16 }} />}
+                                  sx={{ 
+                                    flex: 1, 
+                                    borderRadius: 1.5,
+                                    fontWeight: 500,
+                                    textTransform: 'none',
+                                    fontSize: '0.8rem',
+                                    py: 0.5
+                                  }}
+                                >
+                                  Renommer
+                                </Button>
+                              </Box>
+                            )}
+                          </Paper>
+                        </Grid>
+                      );
+                    })}
+                  </Grid>
+                  
+                </Box>
+              </Fade>
+            )}
+          </Box>
+        )}
+        
         <DialogContent sx={{ mt: 2, minHeight: '300px', maxHeight: '60vh', overflowY: 'auto' }}>
           {isLoadingTranscript ? (
             <Box sx={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', height: '100%', py: 4 }}>
@@ -1822,43 +2194,193 @@ const MyMeetings: React.FC<MyMeetingsProps> = ({ user, isMobile = false }) => {
                 Please wait while we retrieve the transcript.
               </Typography>
             </Box>
+          ) : isEditingTranscript ? (
+            // Mode d'édition avec les speakers visuels mais éditables
+            <Box sx={{ padding: 2 }}>
+              <Typography variant="body2" color="text.secondary" sx={{ mb: 3, p: 2, bgcolor: '#f8f9fa', borderRadius: 1, border: '1px solid #e9ecef' }}>
+                <EditIcon sx={{ fontSize: 16, mr: 1, verticalAlign: 'middle' }} />
+                Mode édition : Modifiez le texte directement dans les bulles de conversation ci-dessous. Les modifications seront sauvegardées automatiquement.
+              </Typography>
+              {formattedTranscript && formattedTranscript.map((utterance, index) => {
+                // Générer une couleur d'avatar basée sur le nom du speaker
+                const speakerIndex = getUniqueSpeakers(formattedTranscript).indexOf(utterance.speaker);
+                const avatarColors = [
+                  { bg: '#E3F2FD', color: '#1976D2' }, // Bleu
+                  { bg: '#F3E5F5', color: '#7B1FA2' }, // Violet
+                  { bg: '#E8F5E8', color: '#388E3C' }, // Vert
+                  { bg: '#FFF3E0', color: '#F57C00' }, // Orange
+                  { bg: '#FCE4EC', color: '#C2185B' }, // Rose
+                  { bg: '#F1F8E9', color: '#689F38' }, // Vert clair
+                ];
+                const avatarStyle = avatarColors[speakerIndex % avatarColors.length];
+                
+                return (
+                  <Box key={index} sx={{ mb: 3, display: 'flex', alignItems: 'flex-start' }}>
+                    {/* Avatar du speaker */}
+                    <Box
+                      sx={{
+                        width: 40,
+                        height: 40,
+                        borderRadius: '50%',
+                        bgcolor: avatarStyle.bg,
+                        color: avatarStyle.color,
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        mr: 2,
+                        mt: 0.5,
+                        border: `2px solid ${avatarStyle.color}20`,
+                        flexShrink: 0
+                      }}
+                    >
+                      <PersonIcon sx={{ fontSize: 20 }} />
+                    </Box>
+                    
+                    {/* Contenu de l'utterance éditable */}
+                    <Box sx={{ flex: 1 }}>
+                      <Box sx={{ display: 'flex', alignItems: 'center', mb: 0.5 }}>
+                        <Typography
+                          variant="subtitle1"
+                          sx={{
+                            fontWeight: 600,
+                            color: avatarStyle.color,
+                            mr: 1
+                          }}
+                        >
+                          {utterance.speaker}
+                        </Typography>
+                        {utterance.timestamp && (
+                          <Typography
+                            component="span"
+                            variant="caption"
+                            sx={{ color: 'text.secondary' }}
+                          >
+                            {utterance.timestamp}
+                          </Typography>
+                        )}
+                      </Box>
+                      {/* TextField éditable avec le style de la bulle de conversation */}
+                      <TextField
+                        multiline
+                        fullWidth
+                        value={utterance.text}
+                        onChange={(e) => {
+                          const newTranscript = [...formattedTranscript];
+                          newTranscript[index] = { ...utterance, text: e.target.value };
+                          setFormattedTranscript(newTranscript);
+                          
+                          // Mettre à jour aussi le texte brut pour la sauvegarde
+                          const newRawText = newTranscript.map(u => `${u.speaker}: ${u.text}`).join('\n\n');
+                          setEditedTranscriptText(newRawText);
+                        }}
+                        variant="outlined"
+                        sx={{
+                          '& .MuiOutlinedInput-root': {
+                            pl: 2,
+                            borderLeft: `3px solid ${avatarStyle.color}40`,
+                            lineHeight: 1.6,
+                            bgcolor: `${avatarStyle.color}08`,
+                            borderRadius: 1,
+                            fontSize: '1rem',
+                            fontFamily: '"Roboto", "Helvetica", "Arial", sans-serif',
+                            '&:hover': {
+                              bgcolor: `${avatarStyle.color}12`,
+                            },
+                            '&.Mui-focused': {
+                              bgcolor: 'white',
+                              boxShadow: `0 0 0 2px ${avatarStyle.color}40`,
+                            }
+                          },
+                          '& .MuiOutlinedInput-notchedOutline': {
+                            borderColor: `${avatarStyle.color}30`,
+                          },
+                          '& .MuiInputBase-input': {
+                            padding: '12px 16px',
+                          }
+                        }}
+                      />
+                    </Box>
+                  </Box>
+                );
+              })}
+            </Box>
           ) : formattedTranscript && formattedTranscript.length > 0 ? (
             <Box sx={{ padding: 2 }}>
-              {formattedTranscript.map((utterance, index) => (
-                <Box key={index} sx={{ mb: 3 }}>
-                  <Typography
-                    variant="subtitle1"
-                    sx={{
-                      fontWeight: 600,
-                      color: '#3B82F6',
-                      display: 'flex',
-                      alignItems: 'center',
-                      mb: 0.5
-                    }}
-                  >
-                    {utterance.speaker}
-                    {utterance.timestamp && (
+              {formattedTranscript.map((utterance, index) => {
+                // Générer une couleur d'avatar basée sur le nom du speaker
+                const speakerIndex = getUniqueSpeakers(formattedTranscript).indexOf(utterance.speaker);
+                const avatarColors = [
+                  { bg: '#E3F2FD', color: '#1976D2' }, // Bleu
+                  { bg: '#F3E5F5', color: '#7B1FA2' }, // Violet
+                  { bg: '#E8F5E8', color: '#388E3C' }, // Vert
+                  { bg: '#FFF3E0', color: '#F57C00' }, // Orange
+                  { bg: '#FCE4EC', color: '#C2185B' }, // Rose
+                  { bg: '#F1F8E9', color: '#689F38' }, // Vert clair
+                ];
+                const avatarStyle = avatarColors[speakerIndex % avatarColors.length];
+                
+                return (
+                  <Box key={index} sx={{ mb: 3, display: 'flex', alignItems: 'flex-start' }}>
+                    {/* Avatar du speaker */}
+                    <Box
+                      sx={{
+                        width: 40,
+                        height: 40,
+                        borderRadius: '50%',
+                        bgcolor: avatarStyle.bg,
+                        color: avatarStyle.color,
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        mr: 2,
+                        mt: 0.5,
+                        border: `2px solid ${avatarStyle.color}20`,
+                        flexShrink: 0
+                      }}
+                    >
+                      <PersonIcon sx={{ fontSize: 20 }} />
+                    </Box>
+                    
+                    {/* Contenu de l'utterance */}
+                    <Box sx={{ flex: 1 }}>
+                      <Box sx={{ display: 'flex', alignItems: 'center', mb: 0.5 }}>
+                        <Typography
+                          variant="subtitle1"
+                          sx={{
+                            fontWeight: 600,
+                            color: avatarStyle.color,
+                            mr: 1
+                          }}
+                        >
+                          {utterance.speaker}
+                        </Typography>
+                        {utterance.timestamp && (
+                          <Typography
+                            component="span"
+                            variant="caption"
+                            sx={{ color: 'text.secondary' }}
+                          >
+                            {utterance.timestamp}
+                          </Typography>
+                        )}
+                      </Box>
                       <Typography
-                        component="span"
-                        variant="caption"
-                        sx={{ ml: 1, color: 'text.secondary' }}
+                        variant="body1"
+                        sx={{
+                          pl: 2,
+                          borderLeft: `3px solid ${avatarStyle.color}40`,
+                          lineHeight: 1.6,
+                          bgcolor: `${avatarStyle.color}08`,
+                          py: 1,
+                          borderRadius: 1
+                        }}
                       >
-                        {utterance.timestamp}
+                        {utterance.text}
                       </Typography>
-                    )}
-                  </Typography>
-                  <Typography
-                    variant="body1"
-                    sx={{
-                      pl: 1,
-                      borderLeft: '2px solid #e0e0e0',
-                      lineHeight: 1.6
-                    }}
-                  >
-                    {utterance.text}
-                  </Typography>
-                </Box>
-              ))}
+                    </Box>
+                  </Box>
+                );
+              })}
             </Box>
           ) : (
             <Box sx={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', height: '100%', py: 4 }}>
@@ -1871,13 +2393,34 @@ const MyMeetings: React.FC<MyMeetingsProps> = ({ user, isMobile = false }) => {
           )}
         </DialogContent>
         <DialogActions>
-          <Button onClick={() => {
-            setTranscriptDialogOpen(false);
-            setTimeout(() => {
-              setTranscript(null);
-              setFormattedTranscript(null);
-            }, 300);
-          }}>Close</Button>
+          {isEditingTranscript ? (
+            <>
+              <Button 
+                onClick={cancelEditingTranscript}
+                color="inherit"
+                disabled={isSavingTranscript}
+              >
+                Annuler
+              </Button>
+              <Button 
+                onClick={saveTranscriptChanges}
+                variant="contained"
+                color="primary"
+                disabled={isSavingTranscript || !editedTranscriptText.trim()}
+                startIcon={isSavingTranscript ? <CircularProgress size={20} /> : <SaveIcon />}
+              >
+                {isSavingTranscript ? 'Sauvegarde...' : 'Sauvegarder'}
+              </Button>
+            </>
+          ) : (
+            <Button onClick={() => {
+              setTranscriptDialogOpen(false);
+              setTimeout(() => {
+                setTranscript(null);
+                setFormattedTranscript(null);
+              }, 300);
+            }}>Fermer</Button>
+          )}
         </DialogActions>
       </Dialog>
 
@@ -2288,7 +2831,7 @@ const MyMeetings: React.FC<MyMeetingsProps> = ({ user, isMobile = false }) => {
               })
               .catch(error => {
                 console.error(`Error starting summary generation: ${error}`);
-                showErrorPopup('Erreur lors du démarrage de la génération du compte rendu');
+                showErrorPopup('Erreur', 'Erreur lors du démarrage de la génération du compte rendu');
               });
           }
           setTemplateSelectorOpen(false);

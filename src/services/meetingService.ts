@@ -1244,3 +1244,45 @@ export function watchSummaryStatus(
     }
   };
 }
+
+/**
+ * Update meeting transcript text
+ * @param meetingId The ID of the meeting to update
+ * @param transcriptText The new transcript text
+ * @returns Updated meeting data
+ */
+export async function updateMeetingTranscriptText(meetingId: string, transcriptText: string): Promise<Meeting> {
+  try {
+    console.log(`Updating transcript text for meeting ${meetingId}`);
+    
+    // Verify token validity before proceeding
+    const isTokenValid = await verifyTokenValidity();
+    if (!isTokenValid) {
+      throw new Error('Authentication token is invalid');
+    }
+    
+    // Make PUT request to update the meeting transcript
+    const response = await apiClient.put<Meeting>(
+      `/meetings/${meetingId}`,
+      { transcript_text: transcriptText },
+      true  // withAuth = true
+    );
+    
+    if (!response) {
+      throw new Error('Invalid API response');
+    }
+    
+    console.log(`Successfully updated transcript text for meeting ${meetingId}`);
+    
+    // Normalize the response
+    const normalizedMeeting = normalizeMeeting(response);
+    
+    // Update the cache
+    updateMeetingCache(normalizedMeeting);
+    
+    return normalizedMeeting;
+  } catch (error) {
+    console.error(`Error updating transcript text for meeting ${meetingId}:`, error);
+    throw error;
+  }
+}

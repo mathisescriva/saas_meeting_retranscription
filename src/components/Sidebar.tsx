@@ -181,7 +181,7 @@ const Sidebar: React.FC<SidebarProps> = ({ onViewChange, user, isMobile = false,
   
   // Composant Avatar avec key pour forcer le rafrau00eechissement quand l'URL change
   const ProfileAvatar = () => {
-    // Clu00e9 unique basu00e9e sur l'URL de l'image ou un timestamp pour forcer le rafrau00eechissement
+    // Clé unique basée sur l'URL de l'image ou un timestamp pour forcer le rafraîchissement
     const avatarKey = userProfile?.profile_picture_url || Date.now();
     const avatarUrl = userProfile?.profile_picture_url || undefined;
     
@@ -206,7 +206,7 @@ const Sidebar: React.FC<SidebarProps> = ({ onViewChange, user, isMobile = false,
     );
   };
 
-  // Gestion du clic sur l'avatar pour tu00e9lu00e9charger une nouvelle photo
+  // Gestion du clic sur l'avatar pour télécharger une nouvelle photo
   const handleProfilePictureClick = () => {
     fileInputRef.current?.click();
   };
@@ -234,31 +234,32 @@ const Sidebar: React.FC<SidebarProps> = ({ onViewChange, user, isMobile = false,
     try {
       setUploadingPhoto(true);
       
-      // Log du00e9taillu00e9 pour le du00e9bogage
+      // Log détaillé pour le débogage
       console.log(`Upload de fichier: ${file.name}, type: ${file.type}, taille: ${file.size} bytes`);
       
-      // Cru00e9er une URL temporaire pour l'image tu00e9lu00e9chargu00e9e pour un feedback immu00e9diat
-      const tempImageUrl = URL.createObjectURL(file);
-      
-      // Mise u00e0 jour temporaire de l'interface utilisateur pendant le chargement
-      setUserProfile(prev => prev ? {...prev, profile_picture_url: tempImageUrl} : prev);
-      
-      // Appel API ru00e9el pour tu00e9lu00e9charger la photo de profil
+      // Appel API réel pour télécharger la photo de profil
       const updatedProfile = await uploadProfilePicture(file);
       
-      // Libu00e9rer l'URL temporaire
-      URL.revokeObjectURL(tempImageUrl);
+      console.log('Profil mis à jour:', updatedProfile);
       
-      console.log('Profil mis u00e0 jour:', updatedProfile);
+      // Mise à jour du profil avec les données réelles du serveur
+      // Force un re-render complet en modifiant la référence de l'objet
+      setUserProfile(prev => ({
+        ...updatedProfile,
+        // Ajouter un timestamp pour forcer le re-render
+        _lastUpdated: Date.now()
+      }));
       
-      // Mise u00e0 jour du profil avec les donnu00e9es ru00e9elles du serveur
-      setUserProfile(updatedProfile);
       showSuccessPopup('Succès', 'Votre photo de profil a été mise à jour avec succès.');
     } catch (error) {
-      console.error('u00c9chec du tu00e9lu00e9chargement de la photo de profil:', error);
+      console.error('Échec du téléchargement de la photo de profil:', error);
       showErrorPopup('Erreur', 'Échec du téléchargement de la photo de profil. Veuillez réessayer.');
     } finally {
       setUploadingPhoto(false);
+      // Réinitialiser l'input de fichier pour éviter les problèmes de cache
+      if (fileInputRef.current) {
+        fileInputRef.current.value = '';
+      }
     }
   };
   

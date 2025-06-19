@@ -106,7 +106,22 @@ const ProfileEditor: React.FC<ProfileEditorProps> = ({ open, onClose, onProfileU
     
     try {
       setUploadingPhoto(true);
+      
+      // Créer une URL temporaire pour l'image téléchargée pour un feedback immédiat
+      const tempImageUrl = URL.createObjectURL(file);
+      
+      // Mise à jour temporaire de l'interface utilisateur pendant le chargement
+      setProfile(prev => prev ? {...prev, profile_picture_url: tempImageUrl} : prev);
+      
+      // Appel API réel pour télécharger la photo de profil
       const updatedProfile = await uploadProfilePicture(file);
+      
+      // Libérer l'URL temporaire
+      URL.revokeObjectURL(tempImageUrl);
+      
+      console.log('Profile updated:', updatedProfile);
+      
+      // Mise à jour du profil avec les données réelles du serveur
       setProfile(updatedProfile);
       showSuccessPopup('Success', 'Your profile picture has been updated successfully.');
       
@@ -162,6 +177,7 @@ const ProfileEditor: React.FC<ProfileEditorProps> = ({ open, onClose, onProfileU
             <Box sx={{ textAlign: 'center', mb: 3 }}>
               <Box sx={{ position: 'relative', display: 'inline-block' }}>
                 <Avatar
+                  key={profile?.profile_picture_url || Date.now()}
                   src={profile?.profile_picture_url || '/img/avatar.jpg'}
                   alt="Profile"
                   sx={{

@@ -1,7 +1,7 @@
 import { logoutUser } from './authService';
 
-// Base URL for API calls
-export const API_BASE_URL = 'https://backend-meeting.onrender.com';
+// Base URL for API calls - utilise VITE_API_BASE_URL pour le développement local
+export const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8001';
 
 // Fonction pour récupérer le token d'authentification
 function getAuthToken() {
@@ -167,21 +167,30 @@ async function request<T>(
       // Cette vérification devrait être suffisante pour la plupart des cas d'erreur
       if (!response.ok) {
         try {
-          // Try to get the error message from the response
-          const errorData = await response.json();
-          console.log('API Error Response:', errorData);
-          throw new Error(errorData.detail || errorData.message || `Request failed with status ${response.status}`);
-        } catch (parseError) {
-          console.log('Could not parse error response as JSON');
-          // Try to get the response as text instead
+          // Try to parse error response as JSON
+          const errorData = await response.text(); // Utiliser text() au lieu de json()
+          console.log('API Error Response (raw):', errorData);
+          
           try {
-            const textResponse = await response.text();
-            console.log('API Error Response Text:', textResponse);
-            throw new Error(`Request failed with status ${response.status}: ${textResponse.substring(0, 100)}${textResponse.length > 100 ? '...' : ''}`);
-          } catch (textError) {
-            // If we can't get the response as text either, just throw with status
-            throw new Error(`Request failed with status ${response.status}`);
+            // Essayer de parser en JSON maintenant que nous avons le texte brut
+            const parsedError = JSON.parse(errorData);
+            console.log('API Error Response (parsed):', parsedError);
+            
+            // Afficher les détails spécifiques si disponibles
+            if (parsedError.detail) {
+              console.log('Error details:', parsedError.detail);
+            }
+            
+            // Return the parsed error data
+            return Promise.reject(parsedError);
+          } catch (jsonError) {
+            console.log('Could not parse error response as JSON, using raw text');
+            return Promise.reject(new Error(`Request failed with status ${response.status}: ${errorData}`));
           }
+        } catch (parseError) {
+          console.log('Could not read error response as text');
+          // If we can't read the error response, just throw the original error
+          return Promise.reject(new Error(`Request failed with status ${response.status}`));
         }
       }
   
