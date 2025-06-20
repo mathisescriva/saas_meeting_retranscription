@@ -77,6 +77,7 @@ interface RecentMeeting {
   id: string;
   title: string;
   date: string;
+  created_at?: string; // Date originale de création pour le graphique d'activité
   duration?: number; // Durée en secondes
   audio_duration?: number; // Durée audio en secondes
   participants: number;
@@ -199,7 +200,7 @@ const Dashboard: React.FC<DashboardProps> = ({ user, onRecordingStateChange }) =
 
   // Fonction pour contacter Lexia France
   const handleContactSupport = () => {
-    window.open('mailto:contact@lexiapro.fr?subject=Demande%20d%27information%20-%20Gilbert', '_blank');
+    window.open('mailto:mathis@lexiapro.fr?subject=Demande%20d%27accès%20aux%20templates%20personnalisés%20Gilbert', '_blank');
   };
 
   useEffect(() => {
@@ -241,6 +242,7 @@ const Dashboard: React.FC<DashboardProps> = ({ user, onRecordingStateChange }) =
         id: meeting.id,
         title: meeting.name || meeting.title || `Meeting ${meeting.id.substring(0, 8)}`,
         date: meeting.created_at ? new Date(meeting.created_at).toLocaleDateString() : 'Unknown date',
+        created_at: meeting.created_at, // Conserver la date originale pour le graphique d'activité
         // Prendre en charge les deux formats de statut (transcript_status et transcription_status)
         status: meeting.transcript_status || meeting.transcription_status || 'unknown',
         // Ces champs peuvent être undefined, c'est normal
@@ -267,7 +269,7 @@ const Dashboard: React.FC<DashboardProps> = ({ user, onRecordingStateChange }) =
               console.log(`Status update for ${meeting.id}: ${newStatus}`);
               
               // Si le statut a changé, rafraîchir les données
-              if (newStatus === 'completed' || newStatus === 'error' || newStatus === 'failed') {
+              if (newStatus === 'completed' || newStatus === 'error') {
                 console.log(`Meeting ${meeting.id} reached final status: ${newStatus}, refreshing data`);
                 fetchMeetings();
               }
@@ -647,6 +649,126 @@ const Dashboard: React.FC<DashboardProps> = ({ user, onRecordingStateChange }) =
   const engagementLevel = getEngagementLevel(engagementScore);
   const pointsToNextLevel = engagementScore < 100 ? Math.ceil((Math.ceil(engagementScore / 10) * 10 + 10) - engagementScore) : 0;
 
+  // Fonction pour générer des données d'activité basées sur les vraies réunions
+  const generateActivityData = () => {
+    const data = [];
+    const today = new Date();
+    const startDate = new Date(today);
+    startDate.setDate(today.getDate() - 364); // 52 semaines = 364 jours
+    
+    // Créer un map des dates avec l'activité réelle
+    const activityMap = new Map<string, number>();
+    
+    // Parcourir les réunions existantes pour compter l'activité par jour
+    meetingsList.forEach(meeting => {
+      // Utiliser created_at (date originale) pour le graphique d'activité
+      if (meeting.created_at) {
+        const meetingDate = new Date(meeting.created_at);
+        
+        // Vérifier que la date est valide et compter l'activité
+        if (!isNaN(meetingDate.getTime())) {
+          const dateKey = meetingDate.toISOString().split('T')[0];
+          const currentCount = activityMap.get(dateKey) || 0;
+          activityMap.set(dateKey, currentCount + 1);
+        } else {
+          console.warn('Invalid created_at date found for meeting:', meeting.id, meeting.created_at);
+        }
+      }
+    });
+    
+    // Générer les 365 derniers jours avec l'activité réelle
+    for (let i = 0; i < 365; i++) {
+      const currentDate = new Date(startDate);
+      currentDate.setDate(startDate.getDate() + i);
+      const dateKey = currentDate.toISOString().split('T')[0];
+      
+      // Récupérer l'activité réelle pour cette date
+      const realActivity = activityMap.get(dateKey) || 0;
+      
+      // Déterminer le niveau d'intensité basé sur le nombre de réunions
+      let level = 0;
+      if (realActivity > 0) {
+        if (realActivity === 1) level = 1;
+        else if (realActivity === 2) level = 2;
+        else if (realActivity === 3) level = 3;
+        else level = 4; // 4+ réunions dans la journée
+      }
+      
+      data.push({
+        date: dateKey,
+        count: realActivity,
+        level: level
+      });
+    }
+    
+    return data;
+  };
+
+  const activityData = generateActivityData();
+  
+  // Calculer les statistiques d'activité basées sur les vraies données
+  const totalContributions = activityData.reduce((sum, day) => sum + day.count, 0);
+  
+  // Calculer le nombre de semaines avec au moins une activité
+  const activeWeeks = (() => {
+    const weeklyActivity = new Map<string, boolean>();
+    activityData.forEach(day => {
+      if (day.count > 0) {
+        const date = new Date(day.date);
+        // Obtenir le lundi de la semaine pour cette date
+        const monday = new Date(date);
+        const dayOfWeek = date.getDay();
+        const daysToMonday = dayOfWeek === 0 ? 6 : dayOfWeek - 1; // Dimanche = 0, donc 6 jours jusqu'au lundi
+        monday.setDate(date.getDate() - daysToMonday);
+        const weekKey = monday.toISOString().split('T')[0];
+        weeklyActivity.set(weekKey, true);
+      }
+    });
+    return weeklyActivity.size;
+  })();
+  
+  // Calculer la série actuelle de jours consécutifs avec activité
+  const currentStreak = (() => {
+    let streak = 0;
+    const today = new Date();
+    
+    // Parcourir les jours depuis aujourd'hui vers le passé
+    for (let i = activityData.length - 1; i >= 0; i--) {
+      const dayDate = new Date(activityData[i].date);
+      const daysDiff = Math.floor((today.getTime() - dayDate.getTime()) / (1000 * 60 * 60 * 24));
+      
+      // Si on a dépassé la série continue, arrêter
+      if (daysDiff > streak) break;
+      
+      // Si ce jour a de l'activité, continuer la série
+      if (activityData[i].count > 0) {
+        // Vérifier que c'est bien consécutif (pas de trou dans les jours)
+        if (daysDiff === streak) {
+          streak++;
+        } else {
+          // Il y a un trou, la série s'arrête
+          break;
+        }
+      } else if (daysDiff === streak) {
+        // Pas d'activité ce jour-ci et c'est le jour attendu, la série s'arrête
+        break;
+      }
+    }
+    
+    return streak;
+  })();
+
+  // Organiser les données par semaines pour l'affichage
+  const organizeDataByWeeks = (data: typeof activityData) => {
+    const weeks = [];
+    for (let i = 0; i < data.length; i += 7) {
+      weeks.push(data.slice(i, i + 7));
+    }
+    return weeks;
+  };
+
+  const weeklyData = organizeDataByWeeks(activityData);
+
   // Fonction pour sauvegarder l'enregistrement
   const saveRecording = async () => {
     if (!latestAudioFile || !titleInput.trim()) return;
@@ -812,8 +934,7 @@ const Dashboard: React.FC<DashboardProps> = ({ user, onRecordingStateChange }) =
       console.error('Audio file is too small, likely empty or corrupted');
       showSuccessPopup(
         "Fichier audio invalide",
-        "Le fichier audio semble vide ou corrompu. Veuillez sélectionner un autre fichier.",
-        'error'
+        "Le fichier audio semble vide ou corrompu. Veuillez sélectionner un autre fichier."
       );
       return;
     }
@@ -825,8 +946,7 @@ const Dashboard: React.FC<DashboardProps> = ({ user, onRecordingStateChange }) =
     if (!audioFile.type.startsWith('audio/') && !audioFile.name.endsWith('.mp3') && !audioFile.name.endsWith('.wav') && !audioFile.name.endsWith('.webm') && !audioFile.name.endsWith('.ogg')) {
       showSuccessPopup(
         "Fichier non supporté",
-        "Veuillez sélectionner un fichier audio (MP3, WAV, WebM ou OGG).",
-        'error'
+        "Veuillez sélectionner un fichier audio (MP3, WAV, WebM ou OGG)."
       );
       return;
     }
@@ -945,8 +1065,7 @@ const Dashboard: React.FC<DashboardProps> = ({ user, onRecordingStateChange }) =
       
       showSuccessPopup(
         errorTitle,
-        errorMessage,
-        'error'
+        errorMessage
       );
     }
   };
@@ -982,7 +1101,7 @@ const Dashboard: React.FC<DashboardProps> = ({ user, onRecordingStateChange }) =
   };
 
   // Fonction pour supprimer un meeting
-  const handleDeleteMeeting = async (meetingId) => {
+  const handleDeleteMeeting = async (meetingId: string) => {
     if (!meetingId) return;
     
     if (window.confirm('Êtes-vous sûr de vouloir supprimer cette réunion ? Cette action est irréversible.')) {
@@ -1082,8 +1201,7 @@ const Dashboard: React.FC<DashboardProps> = ({ user, onRecordingStateChange }) =
       
       showSuccessPopup(
         "Erreur",
-        errorMessage,
-        'error'
+        errorMessage
       );
     } finally {
       setIsUploading(false);
@@ -1178,8 +1296,8 @@ const Dashboard: React.FC<DashboardProps> = ({ user, onRecordingStateChange }) =
       console.log('Meeting details:', meetingDetails);
       
       // Afficher la transcription si disponible
-      if (meetingDetails.transcript_url) {
-        const transcript = await getTranscript(meetingDetails.transcript_url);
+      if (meetingDetails.transcript_text) {
+        const transcript = await getTranscript(meetingDetails.id);
         setErrorState(null);
       } else {
         console.log('No transcript available yet');
@@ -1423,12 +1541,38 @@ const Dashboard: React.FC<DashboardProps> = ({ user, onRecordingStateChange }) =
                     mr: 3,
                     flexShrink: 0,
                     boxShadow: '0 8px 20px rgba(59, 130, 246, 0.15)',
-                    position: 'relative'
+                    position: 'relative',
+                    '&::before': {
+                      content: '""',
+                      position: 'absolute',
+                      top: '50%',
+                      left: '50%',
+                      transform: 'translate(-50%, -50%)',
+                      width: '70%',
+                      height: '70%',
+                      borderRadius: '50%',
+                      background: 'rgba(255, 255, 255, 0.2)',
+                      backdropFilter: 'blur(10px)',
+                    }
                   }}
                 >
-                  <Typography sx={{ fontSize: '28px', filter: 'drop-shadow(0 2px 4px rgba(0,0,0,0.1))' }}>
-                    🏆
-                  </Typography>
+                  <Box
+                    sx={{
+                      position: 'relative',
+                      zIndex: 1,
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                    }}
+                  >
+                    {/* Icône de trophée stylisée */}
+                    <svg width="28" height="28" viewBox="0 0 24 24" fill="none">
+                      <path
+                        d="M12 2C13.1 2 14 2.9 14 4V6H18C19.1 6 20 6.9 20 8V10C20 11.1 19.1 12 18 12H16.5C16.1 13.7 15.2 15.2 14 16.3V18H16C16.6 18 17 18.4 17 19S16.6 20 16 20H8C7.4 20 7 19.6 7 19S7.4 18 8 18H10V16.3C8.8 15.2 7.9 13.7 7.5 12H6C4.9 12 4 11.1 4 10V8C4 6.9 4.9 6 6 6H10V4C10 2.9 10.9 2 12 2ZM6 8V10H7.5C7.8 9.3 8.2 8.7 8.7 8H6ZM18 8H15.3C15.8 8.7 16.2 9.3 16.5 10H18V8Z"
+                        fill="white"
+                      />
+                    </svg>
+                  </Box>
                 </Box>
 
                 <Box sx={{ flex: 1 }}>
@@ -1566,43 +1710,152 @@ const Dashboard: React.FC<DashboardProps> = ({ user, onRecordingStateChange }) =
                     </Typography>
                   </Box>
 
-                  {/* Badges de récompenses */}
+                  {/* Badges de récompenses professionnels */}
                   <Stack direction="row" spacing={1} sx={{ flexWrap: 'wrap', gap: 1 }}>
+                    {/* Badge de niveau d'engagement */}
                     <Chip 
-                      icon={<span>🔥</span>} 
-                      label={engagementLevel} 
+                      icon={
+                        <Box sx={{ 
+                          display: 'flex', 
+                          alignItems: 'center', 
+                          justifyContent: 'center',
+                          width: 16,
+                          height: 16
+                        }}>
+                          <svg width="14" height="14" viewBox="0 0 24 24" fill="none">
+                            <path
+                              d="M12 2L15.09 8.26L22 9.27L17 14.14L18.18 21.02L12 17.77L5.82 21.02L7 14.14L2 9.27L8.91 8.26L12 2Z"
+                              fill="currentColor"
+                            />
+                          </svg>
+                        </Box>
+                      }
+                      label={engagementLevel.replace(/[🏆🚀🔥🌱👋]/g, '').trim()} 
                       size="small"
                       sx={{ 
-                        bgcolor: 'rgba(239, 68, 68, 0.1)',
-                        color: '#DC2626',
-                        fontWeight: 500,
-                        '& .MuiChip-icon': { fontSize: '14px' }
+                        bgcolor: engagementScore >= 75 ? 'rgba(59, 130, 246, 0.1)' : 
+                                engagementScore >= 50 ? 'rgba(16, 185, 129, 0.1)' : 
+                                engagementScore >= 25 ? 'rgba(245, 158, 11, 0.1)' : 'rgba(107, 114, 128, 0.1)',
+                        color: engagementScore >= 75 ? '#2563EB' : 
+                               engagementScore >= 50 ? '#059669' : 
+                               engagementScore >= 25 ? '#D97706' : '#6B7280',
+                        fontWeight: 600,
+                        border: '1px solid',
+                        borderColor: engagementScore >= 75 ? 'rgba(59, 130, 246, 0.2)' : 
+                                    engagementScore >= 50 ? 'rgba(16, 185, 129, 0.2)' : 
+                                    engagementScore >= 25 ? 'rgba(245, 158, 11, 0.2)' : 'rgba(107, 114, 128, 0.2)',
+                        '& .MuiChip-icon': { 
+                          color: 'inherit'
+                        }
                       }}
                     />
+                    
+                    {/* Badge de classement */}
                     <Chip 
-                      icon={<span>⭐</span>} 
+                      icon={
+                        <Box sx={{ 
+                          display: 'flex', 
+                          alignItems: 'center', 
+                          justifyContent: 'center',
+                          width: 16,
+                          height: 16
+                        }}>
+                          <svg width="14" height="14" viewBox="0 0 24 24" fill="none">
+                            <path
+                              d="M16 6L18.29 8.29L13.41 13.17L9.41 9.17L2 16.59L3.41 18L9.41 12L13.41 16L19.71 9.71L22 12V6H16Z"
+                              fill="currentColor"
+                            />
+                          </svg>
+                        </Box>
+                      }
                       label={`Top ${topPercentage}%`} 
                       size="small"
                       sx={{ 
                         bgcolor: 'rgba(245, 158, 11, 0.1)',
                         color: '#D97706',
-                        fontWeight: 500,
-                        '& .MuiChip-icon': { fontSize: '14px' }
+                        fontWeight: 600,
+                        border: '1px solid rgba(245, 158, 11, 0.2)',
+                        '& .MuiChip-icon': { 
+                          color: 'inherit'
+                        }
                       }}
                     />
+                    
+                    {/* Badge Gilbert Expert (si score élevé) */}
                     {engagementScore >= 75 && (
                       <Chip 
-                        icon={<span>🎯</span>} 
-                        label="Expert Gilbert" 
+                        icon={
+                          <Box sx={{ 
+                            display: 'flex', 
+                            alignItems: 'center', 
+                            justifyContent: 'center',
+                            width: 16,
+                            height: 16
+                          }}>
+                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none">
+                              <path
+                                d="M12 1L3 5V11C3 16.55 6.84 21.74 12 23C17.16 21.74 21 16.55 21 11V5L12 1ZM10.5 17L6 12.5L7.5 11L10.5 14L16.5 8L18 9.5L10.5 17Z"
+                                fill="currentColor"
+                              />
+                            </svg>
+                          </Box>
+                        }
+                        label="Maître Gilbert" 
                         size="small"
                         sx={{ 
-                          bgcolor: 'rgba(59, 130, 246, 0.1)',
-                          color: '#2563EB',
-                          fontWeight: 500,
-                          '& .MuiChip-icon': { fontSize: '14px' }
+                          bgcolor: 'rgba(99, 102, 241, 0.1)',
+                          color: '#6366F1',
+                          fontWeight: 600,
+                          border: '1px solid rgba(99, 102, 241, 0.2)',
+                          '& .MuiChip-icon': { 
+                            color: 'inherit'
+                          }
                         }}
                       />
                     )}
+                    
+                    {/* Badge Utilisateur Actif (si beaucoup de réunions récentes) */}
+                    {(() => {
+                      const recentMeetings = meetingsList.filter(meeting => {
+                        if (!meeting.created_at) return false;
+                        const meetingDate = new Date(meeting.created_at);
+                        const thirtyDaysAgo = new Date();
+                        thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
+                        return meetingDate >= thirtyDaysAgo;
+                      }).length;
+                      
+                      return recentMeetings >= 5 ? (
+                        <Chip 
+                          icon={
+                            <Box sx={{ 
+                              display: 'flex', 
+                              alignItems: 'center', 
+                              justifyContent: 'center',
+                              width: 16,
+                              height: 16
+                            }}>
+                              <svg width="14" height="14" viewBox="0 0 24 24" fill="none">
+                                <path
+                                  d="M12 2C13.1 2 14 2.9 14 4V6H18C19.1 6 20 6.9 20 8V18C20 19.1 19.1 20 18 20H6C4.9 20 4 19.1 4 18V8C4 6.9 4.9 6 6 6H10V4C10 2.9 10.9 2 12 2ZM12 7C10.9 7 10 7.9 10 9S10.9 11 12 11 14 10.1 14 9 13.1 7 12 7ZM18 19V16.5C18 14.6 14.9 13.5 12 13.5S6 14.6 6 16.5V19H18Z"
+                                  fill="currentColor"
+                                />
+                              </svg>
+                            </Box>
+                          }
+                          label="Utilisateur Actif" 
+                          size="small"
+                          sx={{ 
+                            bgcolor: 'rgba(16, 185, 129, 0.1)',
+                            color: '#059669',
+                            fontWeight: 600,
+                            border: '1px solid rgba(16, 185, 129, 0.2)',
+                            '& .MuiChip-icon': { 
+                              color: 'inherit'
+                            }
+                          }}
+                        />
+                      ) : null;
+                    })()}
                   </Stack>
                 </Box>
               </Box>
@@ -1698,6 +1951,325 @@ const Dashboard: React.FC<DashboardProps> = ({ user, onRecordingStateChange }) =
               </Box>
             </Grid>
           </Grid>
+        </Paper>
+      </Box>
+
+      {/* Graphique d'activité élégant */}
+      <Box sx={{ mb: 6 }}>
+        <Paper
+          sx={{
+            p: 4,
+            borderRadius: '16px',
+            background: 'linear-gradient(135deg, rgba(255, 255, 255, 0.9) 0%, rgba(248, 250, 252, 0.9) 100%)',
+            border: '1px solid rgba(0, 0, 0, 0.05)',
+            boxShadow: '0 4px 12px rgba(0, 0, 0, 0.05)',
+            transition: 'all 0.3s ease-in-out',
+            '&:hover': {
+              transform: 'translateY(-2px)',
+              boxShadow: '0 8px 24px rgba(0, 0, 0, 0.1)',
+            }
+          }}
+        >
+          {/* En-tête du graphique */}
+          <Box sx={{ mb: 4 }}>
+            <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mb: 2 }}>
+              <Box sx={{ display: 'flex', alignItems: 'center' }}>
+                <Box
+                  sx={{
+                    width: 48,
+                    height: 48,
+                    borderRadius: '12px',
+                    background: 'linear-gradient(135deg, #10B981 0%, #059669 100%)',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    mr: 2,
+                    boxShadow: '0 4px 12px rgba(16, 185, 129, 0.2)',
+                    position: 'relative',
+                    '&::before': {
+                      content: '""',
+                      position: 'absolute',
+                      top: '50%',
+                      left: '50%',
+                      transform: 'translate(-50%, -50%)',
+                      width: '70%',
+                      height: '70%',
+                      borderRadius: '8px',
+                      background: 'rgba(255, 255, 255, 0.15)',
+                      backdropFilter: 'blur(8px)',
+                    }
+                  }}
+                >
+                  <Box
+                    sx={{
+                      position: 'relative',
+                      zIndex: 1,
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                    }}
+                  >
+                    {/* Icône de pulse/activité minimaliste */}
+                    <svg width="24" height="24" viewBox="0 0 24 24" fill="none">
+                      {/* Ligne de base */}
+                      <path d="M2 12h4" stroke="white" strokeWidth="2" strokeLinecap="round" opacity="0.6"/>
+                      <path d="M18 12h4" stroke="white" strokeWidth="2" strokeLinecap="round" opacity="0.6"/>
+                      
+                      {/* Pulse principal */}
+                      <path 
+                        d="M6 12l2-6 2 12 2-8 2 4 2-2" 
+                        stroke="white" 
+                        strokeWidth="2.5" 
+                        strokeLinecap="round" 
+                        strokeLinejoin="round"
+                        fill="none"
+                        opacity="1"
+                      />
+                    </svg>
+                  </Box>
+                </Box>
+                <Box>
+                  <Typography variant="h5" sx={{ fontWeight: 600, color: 'text.primary' }}>
+                    Votre activité sur Gilbert
+                  </Typography>
+                  <Typography variant="body2" color="text.secondary">
+                    {totalContributions > 0 
+                      ? `${totalContributions} réunion${totalContributions > 1 ? 's' : ''} enregistrée${totalContributions > 1 ? 's' : ''} cette année`
+                      : "Commencez à enregistrer vos réunions pour voir votre activité"
+                    }
+                  </Typography>
+                </Box>
+              </Box>
+              
+              {/* Statistiques rapides */}
+              <Box sx={{ display: 'flex', alignItems: 'center', gap: 3 }}>
+                <Box sx={{ textAlign: 'center' }}>
+                  <Typography variant="h6" sx={{ fontWeight: 700, color: '#10B981' }}>
+                    {totalContributions}
+                  </Typography>
+                  <Typography variant="caption" color="text.secondary">
+                    réunion{totalContributions > 1 ? 's' : ''}
+                  </Typography>
+                </Box>
+                <Box sx={{ textAlign: 'center' }}>
+                  <Typography variant="h6" sx={{ fontWeight: 700, color: '#3B82F6' }}>
+                    {currentStreak}
+                  </Typography>
+                  <Typography variant="caption" color="text.secondary">
+                    jour{currentStreak > 1 ? 's' : ''} de suite
+                  </Typography>
+                </Box>
+                <Box sx={{ textAlign: 'center' }}>
+                  <Typography variant="h6" sx={{ fontWeight: 700, color: '#8B5CF6' }}>
+                    {activeWeeks}
+                  </Typography>
+                  <Typography variant="caption" color="text.secondary">
+                    semaine{activeWeeks > 1 ? 's' : ''} active{activeWeeks > 1 ? 's' : ''}
+                  </Typography>
+                </Box>
+              </Box>
+            </Box>
+          </Box>
+
+          {/* Graphique heatmap */}
+          <Box sx={{ mb: 3 }}>
+            {/* Labels des mois */}
+            <Box sx={{ display: 'flex', mb: 1, pl: 4 }}>
+              {['Jan', 'Fév', 'Mar', 'Avr', 'Mai', 'Jun', 'Jul', 'Aoû', 'Sep', 'Oct', 'Nov', 'Déc'].map((month, index) => (
+                <Box
+                  key={month}
+                  sx={{
+                    flex: 1,
+                    textAlign: 'center',
+                    display: index % 2 === 0 ? 'block' : 'none', // Afficher un mois sur deux pour éviter l'encombrement
+                  }}
+                >
+                  <Typography variant="caption" color="text.secondary" sx={{ fontSize: '10px', fontWeight: 500 }}>
+                    {month}
+                  </Typography>
+                </Box>
+              ))}
+            </Box>
+
+            {/* Graphique principal */}
+            <Box sx={{ display: 'flex', alignItems: 'flex-start' }}>
+              {/* Labels des jours */}
+              <Box sx={{ display: 'flex', flexDirection: 'column', mr: 2, pt: 1 }}>
+                {['Lun', 'Mar', 'Mer', 'Jeu', 'Ven', 'Sam', 'Dim'].map((day, index) => (
+                  <Box
+                    key={day}
+                    sx={{
+                      height: '11px',
+                      mb: '2px',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'flex-end',
+                      pr: 1,
+                      minWidth: '24px',
+                    }}
+                  >
+                    {index % 2 === 0 && ( // Afficher un jour sur deux
+                      <Typography variant="caption" color="text.secondary" sx={{ fontSize: '9px', fontWeight: 500 }}>
+                        {day}
+                      </Typography>
+                    )}
+                  </Box>
+                ))}
+              </Box>
+
+              {/* Grille d'activité */}
+              <Box sx={{ display: 'flex', gap: '2px', flexWrap: 'wrap', maxWidth: '100%' }}>
+                {weeklyData.map((week, weekIndex) => (
+                  <Box key={weekIndex} sx={{ display: 'flex', flexDirection: 'column', gap: '2px' }}>
+                    {week.map((day, dayIndex) => {
+                      const getColor = (level: number) => {
+                        switch (level) {
+                          case 0: return 'rgba(0, 0, 0, 0.04)'; // Gris très clair
+                          case 1: return 'rgba(16, 185, 129, 0.3)'; // Vert clair
+                          case 2: return 'rgba(16, 185, 129, 0.5)'; // Vert moyen
+                          case 3: return 'rgba(16, 185, 129, 0.7)'; // Vert foncé
+                          case 4: return 'rgba(16, 185, 129, 0.9)'; // Vert très foncé
+                          default: return 'rgba(0, 0, 0, 0.04)';
+                        }
+                      };
+
+                      const isToday = day.date === new Date().toISOString().split('T')[0];
+
+                      return (
+                        <Tooltip
+                          key={dayIndex}
+                          title={
+                            day.count === 0 
+                              ? `Aucune réunion le ${new Date(day.date).toLocaleDateString('fr-FR', { 
+                                  day: 'numeric', 
+                                  month: 'long', 
+                                  year: 'numeric' 
+                                })}`
+                              : `${day.count} réunion${day.count > 1 ? 's' : ''} enregistrée${day.count > 1 ? 's' : ''} le ${new Date(day.date).toLocaleDateString('fr-FR', { 
+                                  day: 'numeric', 
+                                  month: 'long', 
+                                  year: 'numeric' 
+                                })}`
+                          }
+                          placement="top"
+                          arrow
+                        >
+                          <Box
+                            sx={{
+                              width: '11px',
+                              height: '11px',
+                              borderRadius: '2px',
+                              backgroundColor: getColor(day.level),
+                              cursor: 'pointer',
+                              transition: 'all 0.2s ease',
+                              border: isToday ? '1px solid #10B981' : 'none',
+                              boxShadow: isToday ? '0 0 0 1px rgba(16, 185, 129, 0.3)' : 'none',
+                              '&:hover': {
+                                transform: 'scale(1.2)',
+                                boxShadow: '0 2px 8px rgba(16, 185, 129, 0.3)',
+                                zIndex: 1,
+                                position: 'relative',
+                              },
+                            }}
+                          />
+                        </Tooltip>
+                      );
+                    })}
+                  </Box>
+                ))}
+              </Box>
+            </Box>
+          </Box>
+
+          {/* Légende et informations supplémentaires */}
+          <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', pt: 2, borderTop: '1px solid rgba(0, 0, 0, 0.05)' }}>
+            <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
+              <Typography variant="caption" color="text.secondary" sx={{ fontWeight: 500 }}>
+                Moins
+              </Typography>
+              <Box sx={{ display: 'flex', gap: '2px' }}>
+                {[0, 1, 2, 3, 4].map((level) => (
+                  <Box
+                    key={level}
+                    sx={{
+                      width: '10px',
+                      height: '10px',
+                      borderRadius: '2px',
+                      backgroundColor: level === 0 ? 'rgba(0, 0, 0, 0.04)' : `rgba(16, 185, 129, ${0.2 + level * 0.2})`,
+                    }}
+                  />
+                ))}
+              </Box>
+              <Typography variant="caption" color="text.secondary" sx={{ fontWeight: 500 }}>
+                Plus
+              </Typography>
+            </Box>
+
+            <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
+              {currentStreak > 0 && (
+                <Chip
+                  icon={
+                    <Box sx={{ 
+                      display: 'flex', 
+                      alignItems: 'center', 
+                      justifyContent: 'center',
+                      width: 16,
+                      height: 16
+                    }}>
+                      <svg width="14" height="14" viewBox="0 0 24 24" fill="none">
+                        <path
+                          d="M13.5.67s.74 2.65.74 4.8c0 2.06-1.35 3.73-3.41 3.73-2.07 0-3.63-1.67-3.63-3.73l.03-.36C5.21 7.51 4 10.62 4 14c0 4.42 3.58 8 8 8s8-3.58 8-8C20 8.61 17.41 3.8 13.5.67zM11.71 19c-1.78 0-3.22-1.4-3.22-3.14 0-1.62 1.05-2.76 2.81-3.12 1.77-.36 3.6-1.21 4.62-2.58.39 1.29.59 2.65.59 4.04 0 2.65-2.15 4.8-4.8 4.8z"
+                          fill="currentColor"
+                        />
+                      </svg>
+                    </Box>
+                  }
+                  label={`${currentStreak} jours de suite`}
+                  size="small"
+                  sx={{
+                    bgcolor: 'rgba(239, 68, 68, 0.1)',
+                    color: '#DC2626',
+                    fontWeight: 600,
+                    border: '1px solid rgba(239, 68, 68, 0.2)',
+                    '& .MuiChip-icon': { 
+                      color: 'inherit'
+                    }
+                  }}
+                />
+              )}
+              {totalContributions > 10 && (
+                <Chip
+                  icon={
+                    <Box sx={{ 
+                      display: 'flex', 
+                      alignItems: 'center', 
+                      justifyContent: 'center',
+                      width: 16,
+                      height: 16
+                    }}>
+                      <svg width="14" height="14" viewBox="0 0 24 24" fill="none">
+                        <path
+                          d="M12 17.27L18.18 21L16.54 13.97L22 9.24L14.81 8.63L12 2L9.19 8.63L2 9.24L7.46 13.97L5.82 21L12 17.27Z"
+                          fill="currentColor"
+                        />
+                      </svg>
+                    </Box>
+                  }
+                  label="Utilisateur Assidu"
+                  size="small"
+                  sx={{
+                    bgcolor: 'rgba(16, 185, 129, 0.1)',
+                    color: '#059669',
+                    fontWeight: 600,
+                    border: '1px solid rgba(16, 185, 129, 0.2)',
+                    '& .MuiChip-icon': { 
+                      color: 'inherit'
+                    }
+                  }}
+                />
+              )}
+            </Box>
+          </Box>
         </Paper>
       </Box>
 

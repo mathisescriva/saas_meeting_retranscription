@@ -11,14 +11,14 @@ import { NotificationProvider } from './contexts/NotificationContext';
 import './styles/global.css';
 
 function App() {
-  const [currentView, setCurrentView] = useState<'dashboard' | 'meetings'>('dashboard');
+  const [currentView, setCurrentView] = useState<'dashboard' | 'meetings' | 'templates'>('dashboard');
   const [isLoggedIn, setIsLoggedIn] = useState<boolean>(false);
   const [currentUser, setCurrentUser] = useState<User | null>(null);
   const [isLoading, setIsLoading] = useState<boolean>(true);
   const [authError, setAuthError] = useState<string | null>(null);
   const [isRecording, setIsRecording] = useState<boolean>(false);
   const [showConfirmNavigation, setShowConfirmNavigation] = useState<boolean>(false);
-  const [pendingView, setPendingView] = useState<'dashboard' | 'meetings' | null>(null);
+  const [pendingView, setPendingView] = useState<'dashboard' | 'meetings' | 'templates' | null>(null);
   const [sidebarOpen, setSidebarOpen] = useState<boolean>(false);
   
   // Détection des breakpoints responsive
@@ -79,7 +79,7 @@ function App() {
     checkAuth();
   }, []);
 
-  const handleViewChange = (view: 'dashboard' | 'meetings') => {
+  const handleViewChange = (view: 'dashboard' | 'meetings' | 'templates') => {
     // Si un enregistrement est en cours, demander confirmation avant de changer de vue
     if (isRecording && currentView !== view) {
       setPendingView(view);

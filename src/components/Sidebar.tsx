@@ -33,13 +33,14 @@ import {
   Close as CloseIcon,
   PhotoCamera as PhotoCameraIcon,
   Menu as MenuIcon,
+  Description as DescriptionIcon,
 } from '@mui/icons-material';
 import { User, logoutUser } from '../services/authService';
 import { useNotification } from '../contexts/NotificationContext';
 import { getUserProfile, updateUserProfile, uploadProfilePicture } from '../services/profileService';
 import SettingsDialog from './SettingsDialog';
 
-// Interface pour les donnu00e9es de profil
+// Interface pour les données de profil
 interface ProfileData {
   id: string;
   email: string;
@@ -49,7 +50,7 @@ interface ProfileData {
 }
 
 interface SidebarProps {
-  onViewChange: (view: 'dashboard' | 'meetings') => void;
+  onViewChange: (view: 'dashboard' | 'meetings' | 'templates') => void;
   user: User | null;
   isMobile?: boolean;
   open?: boolean;
@@ -78,7 +79,7 @@ const Sidebar: React.FC<SidebarProps> = ({ onViewChange, user, isMobile = false,
     }
   }, [user]);
 
-  // Ru00e9cupu00e9ration du profil utilisateur depuis l'API
+  // Ruécupuration du profil utilisateur depuis l'API
   const fetchUserProfile = async () => {
     try {
       const profileData = await getUserProfile();
@@ -87,7 +88,7 @@ const Sidebar: React.FC<SidebarProps> = ({ onViewChange, user, isMobile = false,
       setEmail(profileData.email || '');
     } catch (error) {
       console.error('u00c9chec du chargement du profil:', error);
-      // Initialiser avec les donnu00e9es de l'utilisateur actuel en cas d'u00e9chec
+      // Initialiser avec les données de l'utilisateur actuel en cas d'u00e9chec
       if (user) {
         setUserProfile({
           id: user.id,
@@ -114,9 +115,12 @@ const Sidebar: React.FC<SidebarProps> = ({ onViewChange, user, isMobile = false,
       case 1:
         onViewChange('meetings');
         break;
+      case 2:
+        onViewChange('templates');
+        break;
     }
     
-    // Fermer le sidebar en mode mobile apru00e8s su00e9lection
+    // Fermer le sidebar en mode mobile après sélection
     if (isMobile && onToggle) {
       onToggle();
     }
@@ -426,6 +430,7 @@ const Sidebar: React.FC<SidebarProps> = ({ onViewChange, user, isMobile = false,
             onClick={(event) => handleListItemClick(event, 1)}
             sx={{
               borderRadius: 1,
+              mb: 1,
               '&.Mui-selected': {
                 bgcolor: alpha('#3B82F6', 0.08),
                 color: '#3B82F6',
@@ -442,6 +447,31 @@ const Sidebar: React.FC<SidebarProps> = ({ onViewChange, user, isMobile = false,
               <ListIcon />
             </ListItemIcon>
             <ListItemText primary="Mes réunions" />
+          </ListItemButton>
+        </ListItem>
+
+        <ListItem disablePadding>
+          <ListItemButton
+            selected={selectedIndex === 2}
+            onClick={(event) => handleListItemClick(event, 2)}
+            sx={{
+              borderRadius: 1,
+              '&.Mui-selected': {
+                bgcolor: alpha('#3B82F6', 0.08),
+                color: '#3B82F6',
+                '&:hover': {
+                  bgcolor: alpha('#3B82F6', 0.12),
+                },
+                '& .MuiListItemIcon-root': {
+                  color: '#3B82F6',
+                },
+              },
+            }}
+          >
+            <ListItemIcon>
+              <DescriptionIcon />
+            </ListItemIcon>
+            <ListItemText primary="Templates" />
           </ListItemButton>
         </ListItem>
       </List>

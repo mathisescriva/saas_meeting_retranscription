@@ -1703,39 +1703,123 @@ const MyMeetings: React.FC<MyMeetingsProps> = ({ user, isMobile = false }) => {
                         {meeting.name || meeting.title || 'Sans titre'}
                       </Typography>
                       <Stack direction="row" spacing={2} alignItems="center" flexWrap="wrap">
-                        <Typography variant="body2" color="text.secondary">
-                          🕒 {formatDuration(meeting.audio_duration || meeting.duration)}
-                        </Typography>
-                        <Typography variant="body2" color="text.secondary">
-                          📅 {formatDate(meeting.created_at)}
-                        </Typography>
-                        <Typography variant="body2" color="text.secondary">
-                          👥 {meeting.participants || meeting.speakers_count || '0'} participants
-                        </Typography>
+                        <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
+                          <Box sx={{ 
+                            display: 'flex', 
+                            alignItems: 'center', 
+                            justifyContent: 'center',
+                            width: 20,
+                            height: 20,
+                            borderRadius: '50%',
+                            background: 'linear-gradient(135deg, #3B82F6 0%, #1D4ED8 100%)',
+                            boxShadow: '0 2px 4px rgba(59, 130, 246, 0.2)',
+                            transition: 'all 0.2s ease',
+                            '&:hover': {
+                              transform: 'scale(1.1)',
+                              boxShadow: '0 4px 8px rgba(59, 130, 246, 0.3)',
+                            }
+                          }}>
+                            <svg width="12" height="12" viewBox="0 0 24 24" fill="none">
+                              <path
+                                d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm0 18c-4.41 0-8-3.59-8-8s3.59-8 8-8 8 3.59 8 8-3.59 8-8 8zm.5-13H11v6l5.25 3.15.75-1.23-4.5-2.67V7z"
+                                fill="white"
+                              />
+                            </svg>
+                          </Box>
+                          <Typography variant="body2" color="text.secondary" sx={{ fontWeight: 500 }}>
+                            {formatDuration(meeting.audio_duration || meeting.duration)}
+                          </Typography>
+                        </Box>
+                        <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
+                          <Box sx={{ 
+                            display: 'flex', 
+                            alignItems: 'center', 
+                            justifyContent: 'center',
+                            width: 20,
+                            height: 20,
+                            borderRadius: '50%',
+                            background: 'linear-gradient(135deg, #10B981 0%, #047857 100%)',
+                            boxShadow: '0 2px 4px rgba(16, 185, 129, 0.2)',
+                            transition: 'all 0.2s ease',
+                            '&:hover': {
+                              transform: 'scale(1.1)',
+                              boxShadow: '0 4px 8px rgba(16, 185, 129, 0.3)',
+                            }
+                          }}>
+                            <svg width="12" height="12" viewBox="0 0 24 24" fill="none">
+                              <path
+                                d="M19 3h-1V1h-2v2H8V1H6v2H5c-1.11 0-1.99.9-1.99 2L3 19c0 1.1.89 2 2 2h14c1.1 0 2-.9 2-2V5c0-1.1-.9-2-2-2zm0 16H5V8h14v11zM7 10h5v5H7z"
+                                fill="white"
+                              />
+                            </svg>
+                          </Box>
+                          <Typography variant="body2" color="text.secondary" sx={{ fontWeight: 500 }}>
+                            {formatDate(meeting.created_at)}
+                          </Typography>
+                        </Box>
+                        <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
+                          <Box sx={{ 
+                            display: 'flex', 
+                            alignItems: 'center', 
+                            justifyContent: 'center',
+                            width: 20,
+                            height: 20,
+                            borderRadius: '50%',
+                            background: 'linear-gradient(135deg, #8B5CF6 0%, #6D28D9 100%)',
+                            boxShadow: '0 2px 4px rgba(139, 92, 246, 0.2)',
+                            transition: 'all 0.2s ease',
+                            '&:hover': {
+                              transform: 'scale(1.1)',
+                              boxShadow: '0 4px 8px rgba(139, 92, 246, 0.3)',
+                            }
+                          }}>
+                            <svg width="12" height="12" viewBox="0 0 24 24" fill="none">
+                              <path
+                                d="M12 12c2.21 0 4-1.79 4-4s-1.79-4-4-4-4 1.79-4 4 1.79 4 4 4zm0 2c-2.67 0-8 1.34-8 4v2h16v-2c0-2.66-5.33-4-8-4z"
+                                fill="white"
+                              />
+                              <circle cx="18" cy="8" r="2" fill="white" opacity="0.8"/>
+                              <path d="M18 12c-1.33 0-2.67.33-3.33 1H20v-1c0-.67-1.33-1-2-1z" fill="white" opacity="0.8"/>
+                            </svg>
+                          </Box>
+                          <Typography variant="body2" color="text.secondary" sx={{ fontWeight: 500 }}>
+                            {meeting.participants || meeting.speakers_count || '0'} participants
+                          </Typography>
+                        </Box>
                         
                         {/* Avertissement pour les audios de moins d'une minute */}
                         {((meeting.audio_duration || meeting.duration || 0) < 60) && (
-                          <Tooltip title="Les enregistrements courts peuvent affecter la qualité de la transcription">
-                            <Chip
-                              icon={<WarningIcon fontSize="small" />}
-                              label=""
-                              size="small"
-                              sx={{
-                                bgcolor: alpha('#F59E0B', 0.1),
-                                color: '#F59E0B',
-                                fontWeight: 500,
-                                maxWidth: '100%',
-                                '& .MuiChip-label': {
-                                  whiteSpace: 'normal',
-                                  overflow: 'visible',
-                                  textOverflow: 'clip',
-                                  display: 'block',
-                                  lineHeight: 1.2,
-                                  py: 0.5
-                                }
-                              }}
+                          <Box
+                            sx={{
+                              display: 'flex',
+                              alignItems: 'center',
+                              gap: 0.75,
+                              px: 1,
+                              py: 0.5,
+                              borderRadius: 1,
+                              background: `${alpha('#FEF3C7', 0.4)}`,
+                              border: `1px solid ${alpha('#F59E0B', 0.1)}`,
+                            }}
+                          >
+                            <WarningIcon 
+                              sx={{ 
+                                fontSize: 14, 
+                                color: '#D97706',
+                                opacity: 0.7
+                              }} 
                             />
-                          </Tooltip>
+                            <Typography
+                              variant="caption"
+                              sx={{
+                                fontSize: '0.7rem',
+                                fontWeight: 400,
+                                color: '#92400E',
+                                opacity: 0.8,
+                              }}
+                            >
+                              Court
+                            </Typography>
+                          </Box>
                         )}
                         
                         {/* Status chip */}

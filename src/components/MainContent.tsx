@@ -4,6 +4,7 @@ import { User } from '../services/authService';
 import Dashboard from './Dashboard';
 import AudioPlayer from './AudioPlayer';
 import MyMeetings from './MyMeetings';
+import TemplatesView from './TemplatesView';
 import {
   Box,
   Paper,
@@ -54,7 +55,7 @@ interface Report {
 
 interface MainContentProps {
   currentUser: User | null;
-  currentView: 'dashboard' | 'meetings';
+  currentView: 'dashboard' | 'meetings' | 'templates';
   onRecordingStateChange: (recording: boolean) => void;
   isMobile?: boolean;
   onToggleSidebar?: () => void;
@@ -540,37 +541,43 @@ const MainContent: React.FC<MainContentProps> = ({
   isMobile = false,
   onToggleSidebar 
 }) => {
+  
+  // Rendu conditionnel en fonction de la vue sélectionnée
+  const renderContent = () => {
+    switch (currentView) {
+      case 'dashboard':
+        return <Dashboard user={currentUser} onRecordingStateChange={onRecordingStateChange} />;
+      case 'meetings':
+        return <MyMeetings user={currentUser} />;
+      case 'templates':
+        return <TemplatesView />;
+      default:
+        return <Dashboard user={currentUser} onRecordingStateChange={onRecordingStateChange} />;
+    }
+  };
+
   return (
     <Box sx={{ 
-      flexGrow: 1, 
-      height: '100%', 
-      overflow: 'auto',
-      width: { xs: '100%', md: 'calc(100% - 280px)' },
-      display: 'flex',
+      flex: 1, 
+      display: 'flex', 
       flexDirection: 'column',
-      borderLeft: 'none !important',
-      boxShadow: 'none !important'
+      position: 'relative',
+      height: '100vh'
     }}>
-      {/* Header avec bouton menu en mode mobile */}
-      {isMobile && (
-        <AppBar position="static" color="default" elevation={0} sx={{
-          borderBottom: '1px solid',
-          borderColor: 'divider',
-          backgroundColor: 'white',
-          borderTopLeftRadius: 16,
-          borderTopRightRadius: 16
-        }}>
-          <Toolbar sx={{ minHeight: { xs: '56px' }, px: { xs: 1, sm: 2 } }}>
-            <IconButton 
-              edge="start" 
-              color="inherit" 
+      {/* Barre d'outils mobile */}
+      {isMobile && currentView !== 'templates' && (
+        <AppBar position="static" elevation={0} sx={{ bgcolor: 'white', borderBottom: '1px solid #e0e0e0' }}>
+          <Toolbar sx={{ minHeight: '64px !important' }}>
+            <IconButton
+              edge="start"
+              color="primary"
               aria-label="menu"
               onClick={onToggleSidebar}
               sx={{ mr: 2 }}
             >
               <MenuIcon />
             </IconButton>
-            <Typography variant="h6" component="div" sx={{ flexGrow: 1 }}>
+            <Typography variant="h6" component="div" sx={{ flexGrow: 1, color: 'text.primary' }}>
               {currentView === 'dashboard' ? 'Tableau de bord' : 'Mes réunions'}
             </Typography>
           </Toolbar>
@@ -579,24 +586,12 @@ const MainContent: React.FC<MainContentProps> = ({
       
       {/* Contenu principal */}
       <Box sx={{ 
-        flexGrow: 1, 
-        overflow: 'auto', 
-        p: { xs: 1, sm: 2, md: 3 },
-        backgroundColor: 'white',
-        borderRadius: { xs: '16px 16px 0 0', md: 0 }  // Coins arrondis uniquement en haut en mode mobile
+        flex: 1, 
+        display: 'flex', 
+        flexDirection: 'column',
+        overflow: currentView === 'templates' ? 'hidden' : 'auto'
       }}>
-        {currentView === 'dashboard' ? (
-          <Dashboard 
-            user={currentUser}
-            onRecordingStateChange={onRecordingStateChange} 
-            isMobile={isMobile}
-          />
-        ) : (
-          <MyMeetings 
-            user={currentUser}
-            isMobile={isMobile}
-          />
-        )}
+        {renderContent()}
       </Box>
     </Box>
   );
