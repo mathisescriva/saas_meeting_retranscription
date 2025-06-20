@@ -178,6 +178,21 @@ const Dashboard: React.FC<DashboardProps> = ({ user, onRecordingStateChange }) =
   const [showSettingsDialog, setShowSettingsDialog] = useState(false);
   const [showPremiumDialog, setShowPremiumDialog] = useState(false);
 
+  // États de chargement pour les animations fluides
+  const [isLoaded, setIsLoaded] = useState(false);
+
+  useEffect(() => {
+    fetchMeetings();
+    loadUserProfile();
+    
+    // Animation d'entrée progressive - très rapide
+    const timer = setTimeout(() => {
+      setIsLoaded(true);
+    }, 20);
+
+    return () => clearTimeout(timer);
+  }, []);
+
   // Fonction pour ouvrir la fenêtre de paramètres
   const handleOpenSettings = () => {
     setShowSettingsDialog(true);
@@ -1317,10 +1332,18 @@ const Dashboard: React.FC<DashboardProps> = ({ user, onRecordingStateChange }) =
     <Box sx={{ 
       p: 4,
       background: 'linear-gradient(145deg, rgba(255,255,255,0.9) 0%, rgba(249,250,251,0.9) 100%)',
-      minHeight: '100vh'
+      minHeight: '100vh',
+      opacity: isLoaded ? 1 : 0,
+      transform: isLoaded ? 'translateY(0)' : 'translateY(10px)',
+      transition: 'all 0.2s ease-out'
     }}>
       {/* Header */}
-      <Box sx={{ mb: 4 }}>
+      <Box sx={{ 
+        mb: 4,
+        opacity: isLoaded ? 1 : 0,
+        transform: isLoaded ? 'translateY(0)' : 'translateY(10px)',
+        transition: 'all 0.2s ease-out 0.02s'
+      }}>
         <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mb: 1 }}>
           <Box sx={{ display: 'flex', alignItems: 'center', ml: -2 }}>
             <Box component="img" 
@@ -1353,7 +1376,12 @@ const Dashboard: React.FC<DashboardProps> = ({ user, onRecordingStateChange }) =
       </Box>
 
       {/* Quick Actions */}
-      <Box sx={{ mb: 6 }}>
+      <Box sx={{ 
+        mb: 6,
+        opacity: isLoaded ? 1 : 0,
+        transform: isLoaded ? 'translateY(0)' : 'translateY(15px)',
+        transition: 'all 0.2s ease-out 0.04s'
+      }}>
         <Grid container spacing={2}>
           <Grid item xs={12} md={4}>
             <Paper
@@ -1507,7 +1535,12 @@ const Dashboard: React.FC<DashboardProps> = ({ user, onRecordingStateChange }) =
       </Box>
 
       {/* Carte d'engagement utilisateur */}
-      <Box sx={{ mb: 6 }}>
+      <Box sx={{ 
+        mb: 6,
+        opacity: isLoaded ? 1 : 0,
+        transform: isLoaded ? 'translateY(0)' : 'translateY(20px)',
+        transition: 'all 0.2s ease-out 0.06s'
+      }}>
         <Paper
           sx={{
             p: 4,
@@ -1955,7 +1988,12 @@ const Dashboard: React.FC<DashboardProps> = ({ user, onRecordingStateChange }) =
       </Box>
 
       {/* Graphique d'activité élégant */}
-      <Box sx={{ mb: 6 }}>
+      <Box sx={{ 
+        mb: 6,
+        opacity: isLoaded ? 1 : 0,
+        transform: isLoaded ? 'translateY(0)' : 'translateY(25px)',
+        transition: 'all 0.2s ease-out 0.08s'
+      }}>
         <Paper
           sx={{
             p: 4,
@@ -2274,60 +2312,66 @@ const Dashboard: React.FC<DashboardProps> = ({ user, onRecordingStateChange }) =
       </Box>
 
       {/* Features Grid */}
-      <Typography variant="h5" sx={{ mb: 3, fontWeight: 600 }}>
-      Fonctionnalités disponibles
-      </Typography>
-      <Grid container spacing={3} sx={{ mb: 6 }}>
-        {features.map((feature) => (
-          <Grid item xs={12} sm={6} md={4} key={feature.title}>
-            <Card
-              sx={{
-                height: '100%',
-                display: 'flex',
-                flexDirection: 'column',
-                ...(feature.highlight && {
-                  borderColor: 'primary.main',
-                  borderWidth: 2,
-                  borderStyle: 'solid',
-                }),
-              }}
-            >
-              <CardContent sx={{ flexGrow: 1 }}>
-                <IconButton
-                  sx={{
-                    mb: 2,
-                    color: feature.highlight ? 'primary.main' : 'text.secondary',
-                    bgcolor: feature.highlight
-                      ? 'primary.light'
-                      : 'action.selected',
-                    '&:hover': {
+      <Box sx={{
+        opacity: isLoaded ? 1 : 0,
+        transform: isLoaded ? 'translateY(0)' : 'translateY(30px)',
+        transition: 'all 0.2s ease-out 0.1s'
+      }}>
+        <Typography variant="h5" sx={{ mb: 3, fontWeight: 600 }}>
+        Fonctionnalités disponibles
+        </Typography>
+        <Grid container spacing={3} sx={{ mb: 6 }}>
+          {features.map((feature) => (
+            <Grid item xs={12} sm={6} md={4} key={feature.title}>
+              <Card
+                sx={{
+                  height: '100%',
+                  display: 'flex',
+                  flexDirection: 'column',
+                  ...(feature.highlight && {
+                    borderColor: 'primary.main',
+                    borderWidth: 2,
+                    borderStyle: 'solid',
+                  }),
+                }}
+              >
+                <CardContent sx={{ flexGrow: 1 }}>
+                  <IconButton
+                    sx={{
+                      mb: 2,
+                      color: feature.highlight ? 'primary.main' : 'text.secondary',
                       bgcolor: feature.highlight
                         ? 'primary.light'
                         : 'action.selected',
-                    },
-                  }}
-                >
-                  {feature.icon}
-                </IconButton>
-                <Typography variant="h6" component="h2" sx={{ mb: 1 }}>
-                  {feature.title}
-                </Typography>
-                <Typography variant="body2" color="text.secondary">
-                  {feature.description}
-                </Typography>
-              </CardContent>
-              <CardActions>
-                <Button 
-                  size="small"
-                  onClick={handleOpenSettings}
-                >
-                  {feature.action}
-                </Button>
-              </CardActions>
-            </Card>
-          </Grid>
-        ))}
-      </Grid>
+                      '&:hover': {
+                        bgcolor: feature.highlight
+                          ? 'primary.light'
+                          : 'action.selected',
+                      },
+                    }}
+                  >
+                    {feature.icon}
+                  </IconButton>
+                  <Typography variant="h6" component="h2" sx={{ mb: 1 }}>
+                    {feature.title}
+                  </Typography>
+                  <Typography variant="body2" color="text.secondary">
+                    {feature.description}
+                  </Typography>
+                </CardContent>
+                <CardActions>
+                  <Button 
+                    size="small"
+                    onClick={handleOpenSettings}
+                  >
+                    {feature.action}
+                  </Button>
+                </CardActions>
+              </Card>
+            </Grid>
+          ))}
+        </Grid>
+      </Box>
 
       {/* Dialogue pour nommer l'enregistrement */}
       <Dialog open={showDialog} onClose={() => !isUploading && setShowDialog(false)}>
