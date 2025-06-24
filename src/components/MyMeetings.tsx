@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import {
   Box,
   Typography,
@@ -20,7 +20,12 @@ import {
   LinearProgress,
   Fade,
   Zoom,
-  TextField
+  TextField,
+  useMediaQuery,
+  InputAdornment,
+  List,
+  ListItem,
+  ListItemText
 } from '@mui/material';
 import { alpha } from '@mui/material/styles';
 import MeetingSummaryRenderer from './MeetingSummaryRenderer';
@@ -36,23 +41,19 @@ import {
   Description as DescriptionIcon,
   Share as ShareIcon,
   Update as UpdateIcon,
-  FileDownload as FileDownloadIcon,
   NewReleases as NewReleasesIcon,
   Person as PersonIcon,
-  PersonOutline as PersonOutlineIcon,
   Edit as EditIcon,
   Check as CheckIcon,
   Cancel as CancelIcon,
   ExpandMore as ExpandMoreIcon,
   ExpandLess as ExpandLessIcon,
   Save as SaveIcon,
-  PlayArrow as PlayIcon,
-  Stop as StopIcon,
   Download as DownloadIcon,
-  SupervisorAccount as SupervisorAccountIcon,
-  Upload as UploadIcon,
+  Summarize as SummarizeIcon,
+  Search as SearchIcon,
   PlayArrow as PlayArrowIcon,
-  Summarize as SummarizeIcon
+  Pause as PauseIcon
 } from '@mui/icons-material';
 import {
   getAllMeetings, 
@@ -102,7 +103,7 @@ interface MyMeetingsProps {
   isMobile?: boolean;
 }
 
-const MyMeetings: React.FC<MyMeetingsProps> = ({ user, isMobile = false }) => {
+const MyMeetings: React.FC<MyMeetingsProps> = ({ user: _user, isMobile: _isMobile = false }) => {
   const theme = useTheme();
   const { showSuccessPopup, showErrorPopup } = useNotification();
   const [meetings, setMeetings] = useState<Meeting[]>([]);
@@ -124,143 +125,96 @@ const MyMeetings: React.FC<MyMeetingsProps> = ({ user, isMobile = false }) => {
   const [closingSummary, setClosingSummary] = useState<boolean>(false);
   const [selectedMeetingId, setSelectedMeetingId] = useState<string | null>(null);
   const [generatingSummaryId, setGeneratingSummaryId] = useState<string | null>(null);
-  const [summaryWatchers, setSummaryWatchers] = useState<Record<string, () => void>>({});
+  const [viewingSummaryId, setViewingSummaryId] = useState<string | null>(null);
   const [transcriptDialogOpen, setTranscriptDialogOpen] = useState<boolean>(false);
   const [isLoadingTranscript, setIsLoadingTranscript] = useState<boolean>(false);
   const [retryingMeetingId, setRetryingMeetingId] = useState<string | null>(null);
-  const [isDeleting, setIsDeleting] = useState<boolean>(false);
-  const [audioDialogOpen, setAudioDialogOpen] = useState(false);
-  const [isRefreshing, setIsRefreshing] = useState(false);
-  const [refreshingMetadataId, setRefreshingMetadataId] = useState<string | null>(null);
-  const [showGilbertPopup, setShowGilbertPopup] = useState(false);
-
-  // États pour la gestion des speakers
+  
+  // Ajout des refs pour gérer le nettoyage des timers
+  const pollTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  const isComponentMounted = useRef(true);
+  
+  // Cache intelligent pour éviter les appels répétés
+  const lastFetchRef = useRef<number>(0);
+  const cachedMeetingsRef = useRef<Meeting[]>([]);
+  const CACHE_DURATION = 30000; // Cache valide pendant 30 secondes
+  
+  // Ajout des états manquants pour l'édition des speakers et des transcriptions
   const [editingSpeaker, setEditingSpeaker] = useState<string | null>(null);
-  const [editingName, setEditingName] = useState('');
-  const [showSpeakerManagement, setShowSpeakerManagement] = useState(false);
-
-  // États pour l'édition du transcript
-  const [isEditingTranscript, setIsEditingTranscript] = useState(false);
-  const [editedTranscriptText, setEditedTranscriptText] = useState('');
-  const [isSavingTranscript, setIsSavingTranscript] = useState(false);
-
-  // Fonction de recherche intelligente pour filtrer les réunions
-  const handleSearch = useCallback((query: string) => {
-    setSearchQuery(query);
-    
-    if (!query.trim()) {
-      setFilteredMeetings(meetings);
-      return;
+  const [editingName, setEditingName] = useState<string>('');
+  const [monthFilter, setMonthFilter] = useState<number | null>(null);
+  const [yearFilter, setYearFilter] = useState<number | null>(null);
+  const [isRefreshing, setIsRefreshing] = useState<boolean>(false);
+  const [isDeleting, setIsDeleting] = useState<boolean>(false);
+  const [isEditingTranscript, setIsEditingTranscript] = useState<boolean>(false);
+  const [editedTranscriptText, setEditedTranscriptText] = useState<string>('');
+  const [isSavingTranscript, setIsSavingTranscript] = useState<boolean>(false);
+  
+  // États manquants ajoutés
+  const [audioDialogOpen, setAudioDialogOpen] = useState<boolean>(false);
+  const [refreshingMetadataId, setRefreshingMetadataId] = useState<string | null>(null);
+  const [showGilbertPopup, setShowGilbertPopup] = useState<boolean>(false);
+  
+  // Fonction pour nettoyer les timers de polling
+  const cleanupPolling = useCallback(() => {
+    if (pollTimeoutRef.current) {
+      console.log('🧹 Cleaning up polling timeout');
+      clearTimeout(pollTimeoutRef.current);
+      pollTimeoutRef.current = null;
     }
-    
-    const lowercaseQuery = query.toLowerCase().trim();
-    
-    // Recherche par mois/année (formats: 'janvier 2023', 'jan 2023', '01 2023', etc.)
-    const monthNames = [
-      'janvier', 'février', 'mars', 'avril', 'mai', 'juin',
-      'juillet', 'août', 'septembre', 'octobre', 'novembre', 'décembre'
-    ];
-    const shortMonthNames = [
-      'jan', 'fév', 'mar', 'avr', 'mai', 'juin',
-      'juil', 'août', 'sept', 'oct', 'nov', 'déc'
-    ];
-    
-    let monthFilter: number | null = null;
-    let yearFilter: number | null = null;
-    
-    // Recherche d'un pattern de date (mois année)
-    const dateRegex = /(jan|fév|mar|avr|mai|juin|juil|août|sept|oct|nov|déc|janvier|février|mars|avril|mai|juin|juillet|août|septembre|octobre|novembre|décembre|\d{1,2})\s+(\d{4})/i;
-    const dateMatch = lowercaseQuery.match(dateRegex);
-    
-    if (dateMatch) {
-      const monthPart = dateMatch[1].toLowerCase();
-      const yearPart = parseInt(dateMatch[2]);
-      
-      // Vérifier si c'est un nombre de mois (1-12)
-      if (/^\d{1,2}$/.test(monthPart)) {
-        const monthNum = parseInt(monthPart);
-        if (monthNum >= 1 && monthNum <= 12) {
-          monthFilter = monthNum - 1; // Convertir en index base 0
-          yearFilter = yearPart;
-        }
-      } else {
-        // Vérifier si c'est un nom de mois
-        const fullMonthIndex = monthNames.findIndex(m => m.startsWith(monthPart));
-        const shortMonthIndex = shortMonthNames.findIndex(m => m.startsWith(monthPart));
-        
-        if (fullMonthIndex !== -1) {
-          monthFilter = fullMonthIndex;
-          yearFilter = yearPart;
-        } else if (shortMonthIndex !== -1) {
-          monthFilter = shortMonthIndex;
-          yearFilter = yearPart;
-        }
-      }
-    }
-    
-    // Filtrer les réunions en fonction des critères
-    const filtered = meetings.filter(meeting => {
-      // Si on a un filtre mois/année, l'appliquer en priorité
-      if (monthFilter !== null && yearFilter !== null && meeting.date) {
-        const meetingDate = new Date(meeting.date);
-        return meetingDate.getMonth() === monthFilter && meetingDate.getFullYear() === yearFilter;
-      }
-      
-      // Filtrer par titre
-      const titleMatch = meeting.title?.toLowerCase().includes(lowercaseQuery);
-      
-      // Filtrer par nombre de participants (si la requête est un nombre)
-      const participantMatch = !isNaN(Number(query)) && meeting.participants === Number(query);
-      
-      // Filtrer par durée (format: '30min', '1h', '1h30', etc.)
-      const durationMatch = meeting.duration !== undefined && 
-      (() => {
-        const durationRegex = /(\d+)\s*(h|min|s|heures|minutes|secondes)?/i;
-        const durationMatch = lowercaseQuery.match(durationRegex);
-        
-        if (durationMatch) {
-          const value = parseInt(durationMatch[1]);
-          const unit = durationMatch[2]?.toLowerCase() || 'min'; // Par défaut en minutes
-          
-          let durationInSeconds = meeting.duration;
-          let queryInSeconds = 0;
-          
-          if (unit.startsWith('h')) {
-            queryInSeconds = value * 3600;
-          } else if (unit.startsWith('min')) {
-            queryInSeconds = value * 60;
-          } else if (unit.startsWith('s')) {
-            queryInSeconds = value;
-          }
-          
-          // Considérer une marge de 10% pour la durée
-          const lowerBound = queryInSeconds * 0.9;
-          const upperBound = queryInSeconds * 1.1;
-          
-          return durationInSeconds >= lowerBound && durationInSeconds <= upperBound;
-        }
-        
-        return false;
-      })();
-      
-      // Vérifier si au moins un critère correspond
-      return titleMatch || participantMatch || durationMatch;
-    });
-    
-    setFilteredMeetings(filtered);
-  }, [meetings]);
+  }, []);
 
-  // Fonction pour récupérer les réunions avec un temps minimum d'animation de chargement
-  const fetchMeetings = useCallback(async () => {
+  // Fonction pour gérer la persistance des états de génération
+  const getGeneratingSummaryFromStorage = useCallback(() => {
     try {
-      // S'assurer que l'état de chargement est actif
-      setLoading(true);
-      setIsRefreshing(true);
-      setError(null);
+      const stored = localStorage.getItem('generating_summary_id');
+      return stored || null;
+    } catch {
+      return null;
+    }
+  }, []);
+
+  const setGeneratingSummaryInStorage = useCallback((id: string | null) => {
+    try {
+      if (id) {
+        localStorage.setItem('generating_summary_id', id);
+      } else {
+        localStorage.removeItem('generating_summary_id');
+      }
+    } catch (error) {
+      console.error('Error managing localStorage for generating summary:', error);
+    }
+  }, []);
+
+  // Fonction de récupération des réunions mémorisée - MOVED HERE TO FIX DEPENDENCY ORDER
+  const fetchMeetings = useCallback(async (silent: boolean = false) => {
+    try {
+      // Vérifier si on peut utiliser le cache
+      const now = Date.now();
+      const timeSinceLastFetch = now - lastFetchRef.current;
+      const canUseCache = timeSinceLastFetch < CACHE_DURATION && cachedMeetingsRef.current.length > 0;
+      
+      if (canUseCache && !silent) {
+        console.log(`🔄 [FETCH CACHE] Using cached meetings (${Math.round(timeSinceLastFetch / 1000)}s old)`);
+        setMeetings(cachedMeetingsRef.current);
+        setFilteredMeetings(cachedMeetingsRef.current);
+        setLoading(false);
+        setIsRefreshing(false);
+        setError(null);
+        return cachedMeetingsRef.current;
+      }
+      
+      // S'assurer que l'état de chargement est actif seulement si pas en mode silencieux
+      if (!silent) {
+        setLoading(true);
+        setIsRefreshing(true);
+        setError(null);
+      }
       
       // Enregistrer le temps de début pour garantir un temps minimum de chargement
       const startTime = Date.now();
       
+      console.log(`🔄 [FETCH${silent ? ' SILENTLY' : ''}] Fetching all meetings...`);
       const fetchedMeetings = await getAllMeetings();
       
       // Convert the duration values for display
@@ -308,24 +262,49 @@ const MyMeetings: React.FC<MyMeetingsProps> = ({ user, isMobile = false }) => {
       setMeetings(processedMeetings);
       setFilteredMeetings(processedMeetings);
       
+      // Mettre à jour le cache
+      cachedMeetingsRef.current = processedMeetings;
+      lastFetchRef.current = now;
+      
       // Calculer le temps écoulé depuis le début de la requête
       const elapsedTime = Date.now() - startTime;
       const minLoadingTime = 800; // Temps minimum de chargement en millisecondes
       
-      // Si la requête a été trop rapide, attendre un peu pour montrer le chargement
-      if (elapsedTime < minLoadingTime) {
+      // Si la requête a été trop rapide et pas en mode silencieux, attendre un peu pour montrer le chargement
+      if (elapsedTime < minLoadingTime && !silent) {
         await new Promise(resolve => setTimeout(resolve, minLoadingTime - elapsedTime));
       }
+      
+      console.log(`🔄 [FETCH${silent ? ' SILENTLY' : ''}] Successfully fetched ${processedMeetings.length} meetings`);
+      return processedMeetings;
     } catch (err) {
-      console.error('Failed to load meetings:', err);
-      setError('Failed to load your meetings. Please try again.');
+      console.error(`🔄 [FETCH${silent ? ' SILENTLY' : ''}] Failed to load meetings:`, err);
+      if (!silent) {
+        setError('Failed to load your meetings. Please try again.');
+      }
+      throw err;
     } finally {
-      setLoading(false);
-      setIsRefreshing(false);
+      if (!silent) {
+        setLoading(false);
+        setIsRefreshing(false);
+      }
     }
   }, []);
 
-  // Charger les ru00e9unions au montage du composant
+  // Fonction wrapper pour les gestionnaires d'événements
+  const handleRefreshMeetings = useCallback(() => {
+    return fetchMeetings(false);
+  }, [fetchMeetings]);
+
+  // Fonction pour invalider le cache et forcer un nouveau fetch
+  const invalidateCacheAndRefresh = useCallback(() => {
+    console.log('🔄 [CACHE] Invalidating cache and forcing refresh');
+    lastFetchRef.current = 0; // Invalider le cache
+    cachedMeetingsRef.current = []; // Vider le cache
+    return fetchMeetings(false); // Forcer un nouveau fetch
+  }, [fetchMeetings]);
+
+  // Charger les réunions au montage du composant
   useEffect(() => {
     // Force loading state to true immediately on mount
     setLoading(true);
@@ -333,30 +312,35 @@ const MyMeetings: React.FC<MyMeetingsProps> = ({ user, isMobile = false }) => {
     setError(null);
     // Fetch meetings with guaranteed loading animation
     fetchMeetings();
-  }, [fetchMeetings]);
+  }, []);
 
-  // Subscribe to transcription completion events
+  // Effet pour rafraîchir automatiquement les données des réunions en cours de traitement
   useEffect(() => {
-    console.log("MyMeetings: Setting up transcription completed listener");
-    // Register a listener for transcription completed events
-    const unsubscribe = onTranscriptionCompleted((meeting) => {
-      console.log("MyMeetings: Transcription completed event received for:", meeting.name || meeting.title);
-      // Show a success notification when a transcription is completed
-      showSuccessPopup(
-        "Bonne nouvelle !",
-        `La transcription "${meeting.name || meeting.title || 'Réunion sans titre'}" est terminée.`
-      );
-      
-      // Refresh meetings list to show the updated status
-      fetchMeetings();
-    });
+    // TEMPORAIREMENT DÉSACTIVÉ pour éviter la boucle infinie
+    return;
+  }, []); // Dépendances vides pour éviter l'erreur de linter
+
+  // Détection automatique de fin de transcription - Solution propre
+  useEffect(() => {
+    console.log('🔄 Setting up transcription completion listener...');
     
-    // Cleanup subscription when component unmounts
+    const unsubscribe = onTranscriptionCompleted((meeting) => {
+      console.log('✅ Transcription terminée pour la réunion:', meeting.id, meeting.title);
+      console.log('🔄 Rafraîchissement automatique de la liste des réunions...');
+      
+      // Invalider le cache et rafraîchir la liste des réunions
+      invalidateCacheAndRefresh();
+    });
+
     return () => {
-      console.log("MyMeetings: Cleaning up transcription completed listener");
+      console.log('🔄 Cleaning up transcription completion listener');
       unsubscribe();
     };
-  }, [showSuccessPopup, fetchMeetings]);
+  }, [invalidateCacheAndRefresh]);
+
+
+
+
 
   const formatDate = (dateString: string) => {
     return new Date(dateString).toLocaleDateString('fr-FR', {
@@ -789,6 +773,7 @@ const MyMeetings: React.FC<MyMeetingsProps> = ({ user, isMobile = false }) => {
     }
     
     console.log(`Opening template selector for meeting ${meetingId}`);
+    // NE PAS définir generatingSummaryId ici - seulement après sélection du template
     setCurrentMeetingId(meetingId);
     setTemplateSelectorOpen(true);
   };
@@ -800,12 +785,14 @@ const MyMeetings: React.FC<MyMeetingsProps> = ({ user, isMobile = false }) => {
     const meetingId = currentMeetingId;
     setTemplateSelectorOpen(false);
     
+    // Nettoyer tout polling précédent
+    cleanupPolling();
+    
     try {
       setGeneratingSummaryId(meetingId);
       console.log(`Generating summary for meeting ${meetingId} with ${clientId ? `client template: ${clientId}` : 'default template'}`);
       
       // Mettre à jour l'interface utilisateur pour indiquer que le compte rendu est en cours de génération
-      // avant même d'appeler l'API pour une réponse plus immédiate
       setMeetings(prevMeetings => 
         prevMeetings.map(meeting => 
           meeting.id === meetingId 
@@ -818,7 +805,6 @@ const MyMeetings: React.FC<MyMeetingsProps> = ({ user, isMobile = false }) => {
       );
       
       // Appeler l'API pour générer le compte rendu avec le template sélectionné
-      // Nous passons explicitement le client_id (même si null) pour indiquer que nous voulons utiliser le template par défaut
       const meeting = await generateMeetingSummary(meetingId, clientId);
       
       if (!meeting) {
@@ -829,68 +815,75 @@ const MyMeetings: React.FC<MyMeetingsProps> = ({ user, isMobile = false }) => {
       }
       
       console.log(`Summary generation initiated for meeting ${meetingId}:`, meeting);
-      // Pas de notification ici - l'interface montre déjà 'processing'
       
-      // Arrêter tout watcher existant pour cette réunion
-      if (summaryWatchers[meetingId]) {
-        summaryWatchers[meetingId]();
-      }
-      
-      // Surveiller le statut de génération du compte rendu
-      const stopWatching = watchSummaryStatus(meetingId, (status, updatedMeeting) => {
-        console.log(`Summary status update for meeting ${meetingId}: ${status}`);
-        
-        // Mettre à jour l'interface utilisateur avec le statut actuel
-        setMeetings(prevMeetings => 
-          prevMeetings.map(meeting => 
-            meeting.id === meetingId 
-              ? {
-                  ...meeting,
-                  summary_status: status,
-                  summary_text: updatedMeeting.summary_text
-                } 
-              : meeting
-          )
-        );
-        
-        // Si le compte rendu est terminé ou en erreur, arrêter la surveillance
-        if (status === 'completed') {
-          // Notification uniquement à la fin du processus
-          showSuccessPopup('Succès', 'Compte rendu généré avec succès');
-          setGeneratingSummaryId(null);
-          
-          // Arrêter la surveillance
-          if (summaryWatchers[meetingId]) {
-            summaryWatchers[meetingId]();
-            const newWatchers = { ...summaryWatchers };
-            delete newWatchers[meetingId];
-            setSummaryWatchers(newWatchers);
+      // APPROCHE AMÉLIORÉE - Polling avec nettoyage approprié
+      const pollSummaryStatus = async () => {
+        try {
+          // Vérifier si le composant est toujours monté
+          if (!isComponentMounted.current) {
+            console.log('🛑 Component unmounted, stopping polling');
+            return;
           }
-        } else if (status === 'error') {
-          showErrorPopup('Erreur', 'Erreur lors de la génération du compte rendu');
-          setGeneratingSummaryId(null);
           
-          // Arrêter la surveillance
-          if (summaryWatchers[meetingId]) {
-            summaryWatchers[meetingId]();
-            const newWatchers = { ...summaryWatchers };
-            delete newWatchers[meetingId];
-            setSummaryWatchers(newWatchers);
+          // Attendre 3 secondes puis vérifier le statut
+          await new Promise(resolve => setTimeout(resolve, 3000));
+          
+          // Vérifier à nouveau si le composant est toujours monté
+          if (!isComponentMounted.current) {
+            console.log('🛑 Component unmounted during wait, stopping polling');
+            return;
           }
+          
+          // Récupérer les données mises à jour silencieusement
+          console.log(`Polling summary status for meeting ${meetingId}`);
+          const updatedMeetings = await fetchMeetings(true);
+          
+          // Vérifier si la génération est terminée
+          const updatedMeeting = updatedMeetings.find(m => m.id === meetingId);
+          
+          if (updatedMeeting?.summary_status === 'completed') {
+            console.log(`Summary completed for meeting ${meetingId}`);
+            showSuccessPopup('Succès', 'Compte rendu généré avec succès');
+            setGeneratingSummaryId(null);
+            setGeneratingSummaryInStorage(null);
+            cleanupPolling();
+          } else if (updatedMeeting?.summary_status === 'error') {
+            console.log(`Summary failed for meeting ${meetingId}`);
+            showErrorPopup('Erreur', 'Erreur lors de la génération du compte rendu');
+            setGeneratingSummaryId(null);
+            setGeneratingSummaryInStorage(null);
+            cleanupPolling();
+          } else if (updatedMeeting?.summary_status === 'processing') {
+            // Continuer le polling si toujours en cours et si le composant est monté
+            if (isComponentMounted.current) {
+              console.log(`Summary still processing for meeting ${meetingId}, continuing polling...`);
+              pollTimeoutRef.current = setTimeout(pollSummaryStatus, 5000);
+            }
+          } else {
+            // Statut inconnu, arrêter le polling
+            console.log(`Unknown status for meeting ${meetingId}: ${updatedMeeting?.summary_status}`);
+            setGeneratingSummaryId(null);
+            setGeneratingSummaryInStorage(null);
+            cleanupPolling();
+          }
+        } catch (error) {
+          console.error('Error polling summary status:', error);
+          if (isComponentMounted.current) {
+            setGeneratingSummaryId(null);
+            setGeneratingSummaryInStorage(null);
+          }
+          cleanupPolling();
         }
-        // Pas de notification pour les statuts intermédiaires
-      });
+      };
       
-      // Stocker la fonction pour arrêter la surveillance
-      setSummaryWatchers(prev => ({
-        ...prev,
-        [meetingId]: stopWatching
-      }));
+      // Démarrer le polling
+      pollSummaryStatus();
       
     } catch (err) {
       console.error('Failed to generate summary:', err);
       showErrorPopup('Erreur', `Erreur: ${err instanceof Error ? err.message : 'Erreur inconnue'}`);
       setGeneratingSummaryId(null);
+      cleanupPolling();
       
       // Réinitialiser le statut en cas d'erreur
       setMeetings(prevMeetings => 
@@ -920,81 +913,28 @@ const MyMeetings: React.FC<MyMeetingsProps> = ({ user, isMobile = false }) => {
       return;
     }
     
-    // Ouvrir le dialogue du résumé en définissant l'ID de la réunion
+    // Ouvrir le dialogue du résumé
     console.log('Opening summary dialog for meeting:', meetingId);
-    setGeneratingSummaryId(meetingId);
+    setViewingSummaryId(meetingId);
   };
 
   // Fonction pour fermer le dialogue de summary avec un délai
   const handleCloseSummary = () => {
-    // Marquer que nous sommes en train de fermer le dialogue
-    setClosingSummary(true);
-    // Fermer le dialogue
-    setGeneratingSummaryId(null);
-    // Réinitialiser l'état de fermeture après un délai
-    setTimeout(() => {
-      setClosingSummary(false);
-    }, 300);
+    // Fermer le dialogue simplement
+    setViewingSummaryId(null);
   };
 
-  // Nettoyer les watchers lors du démontage du composant
-  useEffect(() => {
-    return () => {
-      // Arrêter tous les watchers de statut de compte rendu
-      Object.values(summaryWatchers).forEach(stopWatching => {
-        if (typeof stopWatching === 'function') {
-          stopWatching();
-        }
-      });
-    };
-  }, [summaryWatchers]);
-
   const renderSummary = () => {
-    const meeting = meetings.find(m => m.id === generatingSummaryId);
+    // Utiliser viewingSummaryId qui est l'ID utilisé pour ouvrir le modal de résumé
+    const meeting = meetings.find(m => m.id === viewingSummaryId);
     if (!meeting) return null;
-    
-    const isLoading = meeting.summary?.status === 'in_progress' || meeting.summary_status === 'processing';
+
+    // Le résumé n'est pas en cours de chargement quand on le visualise (seulement pendant la génération)
+    const isLoading = false;
     const summaryText = meeting.summary_text || '';
     
     return <MeetingSummaryRenderer summaryText={summaryText} isLoading={isLoading} />;
   };
-
-  useEffect(() => {
-    const handleError = (error: any) => {
-      console.error('Error fetching meetings:', error);
-      setLoading(false);
-      setError('Failed to fetch meetings');
-    };
-
-    const fetchMeetings = async () => {
-      setLoading(true);
-      setError(null);
-      try {
-        const response = await getAllMeetings();
-        
-        if (!response) {
-          handleError('No response from server');
-          return;
-        }
-        
-        if (Array.isArray(response)) {
-          // Triez les réunions par date de création (plus récentes en premier)
-          const sortedMeetings = response.sort((a, b) => {
-            return new Date(b.created_at).getTime() - new Date(a.created_at).getTime();
-          });
-          setMeetings(sortedMeetings);
-        } else {
-          handleError('Invalid response format');
-        }
-      } catch (error) {
-        handleError(error);
-      } finally {
-        setLoading(false);
-      }
-    };
-
-    fetchMeetings();
-  }, []);
 
   // Fonctions pour la gestion des speakers
   const getUniqueSpeakers = (transcript: Array<{speaker: string; text: string; timestamp?: string}>): string[] => {
@@ -1135,8 +1075,9 @@ const MyMeetings: React.FC<MyMeetingsProps> = ({ user, isMobile = false }) => {
     try {
       setIsDeleting(true);
       await deleteMeeting(meetingToDelete.id);
-      showSuccessPopup('Success', 'Meeting deleted successfully');
-      await fetchMeetings();
+      showSuccessPopup('Succès', 'Réunion supprimée avec succès');
+      // Forcer un rafraîchissement complet en invalidant le cache
+      await invalidateCacheAndRefresh();
     } catch (error) {
       console.error('Error deleting meeting:', error);
       showErrorPopup('Error', 'Failed to delete meeting');
@@ -1199,6 +1140,279 @@ const MyMeetings: React.FC<MyMeetingsProps> = ({ user, isMobile = false }) => {
       setIsSavingTranscript(false);
     }
   };
+
+  // Fonction de débogage temporaire pour diagnostiquer les problèmes de statut
+  const handleDebugSummaryStatus = async (meetingId: string) => {
+    console.log(`🔧 [DEBUG] Manual status check for meeting ${meetingId}`);
+    try {
+      const meeting = await getMeetingDetails(meetingId);
+      console.log(`🔧 [DEBUG] Meeting details:`, {
+        id: meeting.id,
+        title: meeting.title,
+        summary_status: meeting.summary_status,
+        hasText: !!meeting.summary_text,
+        textLength: meeting.summary_text?.length || 0,
+        created_at: meeting.created_at,
+        transcript_status: meeting.transcript_status
+      });
+      
+      // Forcer une mise à jour de l'état local
+      setMeetings(prevMeetings => 
+        prevMeetings.map(m => 
+          m.id === meetingId 
+            ? { ...m, ...meeting }
+            : m
+        )
+      );
+      
+      showSuccessPopup('Debug', `Statut: ${meeting.summary_status || 'undefined'}, Texte: ${meeting.summary_text ? 'présent' : 'absent'}`);
+    } catch (error) {
+      console.error(`🔧 [DEBUG] Error checking meeting details:`, error);
+      showErrorPopup('Debug Error', `Erreur: ${error instanceof Error ? error.message : 'Erreur inconnue'}`);
+    }
+  };
+
+  // Fonction pour forcer la résolution d'un statut "processing" bloqué
+  const handleForceResolveSummary = async (meetingId: string) => {
+    console.log(`🔧 [DEBUG] Force resolving summary for meeting ${meetingId}`);
+    try {
+      // Réinitialiser l'état de génération
+      setGeneratingSummaryId(null);
+      
+      // Essayer de récupérer le résumé depuis le serveur
+      const meeting = await getMeetingDetails(meetingId);
+      
+      // Mettre à jour l'état local
+      setMeetings(prevMeetings => 
+        prevMeetings.map(m => 
+          m.id === meetingId 
+            ? { ...m, ...meeting }
+            : m
+        )
+      );
+      
+      if (meeting.summary_status === 'completed' && meeting.summary_text) {
+        showSuccessPopup('Résolu', 'Le résumé était déjà terminé sur le serveur');
+      } else if (meeting.summary_status === 'error') {
+        showErrorPopup('Erreur', 'La génération du résumé a échoué sur le serveur');
+      } else {
+        // Forcer le statut à 'error' pour permettre une nouvelle tentative
+        setMeetings(prevMeetings => 
+          prevMeetings.map(m => 
+            m.id === meetingId 
+              ? { ...m, summary_status: 'error' }
+              : m
+          )
+        );
+        showErrorPopup('Réinitialisé', 'Statut réinitialisé. Vous pouvez réessayer de générer le résumé.');
+      }
+    } catch (error) {
+      console.error(`🔧 [DEBUG] Error force resolving summary:`, error);
+      showErrorPopup('Erreur', `Erreur lors de la résolution: ${error instanceof Error ? error.message : 'Erreur inconnue'}`);
+    }
+  };
+
+  // Fonction pour détecter les résumés en cours au montage
+  const checkForOngoingSummaries = useCallback(async () => {
+    const storedGeneratingId = getGeneratingSummaryFromStorage();
+    if (storedGeneratingId && meetings.length > 0) {
+      const meeting = meetings.find(m => m.id === storedGeneratingId);
+      if (meeting?.summary_status === 'processing') {
+        console.log(`📋 Resuming summary generation polling for meeting ${storedGeneratingId}`);
+        setGeneratingSummaryId(storedGeneratingId);
+        // Redémarrer le polling pour cette réunion
+        setTimeout(() => {
+          if (isComponentMounted.current) {
+            handleResumePolling(storedGeneratingId);
+          }
+        }, 1000);
+      } else {
+        // Nettoyer le localStorage si la génération n'est plus en cours
+        setGeneratingSummaryInStorage(null);
+      }
+    }
+  }, [meetings, getGeneratingSummaryFromStorage, setGeneratingSummaryInStorage]);
+
+  // Fonction pour reprendre le polling d'un résumé en cours
+  const handleResumePolling = useCallback(async (meetingId: string) => {
+    const pollSummaryStatus = async () => {
+      try {
+        if (!isComponentMounted.current) {
+          console.log('🛑 Component unmounted, stopping resumed polling');
+          return;
+        }
+        
+        await new Promise(resolve => setTimeout(resolve, 3000));
+        
+        if (!isComponentMounted.current) {
+          console.log('🛑 Component unmounted during resumed wait, stopping polling');
+          return;
+        }
+        
+        console.log(`Polling resumed summary status for meeting ${meetingId}`);
+        // Utiliser fetchMeetings en mode silencieux pour éviter les états de chargement persistants
+        const updatedMeetings = await fetchMeetings(true);
+        
+        const updatedMeeting = updatedMeetings.find(m => m.id === meetingId);
+        
+        if (updatedMeeting?.summary_status === 'completed') {
+          console.log(`Resumed polling: Summary completed for meeting ${meetingId}`);
+          showSuccessPopup('Succès', 'Compte rendu généré avec succès');
+          setGeneratingSummaryId(null);
+          setGeneratingSummaryInStorage(null);
+          cleanupPolling();
+        } else if (updatedMeeting?.summary_status === 'error') {
+          console.log(`Resumed polling: Summary failed for meeting ${meetingId}`);
+          showErrorPopup('Erreur', 'Erreur lors de la génération du compte rendu');
+          setGeneratingSummaryId(null);
+          setGeneratingSummaryInStorage(null);
+          cleanupPolling();
+        } else if (updatedMeeting?.summary_status === 'processing') {
+          if (isComponentMounted.current) {
+            console.log(`Resumed polling: Summary still processing for meeting ${meetingId}, continuing...`);
+            pollTimeoutRef.current = setTimeout(pollSummaryStatus, 5000);
+          }
+        } else {
+          console.log(`Resumed polling: Unknown status for meeting ${meetingId}: ${updatedMeeting?.summary_status}`);
+          setGeneratingSummaryId(null);
+          setGeneratingSummaryInStorage(null);
+          cleanupPolling();
+        }
+      } catch (error) {
+        console.error('Error in resumed polling:', error);
+        if (isComponentMounted.current) {
+          setGeneratingSummaryId(null);
+          setGeneratingSummaryInStorage(null);
+        }
+        cleanupPolling();
+      }
+    };
+    
+    pollSummaryStatus();
+  }, [fetchMeetings, showSuccessPopup, showErrorPopup, cleanupPolling, setGeneratingSummaryInStorage]);
+
+  // Effet de nettoyage au démontage du composant
+  useEffect(() => {
+    isComponentMounted.current = true;
+    
+    return () => {
+      console.log('🧹 Component unmounting - cleaning up polling');
+      isComponentMounted.current = false;
+      cleanupPolling();
+    };
+  }, [cleanupPolling]);
+
+  // États pour la gestion des speakers
+  const [showSpeakerManagement, setShowSpeakerManagement] = useState(false);
+
+  // États pour l'édition du transcript
+  const [showTranscriptManagement, setShowTranscriptManagement] = useState(false);
+
+  // Fonction de recherche intelligente pour filtrer les réunions
+  const handleSearch = useCallback((query: string) => {
+    setSearchQuery(query);
+    
+    if (!query.trim()) {
+      setFilteredMeetings(meetings);
+      return;
+    }
+    
+    const lowercaseQuery = query.toLowerCase().trim();
+    
+    // Recherche par mois/année (formats: 'janvier 2023', 'jan 2023', '01 2023', etc.)
+    const monthNames = [
+      'janvier', 'février', 'mars', 'avril', 'mai', 'juin',
+      'juillet', 'août', 'septembre', 'octobre', 'novembre', 'décembre'
+    ];
+    const shortMonthNames = [
+      'jan', 'fév', 'mar', 'avr', 'mai', 'juin',
+      'juil', 'août', 'sept', 'oct', 'nov', 'déc'
+    ];
+    
+    let monthFilter: number | null = null;
+    let yearFilter: number | null = null;
+    
+    // Recherche d'un pattern de date (mois année)
+    const dateRegex = /(jan|fév|mar|avr|mai|juin|juil|août|sept|oct|nov|déc|janvier|février|mars|avril|mai|juin|juillet|août|septembre|octobre|novembre|décembre|\d{1,2})\s+(\d{4})/i;
+    const dateMatch = lowercaseQuery.match(dateRegex);
+    
+    if (dateMatch) {
+      const monthPart = dateMatch[1].toLowerCase();
+      const yearPart = parseInt(dateMatch[2]);
+      
+      // Vérifier si c'est un nombre de mois (1-12)
+      if (/^\d{1,2}$/.test(monthPart)) {
+        const monthNum = parseInt(monthPart);
+        if (monthNum >= 1 && monthNum <= 12) {
+          monthFilter = monthNum - 1; // Convertir en index base 0
+          yearFilter = yearPart;
+        }
+      } else {
+        // Vérifier si c'est un nom de mois
+        const fullMonthIndex = monthNames.findIndex(m => m.startsWith(monthPart));
+        const shortMonthIndex = shortMonthNames.findIndex(m => m.startsWith(monthPart));
+        
+        if (fullMonthIndex !== -1) {
+          monthFilter = fullMonthIndex;
+          yearFilter = yearPart;
+        } else if (shortMonthIndex !== -1) {
+          monthFilter = shortMonthIndex;
+          yearFilter = yearPart;
+        }
+      }
+    }
+    
+    // Filtrer les réunions en fonction des critères
+    const filtered = meetings.filter(meeting => {
+      // Si on a un filtre mois/année, l'appliquer en priorité
+      if (monthFilter !== null && yearFilter !== null && meeting.date) {
+        const meetingDate = new Date(meeting.date);
+        return meetingDate.getMonth() === monthFilter && meetingDate.getFullYear() === yearFilter;
+      }
+      
+      // Filtrer par titre
+      const titleMatch = meeting.title?.toLowerCase().includes(lowercaseQuery);
+      
+      // Filtrer par nombre de participants (si la requête est un nombre)
+      const participantMatch = !isNaN(Number(query)) && meeting.participants === Number(query);
+      
+      // Filtrer par durée (format: '30min', '1h', '1h30', etc.)
+      const durationMatch = meeting.duration !== undefined && 
+      (() => {
+        const durationRegex = /(\d+)\s*(h|min|s|heures|minutes|secondes)?/i;
+        const durationMatch = lowercaseQuery.match(durationRegex);
+        
+        if (durationMatch) {
+          const value = parseInt(durationMatch[1]);
+          const unit = durationMatch[2]?.toLowerCase() || 'min'; // Par défaut en minutes
+          
+          let durationInSeconds = meeting.duration;
+          let queryInSeconds = 0;
+          
+          if (unit.startsWith('h')) {
+            queryInSeconds = value * 3600;
+          } else if (unit.startsWith('min')) {
+            queryInSeconds = value * 60;
+          } else if (unit.startsWith('s')) {
+            queryInSeconds = value;
+          }
+          
+          // Considérer une marge de 10% pour la durée
+          const lowerBound = queryInSeconds * 0.9;
+          const upperBound = queryInSeconds * 1.1;
+          
+          return durationInSeconds >= lowerBound && durationInSeconds <= upperBound;
+        }
+        
+        return false;
+      })();
+      
+      // Vérifier si au moins un critère correspond
+      return titleMatch || participantMatch || durationMatch;
+    });
+    
+    setFilteredMeetings(filtered);
+  }, [meetings]);
 
   return (
     <>
@@ -1268,151 +1482,38 @@ const MyMeetings: React.FC<MyMeetingsProps> = ({ user, isMobile = false }) => {
         }
       ` }} />
       <Box sx={{ 
-        p: 4,
-        background: 'linear-gradient(145deg, rgba(255,255,255,0.9) 0%, rgba(249,250,251,0.9) 100%)',
+        p: { xs: 2, sm: 3, md: 4 },
         minHeight: '100vh'
       }}>
-        <Box sx={{ mb: 4 }}>
+        <Box sx={{ mb: { xs: 2, sm: 3, md: 4 } }}>
           {/* En-tête avec logo et titre */}
-          <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 2 }}>
+          <Box sx={{ 
+            display: 'flex', 
+            flexDirection: { xs: 'column', sm: 'row' },
+            justifyContent: 'space-between', 
+            alignItems: { xs: 'flex-start', sm: 'center' }, 
+            mb: 2,
+            gap: { xs: 1, sm: 0 }
+          }}>
             <Box>
-              <Typography 
-                variant="h4" 
-                sx={{ 
-                  mb: 1, 
-                  fontWeight: 700,
-                  background: 'linear-gradient(90deg, #3B82F6 0%, #8B5CF6 100%)',
-                  WebkitBackgroundClip: 'text',
-                  WebkitTextFillColor: 'transparent',
-                  letterSpacing: '-0.5px'
-                }}>
+              <Typography variant="h4" sx={{ 
+                fontWeight: 800, 
+                mb: 1, 
+                background: 'linear-gradient(90deg, #3B82F6 0%, #8B5CF6 100%)',
+                WebkitBackgroundClip: 'text',
+                WebkitTextFillColor: 'transparent',
+                letterSpacing: '-0.5px',
+                fontSize: { xs: '1.75rem', sm: '2rem', md: '2.25rem' } // Taille responsive
+              }}>
                 Mes réunions
               </Typography>
-              <Typography variant="body1" color="text.secondary">
+              <Typography 
+                variant="body1" 
+                color="text.secondary"
+                sx={{ fontSize: { xs: '0.875rem', sm: '1rem' } }} // Taille responsive
+              >
                 Un seul endroit pour piloter vos réunions et comptes rendus
               </Typography>
-            </Box>
-            
-            {/* Logo de l'assistant IA comme bouton interactif */}
-            <Box 
-              component="button"
-              onClick={() => {
-                // Ouvre le popup éluégent lors du clic sur le logo
-                setShowGilbertPopup(true);
-              }}
-              sx={{ 
-                display: 'flex', 
-                alignItems: 'center',
-                justifyContent: 'center',
-                position: 'relative',
-                zIndex: 5,
-                background: 'transparent',
-                border: 'none',
-                padding: '8px',
-                borderRadius: '50%',
-                cursor: 'pointer',
-                overflow: 'visible',
-                transition: 'all 0.3s ease',
-                // Animation d'entrée élégante pour l'arrivée sur la page
-                animation: 'logoEntrance 1.6s cubic-bezier(0.21, 1.11, 0.58, 1) forwards',
-                
-                // Animation d'entrée sophistiquée
-                '@keyframes logoEntrance': {
-                  '0%': { 
-                    transform: 'scale(0.85) translateY(15px)', 
-                    opacity: 0,
-                    filter: 'blur(5px)'
-                  },
-                  '30%': { 
-                    opacity: 0.7,
-                    filter: 'blur(0px)'
-                  },
-                  '100%': { 
-                    transform: 'scale(1) translateY(0)', 
-                    opacity: 1
-                  },
-                },
-                
-                // Effet de survol ultra-élégant
-                '&:hover': {
-                  transform: 'scale(1.03) translateY(-2px)',
-                  '& img': {
-                    filter: 'drop-shadow(0px 6px 12px rgba(0, 0, 0, 0.18))',
-                    transform: 'rotate(2deg)',
-                  },
-                  '&::after': {
-                    opacity: 0.7,
-                    transform: 'scale(1.08)',
-                    background: 'radial-gradient(circle, rgba(139,92,246,0.15) 0%, rgba(59,130,246,0.08) 45%, rgba(59,130,246,0) 70%)',
-                  },
-                  '&::before': {
-                    opacity: 0.9,
-                    transform: 'scale(1.15) rotate(10deg)',
-                  }
-                },
-                
-                // Effet au clic raffiné
-                '&:active': {
-                  transform: 'scale(0.97) translateY(1px)',
-                  transition: 'all 0.2s cubic-bezier(0.175, 0.885, 0.32, 1.275)',
-                  '& img': {
-                    filter: 'drop-shadow(0px 2px 4px rgba(0, 0, 0, 0.15))',
-                    transform: 'rotate(-1deg)',
-                  },
-                  '&::after': {
-                    opacity: 0.5,
-                    transform: 'scale(0.95)',
-                  }
-                },
-                
-                // Premier halo élégant autour du logo (visible en permanence)
-                '&::after': {
-                  content: '""',
-                  position: 'absolute',
-                  top: '-8px',
-                  left: '-8px',
-                  right: '-8px',
-                  bottom: '-8px',
-                  borderRadius: '50%',
-                  background: 'radial-gradient(circle, rgba(139,92,246,0.12) 0%, rgba(59,130,246,0.04) 45%, rgba(59,130,246,0) 70%)',
-                  boxShadow: '0 0 20px 5px rgba(139,92,246,0.03)',
-                  zIndex: -1,
-                  transition: 'all 0.5s cubic-bezier(0.165, 0.84, 0.44, 1)',
-                  // Animation d'entrée élégante pour l'arrivée sur la page
-                  animation: 'logoEntrance 1.6s cubic-bezier(0.21, 1.11, 0.58, 1) forwards',
-                  opacity: 0.5,
-                },
-                
-                // Second halo pour effet spécial au survol - plus sophistiqué
-                '&::before': {
-                  content: '""',
-                  position: 'absolute',
-                  top: '-4px',
-                  left: '-4px',
-                  right: '-4px',
-                  bottom: '-4px',
-                  borderRadius: '50%',
-                  background: 'conic-gradient(from 135deg, rgba(139,92,246,0.08), rgba(59,130,246,0.1), rgba(139,92,246,0.08), rgba(59,130,246,0), rgba(139,92,246,0.08))',
-                  backdropFilter: 'blur(3px)',
-                  zIndex: -2,
-                  transition: 'all 0.6s cubic-bezier(0.19, 1, 0.22, 1)',
-                  opacity: 0,
-                  transform: 'scale(0.85) rotate(0deg)',
-                }
-              }}
-              aria-label="Activer l'assistant IA Gilbert"
-            >
-              <img 
-                src="/img/dis_gilbert.png" 
-                alt="Assistant IA Gilbert" 
-                style={{ 
-                  width: '65px', 
-                  height: '65px', 
-                  objectFit: 'contain',
-                  filter: 'drop-shadow(0px 4px 8px rgba(0, 0, 0, 0.15))',
-                  transition: 'all 0.3s ease',
-                }} 
-              />
             </Box>
           </Box>
         </Box>
@@ -1426,7 +1527,7 @@ const MyMeetings: React.FC<MyMeetingsProps> = ({ user, isMobile = false }) => {
         <Typography
           variant="h5"
           sx={{
-            mb: 3,
+            mb: { xs: 2, sm: 3 }, // Marge responsive
             fontWeight: 700,
             background: 'linear-gradient(90deg, #3B82F6 0%, #8B5CF6 100%)',
             WebkitBackgroundClip: 'text',
@@ -1434,31 +1535,37 @@ const MyMeetings: React.FC<MyMeetingsProps> = ({ user, isMobile = false }) => {
             letterSpacing: '-0.5px',
             display: 'flex',
             alignItems: 'center',
-            gap: 1
+            gap: 1,
+            fontSize: { xs: '1.25rem', sm: '1.5rem' } // Taille responsive
           }}
         >
-          <EventNoteIcon sx={{ fontSize: 28, color: '#3B82F6' }} /> Réunions récentes
+          <EventNoteIcon sx={{ 
+            fontSize: { xs: 24, sm: 28 }, // Icône responsive
+            color: '#3B82F6' 
+          }} /> 
+          Réunions récentes
         </Typography>
 
         {/* Barre de recherche intelligente */}
-        <Box sx={{ mb: 3 }}>
+        <Box sx={{ mb: { xs: 2, sm: 3 } }}>
           <Paper
             component="form"
             elevation={0}
             sx={{
-              p: '12px 16px',
+              p: { xs: '10px 14px', sm: '12px 16px' }, // Padding responsive
               display: 'flex',
               alignItems: 'center',
               width: '100%',
-              borderRadius: 30,
+              borderRadius: '50px', // Radius fixe pour une forme parfaitement ronde
               background: 'rgba(255, 255, 255, 0.8)',
               backdropFilter: 'blur(10px)',
               border: '1px solid rgba(229, 231, 235, 0.8)',
               boxShadow: '0 4px 20px rgba(0, 0, 0, 0.06)',
               transition: 'all 0.3s ease',
+              height: { xs: '44px', sm: '48px' }, // Hauteur fixe pour maintenir la forme ronde
               '&:hover': {
                 boxShadow: '0 6px 25px rgba(0, 0, 0, 0.1)',
-                transform: 'translateY(-2px)',
+                transform: { xs: 'none', sm: 'translateY(-2px)' }, // Pas d'animation sur mobile
                 background: 'rgba(255, 255, 255, 0.95)',
               },
               '&:focus-within': {
@@ -1470,34 +1577,23 @@ const MyMeetings: React.FC<MyMeetingsProps> = ({ user, isMobile = false }) => {
           >
             <IconButton 
               sx={{ 
-                p: '8px', 
+                p: { xs: '6px', sm: '8px' }, // Padding responsive
                 borderRadius: '50%', 
                 color: theme.palette.primary.main,
-                fontSize: '1.2rem',
+                fontSize: { xs: '1.1rem', sm: '1.2rem' }, // Taille responsive
                 '&:hover': {
                   background: alpha(theme.palette.primary.main, 0.1),
                 }
               }} 
               aria-label="search"
             >
-              <Typography 
-                variant="h6" 
-                sx={{ 
-                  fontSize: '1.3rem', 
-                  display: 'flex', 
-                  alignItems: 'center', 
-                  justifyContent: 'center',
-                  transform: 'rotate(-5deg)'
-                }}
-              >
-                🔍
-              </Typography>
+              <SearchIcon sx={{ fontSize: { xs: 18, sm: 20 } }} />
             </IconButton>
             <InputBase
               sx={{ 
-                ml: 1.5, 
+                ml: { xs: 1, sm: 1.5 }, // Marge responsive
                 flex: 1,
-                fontSize: '0.95rem',
+                fontSize: { xs: '0.875rem', sm: '0.95rem' }, // Taille responsive
                 '& .MuiInputBase-input': {
                   color: theme.palette.text.primary,
                   '&::placeholder': {
@@ -1507,7 +1603,12 @@ const MyMeetings: React.FC<MyMeetingsProps> = ({ user, isMobile = false }) => {
                   }
                 }
               }}
-              placeholder="Rechercher par titre, date (janv 2023), durée (30min), participants..."
+              placeholder={
+                // Placeholder adaptatif selon la taille d'écran
+                window.innerWidth < 600 
+                  ? "Rechercher..." 
+                  : "Rechercher par titre, date (janv 2023), durée (30min), participants..."
+              }
               value={searchQuery}
               onChange={(e) => handleSearch(e.target.value)}
               onKeyDown={(e) => {
@@ -1536,7 +1637,13 @@ const MyMeetings: React.FC<MyMeetingsProps> = ({ user, isMobile = false }) => {
             )}
           </Paper>
           {searchQuery && (
-            <Box sx={{ mt: 1.5, display: 'flex', alignItems: 'center', flexWrap: 'wrap', gap: 1 }}>
+            <Box sx={{ 
+              mt: { xs: 1, sm: 1.5 }, // Marge responsive
+              display: 'flex', 
+              alignItems: 'center', 
+              flexWrap: 'wrap', 
+              gap: { xs: 0.5, sm: 1 } // Gap responsive
+            }}>
               <Chip 
                 label={`${filteredMeetings.length} résultat(s) trouvé(s)`}
                 size="small"
@@ -1544,6 +1651,7 @@ const MyMeetings: React.FC<MyMeetingsProps> = ({ user, isMobile = false }) => {
                 sx={{ 
                   borderRadius: '20px',
                   fontWeight: 500,
+                  fontSize: { xs: '0.75rem', sm: '0.8125rem' }, // Taille responsive
                   boxShadow: '0 2px 8px rgba(0, 0, 0, 0.06)',
                   background: filteredMeetings.length > 0 
                     ? `linear-gradient(90deg, ${alpha(theme.palette.primary.main, 0.9)} 0%, ${alpha(theme.palette.primary.light, 0.9)} 100%)`
@@ -1552,12 +1660,12 @@ const MyMeetings: React.FC<MyMeetingsProps> = ({ user, isMobile = false }) => {
                     ? 'none'
                     : `1px solid ${alpha(theme.palette.divider, 0.7)}`,
                   '& .MuiChip-label': {
-                    padding: '0 12px',
+                    padding: { xs: '0 8px', sm: '0 12px' }, // Padding responsive
                   }
                 }}
               />
               <Chip
-                label={`Recherche: "${searchQuery}"`}
+                label={`Recherche: "${searchQuery.length > 20 ? searchQuery.substring(0, 20) + '...' : searchQuery}"`} // Texte tronqué sur mobile
                 size="small"
                 color="secondary"
                 onDelete={() => handleSearch('')}
@@ -1565,7 +1673,8 @@ const MyMeetings: React.FC<MyMeetingsProps> = ({ user, isMobile = false }) => {
                   bgcolor: alpha('#F59E0B', 0.1),
                   color: '#F59E0B',
                   fontWeight: 500,
-                  maxWidth: '100%',
+                  fontSize: { xs: '0.75rem', sm: '0.8125rem' }, // Taille responsive
+                  maxWidth: { xs: '200px', sm: '100%' }, // Largeur max sur mobile
                   '& .MuiChip-label': {
                     whiteSpace: 'normal',
                     overflow: 'visible',
@@ -1685,176 +1794,234 @@ const MyMeetings: React.FC<MyMeetingsProps> = ({ user, isMobile = false }) => {
               >
                 <Paper
                   sx={{
-                    p: 3,
+                    p: { xs: 2, sm: 3 },
                     borderRadius: '16px',
                     boxShadow: '0 4px 12px rgba(0,0,0,0.05)',
                     transition: 'all 0.3s ease-in-out',
+                    position: 'relative',
+                    overflow: 'hidden',
                     '&:hover': {
-                      transform: 'translateY(-2px)',
+                      transform: { xs: 'none', sm: 'translateY(-2px)' },
                       boxShadow: '0 8px 24px rgba(0,0,0,0.1)',
                     },
-                    cursor: 'pointer'
+                    cursor: 'pointer',
+                    // Effet de vague pour les transcriptions en cours
+                    ...(meeting.transcript_status === 'processing' || meeting.transcription_status === 'processing') && {
+                      '&::before': {
+                        content: '""',
+                        position: 'absolute',
+                        top: 0,
+                        left: '-100%',
+                        width: '100%',
+                        height: '100%',
+                        background: 'linear-gradient(90deg, transparent 0%, rgba(59, 130, 246, 0.08) 20%, rgba(59, 130, 246, 0.15) 50%, rgba(59, 130, 246, 0.08) 80%, transparent 100%)',
+                        animation: 'waveEffect 2.5s ease-in-out infinite',
+                        zIndex: 1,
+                      },
+                      '&::after': {
+                        content: '""',
+                        position: 'absolute',
+                        top: 0,
+                        left: '-100%',
+                        width: '100%',
+                        height: '100%',
+                        background: 'linear-gradient(90deg, transparent 0%, rgba(255, 255, 255, 0.3) 40%, rgba(255, 255, 255, 0.6) 50%, rgba(255, 255, 255, 0.3) 60%, transparent 100%)',
+                        animation: 'waveEffect 2.5s ease-in-out infinite 0.3s',
+                        zIndex: 2,
+                      },
+                      '@keyframes waveEffect': {
+                        '0%': { left: '-100%' },
+                        '100%': { left: '100%' },
+                      },
+                      '& > *': {
+                        position: 'relative',
+                        zIndex: 3,
+                      }
+                    }
                   }}
                   onClick={() => handleMeetingClick(meeting.id)}
                 >
-                  <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                    <Box>
-                      <Typography variant="h6" sx={{ mb: 1, fontWeight: 600 }}>
+                  {/* Layout responsive */}
+                  <Box sx={{ 
+                    display: 'flex', 
+                    flexDirection: { xs: 'column', lg: 'row' },
+                    gap: { xs: 2, lg: 0 },
+                    justifyContent: { lg: 'space-between' }, 
+                    alignItems: { xs: 'stretch', lg: 'center' } 
+                  }}>
+                    {/* Contenu principal */}
+                    <Box sx={{ flex: 1, minWidth: 0 }}>
+                      <Typography 
+                        variant="h6" 
+                        sx={{ 
+                          mb: { xs: 1.5, sm: 1 }, 
+                          fontWeight: 600,
+                          fontSize: { xs: '1.1rem', sm: '1.25rem' },
+                          lineHeight: 1.3,
+                          overflow: { xs: 'hidden', lg: 'visible' },
+                          textOverflow: { xs: 'ellipsis', lg: 'clip' },
+                          whiteSpace: { xs: 'nowrap', lg: 'normal' }
+                        }}
+                      >
                         {meeting.name || meeting.title || 'Sans titre'}
                       </Typography>
-                      <Stack direction="row" spacing={2} alignItems="center" flexWrap="wrap">
+                      
+                      {/* Informations de la réunion */}
+                      <Stack 
+                        direction={{ xs: 'column', sm: 'row' }} 
+                        spacing={{ xs: 1, sm: 2 }} 
+                        alignItems={{ xs: 'flex-start', sm: 'center' }} 
+                        flexWrap="wrap"
+                        sx={{ mb: { xs: 2, lg: 0 } }}
+                      >
+                        {/* Durée */}
                         <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
                           <Box sx={{ 
-                            display: 'flex', 
-                            alignItems: 'center', 
-                            justifyContent: 'center',
-                            width: 20,
-                            height: 20,
+                            width: { xs: 18, sm: 20 }, 
+                            height: { xs: 18, sm: 20 },
                             borderRadius: '50%',
                             background: 'linear-gradient(135deg, #3B82F6 0%, #1D4ED8 100%)',
                             boxShadow: '0 2px 4px rgba(59, 130, 246, 0.2)',
-                            transition: 'all 0.2s ease',
-                            '&:hover': {
-                              transform: 'scale(1.1)',
-                              boxShadow: '0 4px 8px rgba(59, 130, 246, 0.3)',
-                            }
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'center'
                           }}>
-                            <svg width="12" height="12" viewBox="0 0 24 24" fill="none">
-                              <path
-                                d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm0 18c-4.41 0-8-3.59-8-8s3.59-8 8-8 8 3.59 8 8-3.59 8-8 8zm.5-13H11v6l5.25 3.15.75-1.23-4.5-2.67V7z"
-                                fill="white"
-                              />
+                            <svg width="12" height="12" viewBox="0 0 24 24" fill="white">
+                              <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm0 18c-4.41 0-8-3.59-8-8s3.59-8 8-8 8 3.59 8 8-3.59 8-8 8zm.5-13H11v6l5.25 3.15.75-1.23-4.5-2.67V7z"/>
                             </svg>
                           </Box>
-                          <Typography variant="body2" color="text.secondary" sx={{ fontWeight: 500 }}>
-                            {formatDuration(meeting.audio_duration || meeting.duration)}
-                          </Typography>
+                          <Typography 
+                            variant="body2" 
+                            color="text.secondary" 
+                            sx={{ fontWeight: 500, fontSize: { xs: '0.8rem', sm: '0.875rem' } }}
+                          >
+                            {(meeting.transcript_status === 'processing' || meeting.transcription_status === 'processing') 
+                              ? 'Analyse...' 
+                              : formatDuration(meeting.audio_duration || meeting.duration)}
+                        </Typography>
                         </Box>
+                        
+                        {/* Date */}
                         <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
                           <Box sx={{ 
-                            display: 'flex', 
-                            alignItems: 'center', 
-                            justifyContent: 'center',
-                            width: 20,
-                            height: 20,
+                            width: { xs: 18, sm: 20 }, 
+                            height: { xs: 18, sm: 20 },
                             borderRadius: '50%',
                             background: 'linear-gradient(135deg, #10B981 0%, #047857 100%)',
-                            boxShadow: '0 2px 4px rgba(16, 185, 129, 0.2)',
-                            transition: 'all 0.2s ease',
-                            '&:hover': {
-                              transform: 'scale(1.1)',
-                              boxShadow: '0 4px 8px rgba(16, 185, 129, 0.3)',
-                            }
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'center'
                           }}>
-                            <svg width="12" height="12" viewBox="0 0 24 24" fill="none">
-                              <path
-                                d="M19 3h-1V1h-2v2H8V1H6v2H5c-1.11 0-1.99.9-1.99 2L3 19c0 1.1.89 2 2 2h14c1.1 0 2-.9 2-2V5c0-1.1-.9-2-2-2zm0 16H5V8h14v11zM7 10h5v5H7z"
-                                fill="white"
-                              />
+                            <svg width="12" height="12" viewBox="0 0 24 24" fill="white">
+                              <path d="M19 3h-1V1h-2v2H8V1H6v2H5c-1.11 0-1.99.9-1.99 2L3 19c0 1.1.89 2 2 2h14c1.1 0 2-.9 2-2V5c0-1.1-.9-2-2-2zm0 16H5V8h14v11zM7 10h5v5H7z"/>
                             </svg>
                           </Box>
-                          <Typography variant="body2" color="text.secondary" sx={{ fontWeight: 500 }}>
+                          <Typography 
+                            variant="body2" 
+                            color="text.secondary" 
+                            sx={{ fontWeight: 500, fontSize: { xs: '0.8rem', sm: '0.875rem' } }}
+                          >
                             {formatDate(meeting.created_at)}
                           </Typography>
                         </Box>
+                        
+                        {/* Participants */}
                         <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
                           <Box sx={{ 
-                            display: 'flex', 
-                            alignItems: 'center', 
-                            justifyContent: 'center',
-                            width: 20,
-                            height: 20,
+                            width: { xs: 18, sm: 20 }, 
+                            height: { xs: 18, sm: 20 },
                             borderRadius: '50%',
                             background: 'linear-gradient(135deg, #8B5CF6 0%, #6D28D9 100%)',
-                            boxShadow: '0 2px 4px rgba(139, 92, 246, 0.2)',
-                            transition: 'all 0.2s ease',
-                            '&:hover': {
-                              transform: 'scale(1.1)',
-                              boxShadow: '0 4px 8px rgba(139, 92, 246, 0.3)',
-                            }
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'center'
                           }}>
-                            <svg width="12" height="12" viewBox="0 0 24 24" fill="none">
-                              <path
-                                d="M12 12c2.21 0 4-1.79 4-4s-1.79-4-4-4-4 1.79-4 4 1.79 4 4 4zm0 2c-2.67 0-8 1.34-8 4v2h16v-2c0-2.66-5.33-4-8-4z"
-                                fill="white"
-                              />
-                              <circle cx="18" cy="8" r="2" fill="white" opacity="0.8"/>
-                              <path d="M18 12c-1.33 0-2.67.33-3.33 1H20v-1c0-.67-1.33-1-2-1z" fill="white" opacity="0.8"/>
+                            <svg width="12" height="12" viewBox="0 0 24 24" fill="white">
+                              <path d="M12 12c2.21 0 4-1.79 4-4s-1.79-4-4-4-4 1.79-4 4 1.79 4 4 4zm0 2c-2.67 0-8 1.34-8 4v2h16v-2c0-2.66-5.33-4-8-4z"/>
                             </svg>
                           </Box>
-                          <Typography variant="body2" color="text.secondary" sx={{ fontWeight: 500 }}>
-                            {meeting.participants || meeting.speakers_count || '0'} participants
+                          <Typography 
+                            variant="body2" 
+                            color="text.secondary" 
+                            sx={{ fontWeight: 500, fontSize: { xs: '0.8rem', sm: '0.875rem' } }}
+                          >
+                            {(meeting.transcript_status === 'processing' || meeting.transcription_status === 'processing')
+                              ? 'Détection...'
+                              : `${meeting.participants || meeting.speakers_count || '0'} participants`}
                           </Typography>
                         </Box>
                         
-                        {/* Avertissement pour les audios de moins d'une minute */}
-                        {((meeting.audio_duration || meeting.duration || 0) < 60) && (
-                          <Box
-                            sx={{
-                              display: 'flex',
-                              alignItems: 'center',
-                              gap: 0.75,
-                              px: 1,
-                              py: 0.5,
-                              borderRadius: 1,
-                              background: `${alpha('#FEF3C7', 0.4)}`,
-                              border: `1px solid ${alpha('#F59E0B', 0.1)}`,
-                            }}
-                          >
-                            <WarningIcon 
-                              sx={{ 
-                                fontSize: 14, 
-                                color: '#D97706',
-                                opacity: 0.7
-                              }} 
-                            />
-                            <Typography
-                              variant="caption"
+                        {/* Avertissement et status - Version responsive */}
+                        <Box sx={{ 
+                          display: 'flex', 
+                          flexWrap: 'wrap', 
+                          gap: { xs: 0.5, sm: 1 },
+                          alignItems: 'center'
+                        }}>
+                          {/* Avertissement court */}
+                          {((meeting.audio_duration || meeting.duration || 0) < 60) && (
+                            <Chip
+                              icon={<WarningIcon sx={{ fontSize: { xs: 12, sm: 14 } }} />}
+                              label="Court"
+                              size="small"
                               sx={{
-                                fontSize: '0.7rem',
-                                fontWeight: 400,
-                                color: '#92400E',
-                                opacity: 0.8,
+                                bgcolor: alpha('#FEF3C7', 0.4),
+                                color: '#D97706',
+                                fontSize: { xs: '0.65rem', sm: '0.7rem' },
+                                height: { xs: 20, sm: 24 }
                               }}
-                            >
-                              Court
-                            </Typography>
-                          </Box>
-                        )}
-                        
-                        {/* Status chip */}
-                        {(meeting.transcript_status === 'completed' || meeting.transcription_status === 'completed') ? (
+                            />
+                          )}
+                          
+                          {/* Status chip */}
                           <Chip
-                            label="completed"
+                            label={
+                              (meeting.transcript_status === 'completed' || meeting.transcription_status === 'completed') 
+                                ? 'Terminé' 
+                                : (meeting.transcript_status === 'error' || meeting.transcription_status === 'failed')
+                                  ? 'Erreur'
+                                  : 'En cours'
+                            }
                             size="small"
                             sx={{
-                              bgcolor: alpha('#10B981', 0.1),
-                              color: '#10B981',
+                              bgcolor: (meeting.transcript_status === 'completed' || meeting.transcription_status === 'completed') 
+                                ? alpha('#10B981', 0.1) 
+                                : (meeting.transcript_status === 'error' || meeting.transcription_status === 'failed')
+                                  ? alpha('#EF4444', 0.1)
+                                  : alpha('#F59E0B', 0.1),
+                              color: (meeting.transcript_status === 'completed' || meeting.transcription_status === 'completed') 
+                                ? '#10B981' 
+                                : (meeting.transcript_status === 'error' || meeting.transcription_status === 'failed')
+                                  ? '#EF4444'
+                                  : '#F59E0B',
                               fontWeight: 500,
+                              fontSize: { xs: '0.7rem', sm: '0.75rem' },
+                              height: { xs: 20, sm: 24 }
                             }}
                           />
-                        ) : (meeting.transcript_status === 'error' || meeting.transcription_status === 'failed') ? (
-                          <Chip
-                            label="failed"
-                            size="small"
-                            sx={{
-                              bgcolor: alpha('#EF4444', 0.1),
-                              color: '#EF4444',
-                              fontWeight: 500,
-                            }}
-                          />
-                        ) : (
-                          <Chip
-                            label="processing"
-                            size="small"
-                            sx={{
-                              bgcolor: alpha('#F59E0B', 0.1),
-                              color: '#F59E0B',
-                              fontWeight: 500,
-                            }}
-                          />
-                        )}
-                        
+                        </Box>
+                      </Stack>
+                    </Box>
+
+                    {/* Section des actions - Layout responsive */}
+                    <Box sx={{ 
+                      display: 'flex',
+                      flexDirection: { xs: 'column', sm: 'row', lg: 'row' },
+                      gap: { xs: 1, sm: 1.5 },
+                      alignItems: { xs: 'stretch', sm: 'center' },
+                      minWidth: { lg: 'auto' },
+                      '& .MuiButton-root': {
+                        fontSize: { xs: '0.75rem', sm: '0.875rem' },
+                        minHeight: { xs: '32px', sm: '36px' },
+                        whiteSpace: 'nowrap'
+                      }
+                    }}>
+                      {/* Boutons principaux */}
+                      <Stack 
+                        direction={{ xs: 'column', sm: 'row' }} 
+                        spacing={1}
+                        sx={{ flex: 1 }}
+                      >
                         {/* Retry button */}
                         {(meeting.transcript_status === 'processing' || meeting.transcription_status === 'processing') && (
                           <Button
@@ -1866,8 +2033,9 @@ const MyMeetings: React.FC<MyMeetingsProps> = ({ user, isMobile = false }) => {
                             }}
                             disabled={retryingMeetingId === meeting.id}
                             size="small"
+                            sx={{ width: { xs: '100%', sm: 'auto' } }}
                           >
-                            {retryingMeetingId === meeting.id ? 'Retrying...' : 'Retry'}
+                            {retryingMeetingId === meeting.id ? 'Retry...' : 'Retry'}
                           </Button>
                         )}
                         
@@ -1876,89 +2044,74 @@ const MyMeetings: React.FC<MyMeetingsProps> = ({ user, isMobile = false }) => {
                           variant="outlined"
                           startIcon={<DescriptionIcon />}
                           onClick={(e) => {
-                            e.stopPropagation(); // Empêcher le onclick du Paper parent
+                            e.stopPropagation();
                             handleViewTranscript(meeting.id);
                           }}
                           size="small"
+                          sx={{ width: { xs: '100%', sm: 'auto' } }}
                         >
                           Transcription
                         </Button>
                         
-                        {/* Generate Summary button - only show for completed transcriptions */}
+                        {/* Generate Summary button */}
                         {(meeting.transcript_status === 'completed' || meeting.transcription_status === 'completed') && (
                           <Button
-                            variant={meeting.summary_status === 'processing' ? "contained" : "outlined"}
-                            color={meeting.summary_status === 'processing' ? "info" : "primary"}
+                            variant={meeting.summary_status === 'completed' ? "contained" : "outlined"}
+                            color="primary"
                             startIcon={
                               meeting.summary_status === 'processing' 
                                 ? <CircularProgress size={16} color="inherit" />
                                 : meeting.summary_status === 'completed'
-                                  ? <DescriptionIcon />
+                                  ? <SummarizeIcon />
                                   : <EventNoteIcon />
                             }
                             onClick={(e) => {
-                              e.stopPropagation(); // Empêcher le onclick du Paper parent
-                              // Si le compte rendu est déjà généré, l'afficher sans le régénérer
+                              e.stopPropagation();
                               if (meeting.summary_status === 'completed') {
                                 handleViewSummary(meeting.id);
                               } else if (meeting.summary_status !== 'processing') {
                                 handleGenerateSummary(meeting.id);
                               }
                             }}
-                            disabled={generatingSummaryId === meeting.id && meeting.summary_status !== 'completed'}
+                            disabled={generatingSummaryId === meeting.id || meeting.summary_status === 'processing'}
                             size="small"
-                            sx={{
-                              minWidth: '140px',
-                              position: 'relative',
-                              ...(meeting.summary_status === 'processing' && {
-                                '&:hover': {
-                                  backgroundColor: (theme) => theme.palette.info.main,
-                                }
-                              })
+                            sx={{ 
+                              width: { xs: '100%', sm: 'auto' },
+                              minWidth: { sm: '120px' } 
                             }}
                           >
-                            {meeting.summary_status === 'processing' 
-                              ? 'Processing...' 
-                              : meeting.summary_status === 'completed' 
-                                ? 'Voir le résumé' 
-                                : 'Générer le résumé'}
+                            {meeting.summary_status === 'processing'
+                              ? 'En cours...'
+                              : meeting.summary_status === 'completed'
+                                ? 'Voir résumé'
+                                : 'Résumé'
+                            }
                           </Button>
                         )}
                       </Stack>
+
+                      {/* Actions secondaires */}
+                      <Box sx={{ 
+                        display: 'flex',
+                        gap: 0.5,
+                        justifyContent: { xs: 'flex-end', sm: 'center' }
+                      }}>
+                        <IconButton 
+                          size="small" 
+                          sx={{ 
+                            color: '#EF4444',
+                            display: { xs: 'flex', sm: 'none', lg: 'flex' }
+                          }}
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            confirmDeleteMeeting(meeting);
+                          }}
+                          disabled={isDeleting}
+                        >
+                          <DeleteIcon />
+                        </IconButton>
+                      </Box>
                     </Box>
-                    <Stack direction="row" spacing={1}>
-                      <IconButton 
-                        size="small" 
-                        sx={{ color: '#10B981' }}
-                        onClick={(e) => {
-                          e.stopPropagation(); // Empêcher le onclick du Paper parent
-                          handleViewTranscript(meeting.id);
-                        }}
-                      >
-                        <DescriptionIcon />
-                      </IconButton>
-                      <IconButton 
-                        size="small" 
-                        sx={{ color: '#6366F1' }}
-                        onClick={(e) => {
-                          e.stopPropagation(); // Empêcher le onclick du Paper parent
-                          handleOpenPremiumDialog();
-                        }}
-                      >
-                        <ShareIcon />
-                      </IconButton>
-                      <IconButton 
-                        size="small" 
-                        sx={{ color: '#EF4444' }}
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          confirmDeleteMeeting(meeting);
-                        }}
-                        disabled={isDeleting}
-                      >
-                        <DeleteIcon />
-                      </IconButton>
-                    </Stack>
                   </Box>
                   {/* Bouton pour mettre à jour les métadonnées - ajouté directement dans la ligne des actions */}
                   {(meeting.transcript_status === 'completed' || meeting.transcription_status === 'completed') && (
@@ -1968,7 +2121,7 @@ const MyMeetings: React.FC<MyMeetingsProps> = ({ user, isMobile = false }) => {
                           size="small" 
                           onClick={(e) => {
                             e.stopPropagation();
-                            fetchMeetings();
+                            invalidateCacheAndRefresh();
                           }}
                           disabled={isRefreshing}
                         >
@@ -1984,7 +2137,7 @@ const MyMeetings: React.FC<MyMeetingsProps> = ({ user, isMobile = false }) => {
               <Button
                 variant="outlined"
                 startIcon={<RefreshIcon />}
-                onClick={fetchMeetings}
+                onClick={handleRefreshMeetings}
                 disabled={isRefreshing}
               >
                 {isRefreshing ? 'Refreshing...' : 'Refresh Meetings'}
@@ -2468,9 +2621,9 @@ const MyMeetings: React.FC<MyMeetingsProps> = ({ user, isMobile = false }) => {
           ) : (
             <Box sx={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', height: '100%', py: 4 }}>
               <WarningIcon color="warning" sx={{ fontSize: 48, mb: 2 }} />
-              <Typography variant="h6" sx={{ mb: 1 }}>No Transcript Available</Typography>
+              <Typography variant="h6" sx={{ mb: 1 }}>Transcription non disponible</Typography>
               <Typography variant="body2" color="text.secondary" sx={{ textAlign: 'center' }}>
-                The transcript for this meeting has not been generated yet or the transcription process failed.
+                La transcription de cette réunion n'a pas été générée ou le processus de transcription a échoué.
               </Typography>
             </Box>
           )}
@@ -2511,7 +2664,7 @@ const MyMeetings: React.FC<MyMeetingsProps> = ({ user, isMobile = false }) => {
 
       {/* Dialogue pour afficher le compte rendu */}
       <Dialog 
-        open={!!generatingSummaryId} 
+        open={!!viewingSummaryId} 
         onClose={handleCloseSummary}
         maxWidth="md"
         fullWidth
@@ -2521,7 +2674,7 @@ const MyMeetings: React.FC<MyMeetingsProps> = ({ user, isMobile = false }) => {
           <Box sx={{ display: 'flex', alignItems: 'center' }}>
             {/* Bouton d'exportation de compte rendu */}
             {(() => {
-              const meeting = meetings.find(m => m.id === generatingSummaryId);
+              const meeting = meetings.find(m => m.id === viewingSummaryId);
               if (meeting?.summary_status === 'completed' && meeting?.summary_text) {
                 return (
                   <SummaryExportButton
@@ -2876,48 +3029,14 @@ const MyMeetings: React.FC<MyMeetingsProps> = ({ user, isMobile = false }) => {
       {/* Template Selector Modal */}
       <TemplateSelectorModal
         open={templateSelectorOpen}
-        onClose={() => setTemplateSelectorOpen(false)}
+        onClose={() => {
+          // Fermer le sélecteur simplement
+          setTemplateSelectorOpen(false);
+        }}
         meetingId={currentMeetingId || ''}
         onTemplateSelect={(templateId: string | null) => {
-          // Logique pour traiter la sélection du template
-          if (currentMeetingId) {
-            console.log(`Template ${templateId} selected for meeting ${currentMeetingId}`);
-            // Appel avec le clientId (templateId) - corriger pour s'assurer qu'il accepte null aussi
-            generateMeetingSummary(currentMeetingId, templateId === '' ? null : templateId)
-              .then((updatedMeeting) => {
-                console.log(`Summary generation started for meeting ${currentMeetingId}`);
-                if (currentMeetingId) {
-                  setGeneratingSummaryId(currentMeetingId);
-                }
-                fetchMeetings();
-                // Setup a watcher for summary status
-                if (currentMeetingId) {
-                  // Vérifier les arguments requis pour watchSummaryStatus
-                  const unwatch = watchSummaryStatus(
-                    currentMeetingId,
-                    (status, updatedMeeting) => {
-                      console.log(`Summary status updated: ${status}`);
-                      // Update meetings in state with type safety
-                      setMeetings(prev => {
-                        return prev.map(m => {
-                          if (m.id === currentMeetingId) {
-                            return updatedMeeting as Meeting;
-                          }
-                          return m;
-                        });
-                      });
-                    }
-                  );
-                  // Store the unwatch function
-                  setSummaryWatchers(prev => ({ ...prev, [currentMeetingId]: unwatch }));
-                }
-              })
-              .catch(error => {
-                console.error(`Error starting summary generation: ${error}`);
-                showErrorPopup('Erreur', 'Erreur lors du démarrage de la génération du compte rendu');
-              });
-          }
-          setTemplateSelectorOpen(false);
+          // Utiliser la fonction handleTemplateSelect existante
+          handleTemplateSelect(templateId);
         }}
       />
     </>

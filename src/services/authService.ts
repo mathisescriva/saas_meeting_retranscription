@@ -1,4 +1,5 @@
 import apiClient from './apiClient';
+import config from '../config/environment';
 
 export interface User {
   id: string;
@@ -125,5 +126,95 @@ export async function verifyTokenValidity(): Promise<boolean> {
       return true; // Assume token might still be valid
     }
     return false;
+  }
+}
+
+/**
+ * Initiate Google OAuth login
+ */
+export async function initiateGoogleLogin(): Promise<void> {
+  try {
+    // Faire une requête GET vers l'endpoint d'authentification Google
+    const response = await apiClient.get<{auth_url: string, state: string}>(
+      '/auth/google/login',
+      false  // Pas besoin d'authentification pour initier le login
+    );
+    
+    console.log('Google OAuth response:', response);
+    console.log('Redirecting to Google OAuth URL:', response.auth_url);
+    
+    // Rediriger vers l'URL d'authentification Google fournie par le backend
+    window.location.href = response.auth_url;
+  } catch (error) {
+    console.error('Error initiating Google login:', error);
+    throw new Error('Impossible d\'initier la connexion Google. Veuillez réessayer.');
+  }
+}
+
+/**
+ * Handle Google OAuth callback
+ */
+export async function handleGoogleCallback(code: string, state: string): Promise<AuthResponse> {
+  try {
+    const response = await apiClient.post<AuthResponse>(
+      '/auth/google/callback',
+      {
+        code: code,
+        state: state
+      },
+      false,
+      false
+    );
+    
+    // Store the token
+    if (response.access_token) {
+      localStorage.setItem('auth_token', response.access_token);
+    }
+    
+    return response;
+  } catch (error) {
+    console.error('Google OAuth callback error:', error);
+    throw error;
+  }
+}
+
+/**
+ * Register a new user via Google OAuth
+ */
+export async function registerWithGoogle(googleData: any): Promise<AuthResponse> {
+  try {
+    const response = await apiClient.post<AuthResponse>(
+      '/auth/register',
+      {
+        email: googleData.email,
+        password: googleData.sub, // Utiliser l'ID Google comme mot de passe temporaire
+        full_name: googleData.name
+      },
+      false,
+      false
+    );
+    
+    // Store the token
+    if (response.access_token) {
+      localStorage.setItem('auth_token', response.access_token);
+    }
+    
+    return response;
+  } catch (error) {
+    console.error('Google registration error:', error);
+    throw error;
+  }
+}
+
+/**
+ * Get Google authenticated user profile
+ */
+export async function getGoogleUserProfile(): Promise<User> {
+  try {
+    const response = await apiClient.get<User>('/auth/google/me');
+    return response;
+  } catch (error) {
+    console.error('Google user profile error:', error);
+    throw error;
   }
 }

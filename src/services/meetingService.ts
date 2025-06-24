@@ -1074,13 +1074,15 @@ function attemptDiarizationOnRawText(text: string): string {
  */
 export async function generateMeetingSummary(meetingId: string, clientId?: string | null): Promise<Meeting> {
   try {
-    console.log(`Generating summary for meeting ID: ${meetingId}${clientId ? ` with client template: ${clientId}` : ' with default template'}`);
+    console.log(`🚀 [DEBUG] Starting generateMeetingSummary for meeting ${meetingId}${clientId ? ` with client template: ${clientId}` : ' with default template'}`);
     
     // Récupérer le token d'authentification
     const token = localStorage.getItem('auth_token');
     if (!token) {
+      console.error('❌ [DEBUG] No authentication token found');
       throw new Error('Authentication token not found');
     }
+    console.log(`✅ [DEBUG] Authentication token found: ${token.substring(0, 10)}...`);
     
     let data;
     
@@ -1089,76 +1091,118 @@ export async function generateMeetingSummary(meetingId: string, clientId?: strin
     
     if (clientId !== undefined && clientId !== null) {
       try {
-        console.log(`Étape 1: Associer la réunion ${meetingId} au client ${clientId}`);
+        console.log(`🔗 [DEBUG] Étape 1: Associer la réunion ${meetingId} au client ${clientId}`);
         await apiClient.put(`/meetings/${meetingId}`, { client_id: clientId });
-        console.log('Association réunion-client mise à jour avec succès');
+        console.log('✅ [DEBUG] Association réunion-client mise à jour avec succès');
       } catch (err: any) {
-        console.error('Erreur lors de l\'association avec le client:', err);
-        console.log('Tentative de continuer malgré l\'échec de l\'association client...');
+        console.error('❌ [DEBUG] Erreur lors de l\'association avec le client:', err);
+        console.log('⚠️ [DEBUG] Tentative de continuer malgré l\'échec de l\'association client...');
         associationSuccess = false;
         // Ne pas lancer d'erreur, continuons avec l'étape 2 quand même
       }
     } else if (clientId === null) {
       // Pour le template par défaut, nous sautons l'étape d'association
-      console.log(`Template par défaut sélectionné pour la réunion ${meetingId}, aucune association nécessaire`);
+      console.log(`📝 [DEBUG] Template par défaut sélectionné pour la réunion ${meetingId}, aucune association nécessaire`);
     }
     
     // Étape 2: Générer le résumé
     try {
       // Message utilisateur pour informer que l'opération peut être longue
-      console.log(`Étape 2: Génération du résumé pour la réunion ${meetingId}`);
-      console.log('La génération du résumé peut prendre quelques instants, veuillez patienter...');
+      console.log(`⚙️ [DEBUG] Étape 2: Génération du résumé pour la réunion ${meetingId}`);
+      console.log('⏳ [DEBUG] La génération du résumé peut prendre quelques instants, veuillez patienter...');
       
       // L'endpoint /ping n'existe pas sur le serveur, abandon de la vérification préalable
       // Utilisation directe des endpoints de la documentation
-      console.log('Utilisation de l\'endpoint de génération de résumé selon la documentation...');
+      console.log('📋 [DEBUG] Utilisation de l\'endpoint de génération de résumé selon la documentation...');
       
       // Selon la doc: POST /meetings/{meeting_id}/generate-summary
       const generateEndpoint = `/meetings/${meetingId}/generate-summary`;
-      console.log(`Envoi de la requête à l'endpoint: ${generateEndpoint}`);
+      console.log(`🌐 [DEBUG] Envoi de la requête à l'endpoint: ${generateEndpoint}`);
       
       // Stratégie multi-tentatives pour générer le résumé
       // Essayons plusieurs formats et méthodes selon la documentation et l'expérience
       
       // Essai 1: POST /meetings/{meeting_id}/generate-summary (endpoint principal selon la doc)
       try {
-        console.log('Essai 1: POST sur /meetings/{meeting_id}/generate-summary');
+        console.log('🎯 [DEBUG] Essai 1: POST sur /meetings/{meeting_id}/generate-summary');
         data = await apiClient.post(generateEndpoint);
-        console.log('Réponse API de génération de résumé (essai 1):', data);
-        return await getMeetingDetails(meetingId); // Retourner immédiatement si réussi
+        console.log('✅ [DEBUG] Réponse API de génération de résumé (essai 1):', data);
+        
+        // Vérifier si la réponse contient des informations utiles
+        if (data && typeof data === 'object') {
+          console.log('📊 [DEBUG] Réponse contient des données:', Object.keys(data));
+        }
+        
+        // Récupérer les détails mis à jour et retourner immédiatement
+        const updatedMeeting = await getMeetingDetails(meetingId);
+        console.log('📋 [DEBUG] Détails de la réunion après génération:', {
+          id: updatedMeeting.id,
+          summary_status: updatedMeeting.summary_status,
+          hasText: !!updatedMeeting.summary_text
+        });
+        return updatedMeeting;
       } catch (err1: any) {
-        console.warn('Essai 1 échoué:', err1.message);
+        console.warn('⚠️ [DEBUG] Essai 1 échoué:', err1.message);
+        console.error('❌ [DEBUG] Détails de l\'erreur essai 1:', err1);
       }
 
       // Essai 2: POST /meetings/{meeting_id}/summary (autre endpoint possible)
       try {
-        console.log('Essai 2: POST sur /meetings/{meeting_id}/summary');
+        console.log('🎯 [DEBUG] Essai 2: POST sur /meetings/{meeting_id}/summary');
         const summaryEndpoint = `/meetings/${meetingId}/summary`;
         data = await apiClient.post(summaryEndpoint);
-        console.log('Réponse API de génération de résumé (essai 2):', data);
-        return await getMeetingDetails(meetingId); // Retourner immédiatement si réussi
+        console.log('✅ [DEBUG] Réponse API de génération de résumé (essai 2):', data);
+        
+        // Vérifier si la réponse contient des informations utiles
+        if (data && typeof data === 'object') {
+          console.log('📊 [DEBUG] Réponse contient des données:', Object.keys(data));
+        }
+        
+        // Récupérer les détails mis à jour et retourner immédiatement
+        const updatedMeeting = await getMeetingDetails(meetingId);
+        console.log('📋 [DEBUG] Détails de la réunion après génération:', {
+          id: updatedMeeting.id,
+          summary_status: updatedMeeting.summary_status,
+          hasText: !!updatedMeeting.summary_text
+        });
+        return updatedMeeting;
       } catch (err2: any) {
-        console.warn('Essai 2 échoué:', err2.message);
+        console.warn('⚠️ [DEBUG] Essai 2 échoué:', err2.message);
+        console.error('❌ [DEBUG] Détails de l\'erreur essai 2:', err2);
       }
 
       // Essai 3: GET /meetings/{meeting_id}/summary (pour récupérer un résumé déjà généré)
       try {
-        console.log('Essai 3: GET sur /meetings/{meeting_id}/summary');
+        console.log('🎯 [DEBUG] Essai 3: GET sur /meetings/{meeting_id}/summary');
         const getSummaryEndpoint = `/meetings/${meetingId}/summary`;
         data = await apiClient.get(getSummaryEndpoint);
-        console.log('Réponse API de récupération de résumé (essai 3):', data);
-        return await getMeetingDetails(meetingId); // Retourner immédiatement si réussi
+        console.log('✅ [DEBUG] Réponse API de récupération de résumé (essai 3):', data);
+        
+        // Vérifier si la réponse contient des informations utiles
+        if (data && typeof data === 'object') {
+          console.log('📊 [DEBUG] Réponse contient des données:', Object.keys(data));
+        }
+        
+        // Récupérer les détails mis à jour et retourner immédiatement
+        const updatedMeeting = await getMeetingDetails(meetingId);
+        console.log('📋 [DEBUG] Détails de la réunion après génération:', {
+          id: updatedMeeting.id,
+          summary_status: updatedMeeting.summary_status,
+          hasText: !!updatedMeeting.summary_text
+        });
+        return updatedMeeting;
       } catch (err3: any) {
-        console.warn('Essai 3 échoué:', err3.message);
+        console.warn('⚠️ [DEBUG] Essai 3 échoué:', err3.message);
+        console.error('❌ [DEBUG] Détails de l\'erreur essai 3:', err3);
         // Si nous arrivons ici, tous les essais ont échoué
         throw new Error(`Échec de génération du résumé après plusieurs tentatives. Vérifiez la connexion au serveur et réessayez.`);
       }
     } catch (err: any) {
-      console.error('Erreur lors de la génération du résumé:', err);
+      console.error('❌ [DEBUG] Erreur lors de la génération du résumé:', err);
       throw new Error(`Erreur lors de la génération du résumé: ${err.message}`);
     }
     
-    console.log(`Génération du résumé initiée pour la réunion ${meetingId}:`, data);
+    console.log(`✅ [DEBUG] Génération du résumé initiée pour la réunion ${meetingId}:`, data);
     
     // Mettre à jour le cache avec le statut de génération du compte rendu
     const meetingsCache = getMeetingsFromCache();
@@ -1168,12 +1212,19 @@ export async function generateMeetingSummary(meetingId: string, clientId?: strin
         meetingsCache[meetingId].client_id = clientId;
       }
       saveMeetingsCache(meetingsCache);
+      console.log('💾 [DEBUG] Cache mis à jour avec le statut processing');
     }
     
     // Récupérer les détails mis à jour de la réunion
-    return await getMeetingDetails(meetingId);
+    const finalMeeting = await getMeetingDetails(meetingId);
+    console.log('🏁 [DEBUG] Réunion finale retournée:', {
+      id: finalMeeting.id,
+      summary_status: finalMeeting.summary_status,
+      hasText: !!finalMeeting.summary_text
+    });
+    return finalMeeting;
   } catch (error) {
-    console.error(`Error generating summary for meeting ${meetingId}:`, error);
+    console.error(`❌ [DEBUG] Error generating summary for meeting ${meetingId}:`, error);
     throw error;
   }
 }
@@ -1188,56 +1239,76 @@ export function watchSummaryStatus(
   meetingId: string,
   onUpdate?: (status: string, meeting: Meeting) => void
 ): () => void {
-  console.log(`Starting to watch summary status for meeting ${meetingId}`);
+  console.log(`👀 [DEBUG] Starting to watch summary status for meeting ${meetingId}`);
   
   let isActive = true;
   let timeoutId: NodeJS.Timeout | null = null;
+  let checkCount = 0;
   
   const checkStatus = async () => {
-    if (!isActive) return;
+    if (!isActive) {
+      console.log(`🛑 [DEBUG] Watch stopped for meeting ${meetingId} (not active)`);
+      return;
+    }
+    
+    checkCount++;
+    console.log(`🔍 [DEBUG] Checking summary status for meeting ${meetingId} (check #${checkCount})`);
     
     try {
       // Récupérer les détails de la réunion
       const meeting = await getMeetingDetails(meetingId);
       
       if (!meeting) {
-        console.error(`Meeting ${meetingId} not found during summary status check`);
+        console.error(`❌ [DEBUG] Meeting ${meetingId} not found during summary status check`);
         if (isActive && timeoutId) {
           timeoutId = setTimeout(checkStatus, 10000); // Réessayer après un délai plus long en cas d'erreur
         }
         return;
       }
       
+      console.log(`📊 [DEBUG] Meeting ${meetingId} status check result:`, {
+        summary_status: meeting.summary_status,
+        hasText: !!meeting.summary_text,
+        textLength: meeting.summary_text?.length || 0
+      });
+      
       // Vérifier si le compte rendu est terminé
       if (meeting.summary_status === 'completed' || meeting.summary_status === 'error') {
-        console.log(`Summary generation ${meeting.summary_status} for meeting ${meetingId}`);
+        console.log(`🎉 [DEBUG] Summary generation ${meeting.summary_status} for meeting ${meetingId}`);
         if (onUpdate) {
+          console.log(`📞 [DEBUG] Calling onUpdate callback with status: ${meeting.summary_status}`);
           onUpdate(meeting.summary_status, meeting);
         }
+        console.log(`✅ [DEBUG] Stopping watch for meeting ${meetingId} - final status: ${meeting.summary_status}`);
         return; // Arrêter la surveillance
       }
       
       // Continuer la surveillance
+      console.log(`⏳ [DEBUG] Summary still processing for meeting ${meetingId}, continuing watch...`);
       if (onUpdate) {
+        console.log(`📞 [DEBUG] Calling onUpdate callback with processing status`);
         onUpdate(meeting.summary_status || 'processing', meeting);
       }
       
       // Planifier la prochaine vérification
+      console.log(`⏰ [DEBUG] Scheduling next check for meeting ${meetingId} in 5 seconds`);
       timeoutId = setTimeout(checkStatus, 5000);
     } catch (error) {
-      console.error(`Error checking summary status for meeting ${meetingId}:`, error);
+      console.error(`❌ [DEBUG] Error checking summary status for meeting ${meetingId}:`, error);
       if (isActive && timeoutId) {
+        console.log(`🔄 [DEBUG] Retrying status check for meeting ${meetingId} in 10 seconds due to error`);
         timeoutId = setTimeout(checkStatus, 10000); // Réessayer après un délai plus long en cas d'erreur
       }
     }
   };
   
   // Démarrer la surveillance
+  console.log(`🚀 [DEBUG] Starting initial status check for meeting ${meetingId}`);
   checkStatus();
   
   // Retourner une fonction pour arrêter la surveillance
   return () => {
-    console.log(`Stopping summary status watch for meeting ${meetingId}`);
+    console.log(`🛑 [DEBUG] Stopping summary status watch for meeting ${meetingId}`);
     isActive = false;
     if (timeoutId) {
       clearTimeout(timeoutId);

@@ -57,6 +57,7 @@ interface MainContentProps {
   currentUser: User | null;
   currentView: 'dashboard' | 'meetings' | 'templates';
   onRecordingStateChange: (recording: boolean) => void;
+  onUploadStateChange?: (uploading: boolean) => void;
   isMobile?: boolean;
   onToggleSidebar?: () => void;
 }
@@ -235,7 +236,6 @@ Ce résumé a été généré le ${new Date().toLocaleString()}`;
 
       <Box sx={{ 
         p: 4,
-        background: 'linear-gradient(145deg, rgba(255,255,255,0.9) 0%, rgba(249,250,251,0.9) 100%)',
         minHeight: '100vh'
       }}>
         <Typography
@@ -535,64 +535,30 @@ Ce résumé a été généré le ${new Date().toLocaleString()}`;
 };
 
 const MainContent: React.FC<MainContentProps> = ({ 
-  currentView, 
   currentUser, 
+  currentView, 
   onRecordingStateChange, 
-  isMobile = false,
+  onUploadStateChange,
+  isMobile, 
   onToggleSidebar 
 }) => {
-  
-  // Rendu conditionnel en fonction de la vue sélectionnée
-  const renderContent = () => {
-    switch (currentView) {
-      case 'dashboard':
-        return <Dashboard user={currentUser} onRecordingStateChange={onRecordingStateChange} />;
-      case 'meetings':
-        return <MyMeetings user={currentUser} />;
-      case 'templates':
-        return <TemplatesView />;
-      default:
-        return <Dashboard user={currentUser} onRecordingStateChange={onRecordingStateChange} />;
-    }
-  };
-
   return (
     <Box sx={{ 
-      flex: 1, 
-      display: 'flex', 
-      flexDirection: 'column',
-      position: 'relative',
-      height: '100vh'
+      flexGrow: 1, 
+      overflow: 'auto',
+      height: '100vh',
+      p: currentView === 'templates' ? 0 : { xs: 2, md: 3 }
     }}>
-      {/* Barre d'outils mobile */}
-      {isMobile && currentView !== 'templates' && (
-        <AppBar position="static" elevation={0} sx={{ bgcolor: 'white', borderBottom: '1px solid #e0e0e0' }}>
-          <Toolbar sx={{ minHeight: '64px !important' }}>
-            <IconButton
-              edge="start"
-              color="primary"
-              aria-label="menu"
-              onClick={onToggleSidebar}
-              sx={{ mr: 2 }}
-            >
-              <MenuIcon />
-            </IconButton>
-            <Typography variant="h6" component="div" sx={{ flexGrow: 1, color: 'text.primary' }}>
-              {currentView === 'dashboard' ? 'Tableau de bord' : 'Mes réunions'}
-            </Typography>
-          </Toolbar>
-        </AppBar>
+      {currentView === 'dashboard' && (
+        <Dashboard 
+          user={currentUser} 
+          onRecordingStateChange={onRecordingStateChange}
+          onUploadStateChange={onUploadStateChange}
+          isMobile={isMobile}
+        />
       )}
-      
-      {/* Contenu principal */}
-      <Box sx={{ 
-        flex: 1, 
-        display: 'flex', 
-        flexDirection: 'column',
-        overflow: currentView === 'templates' ? 'hidden' : 'auto'
-      }}>
-        {renderContent()}
-      </Box>
+      {currentView === 'meetings' && <MyMeetings user={currentUser} isMobile={isMobile} />}
+      {currentView === 'templates' && <TemplatesView />}
     </Box>
   );
 };

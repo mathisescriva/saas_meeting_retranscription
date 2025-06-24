@@ -277,12 +277,6 @@ const TemplatesView: React.FC = () => {
         position: 'relative',
         height: '100vh',
         overflow: 'hidden',
-        background: `linear-gradient(135deg, 
-          ${alpha('#F8FAFC', 0.9)} 0%,
-          ${alpha('#F1F5F9', 0.95)} 25%,
-          ${alpha('#E2E8F0', 0.9)} 50%,
-          ${alpha('#F8FAFC', 0.95)} 75%,
-          ${alpha('#F1F5F9', 0.9)} 100%)`,
         '&::before': {
           content: '""',
           position: 'absolute',
@@ -445,21 +439,71 @@ const TemplatesView: React.FC = () => {
           }}
         >
           <Stack spacing={3} alignItems="center">
-            {/* Icône simplifiée */}
+            {/* Icône du cadenas améliorée */}
             <Box
               sx={{
-                p: 2,
+                position: 'relative',
+                p: 3,
                 borderRadius: '50%',
                 background: `linear-gradient(135deg, 
-                  ${alpha('#F59E0B', 0.08)} 0%, 
-                  ${alpha('#EF4444', 0.08)} 100%)`,
-                border: `1px solid ${alpha('#F59E0B', 0.15)}`,
+                  ${alpha('#F59E0B', 0.12)} 0%, 
+                  ${alpha('#EF4444', 0.08)} 50%,
+                  ${alpha('#F97316', 0.12)} 100%)`,
+                border: `2px solid ${alpha('#F59E0B', 0.2)}`,
+                boxShadow: `
+                  0 8px 32px ${alpha('#F59E0B', 0.15)},
+                  0 0 0 4px ${alpha('#F59E0B', 0.05)},
+                  inset 0 1px 0 ${alpha('#fff', 0.3)}
+                `,
+                '&::before': {
+                  content: '""',
+                  position: 'absolute',
+                  top: -2,
+                  left: -2,
+                  right: -2,
+                  bottom: -2,
+                  borderRadius: '50%',
+                  background: `conic-gradient(from 0deg, 
+                    ${alpha('#F59E0B', 0.3)} 0deg,
+                    ${alpha('#EF4444', 0.2)} 90deg,
+                    ${alpha('#F97316', 0.3)} 180deg,
+                    ${alpha('#F59E0B', 0.2)} 270deg,
+                    ${alpha('#F59E0B', 0.3)} 360deg
+                  )`,
+                  zIndex: -1,
+                  animation: 'spin 8s linear infinite',
+                },
+                '&::after': {
+                  content: '""',
+                  position: 'absolute',
+                  top: '50%',
+                  left: '50%',
+                  width: '120%',
+                  height: '120%',
+                  borderRadius: '50%',
+                  background: `radial-gradient(circle, 
+                    ${alpha('#F59E0B', 0.1)} 0%, 
+                    transparent 70%)`,
+                  transform: 'translate(-50%, -50%)',
+                  zIndex: -2,
+                  pointerEvents: 'none',
+                },
+                '@keyframes spin': {
+                  '0%': { transform: 'rotate(0deg)' },
+                  '100%': { transform: 'rotate(360deg)' },
+                },
               }}
             >
               <LockIcon
                 sx={{
-                  fontSize: 32,
-                  color: '#F59E0B',
+                  fontSize: 36,
+                  background: `linear-gradient(135deg, #F59E0B 0%, #EF4444 50%, #F97316 100%)`,
+                  backgroundClip: 'text',
+                  WebkitBackgroundClip: 'text',
+                  WebkitTextFillColor: 'transparent',
+                  filter: 'drop-shadow(0 2px 4px rgba(245, 158, 11, 0.3))',
+                  position: 'relative',
+                  zIndex: 1,
                 }}
               />
             </Box>

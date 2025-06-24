@@ -1,7 +1,7 @@
 import { logoutUser } from './authService';
 
 // Base URL for API calls - utilise VITE_API_BASE_URL pour le développement local
-export const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8001';
+export const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8000';
 
 // Fonction pour récupérer le token d'authentification
 function getAuthToken() {

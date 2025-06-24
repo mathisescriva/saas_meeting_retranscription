@@ -70,6 +70,7 @@ import {
 interface DashboardProps {
   user?: User | null;
   onRecordingStateChange?: (recording: boolean) => void;
+  onUploadStateChange?: (uploading: boolean) => void;
   isMobile?: boolean;
 }
 
@@ -150,7 +151,7 @@ const recentMeetings = [
   },
 ];
 
-const Dashboard: React.FC<DashboardProps> = ({ user, onRecordingStateChange }) => {
+const Dashboard: React.FC<DashboardProps> = ({ user, onRecordingStateChange, onUploadStateChange, isMobile }) => {
   const { showSuccessPopup } = useNotification();
   
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
@@ -180,6 +181,9 @@ const Dashboard: React.FC<DashboardProps> = ({ user, onRecordingStateChange }) =
 
   // États de chargement pour les animations fluides
   const [isLoaded, setIsLoaded] = useState(false);
+  
+  // État pour le popup d'avertissement avant l'enregistrement
+  const [showRecordingWarning, setShowRecordingWarning] = useState(false);
 
   useEffect(() => {
     fetchMeetings();
@@ -215,7 +219,21 @@ const Dashboard: React.FC<DashboardProps> = ({ user, onRecordingStateChange }) =
 
   // Fonction pour contacter Lexia France
   const handleContactSupport = () => {
-    window.open('mailto:mathis@lexiapro.fr?subject=Demande%20d%27accès%20aux%20templates%20personnalisés%20Gilbert', '_blank');
+    window.open('mailto:support@gilbert.ai?subject=Support Gilbert', '_blank');
+  };
+
+  // Fonctions pour gérer le popup d'avertissement d'enregistrement
+  const handleOpenRecordingWarning = () => {
+    setShowRecordingWarning(true);
+  };
+
+  const handleCloseRecordingWarning = () => {
+    setShowRecordingWarning(false);
+  };
+
+  const handleConfirmRecording = () => {
+    setShowRecordingWarning(false);
+    startRecording();
   };
 
   useEffect(() => {
@@ -275,22 +293,46 @@ const Dashboard: React.FC<DashboardProps> = ({ user, onRecordingStateChange }) =
       setMeetingsList(processedMeetings);
       
       // Vérifier s'il y a des réunions en cours de transcription pour démarrer le polling
+      // IMPORTANT: Ne pas déclencher le polling pour les générations de résumé
       processedMeetings.forEach(meeting => {
-        if (meeting.status === 'pending' || meeting.status === 'processing') {
-          console.log(`Starting polling for meeting in progress: ${meeting.id} (${meeting.status})`);
-          pollTranscriptionStatus(
+        // Vérifier que c'est bien une transcription en cours, pas une génération de résumé
+        const isTranscriptionInProgress = (meeting.status === 'pending' || meeting.status === 'processing');
+        
+        if (isTranscriptionInProgress) {
+          console.log(`Starting polling for meeting transcription in progress: ${meeting.id} (${meeting.status})`);
+          
+          // Démarrer le polling avec un callback qui évite la boucle infinie
+          const stopPolling = pollTranscriptionStatus(
             meeting.id,
             (newStatus, updatedMeeting) => {
-              console.log(`Status update for ${meeting.id}: ${newStatus}`);
+              console.log(`Transcription status update for ${meeting.id}: ${newStatus}`);
               
-              // Si le statut a changé, rafraîchir les données
+              // Si la transcription est terminée, rafraîchir les données UNE SEULE FOIS
               if (newStatus === 'completed' || newStatus === 'error') {
-                console.log(`Meeting ${meeting.id} reached final status: ${newStatus}, refreshing data`);
-                fetchMeetings();
+                console.log(`Meeting ${meeting.id} transcription reached final status: ${newStatus}, refreshing data once`);
+                
+                // Arrêter le polling d'abord pour éviter les appels multiples
+                if (stopPolling) {
+                  stopPolling();
+                }
+                
+                // Rafraîchir les données une seule fois
+                setTimeout(() => {
+                  fetchMeetings();
+                }, 1000); // Délai pour éviter les appels simultanés
               }
             },
             5000
           );
+          
+          // Stocker la fonction de nettoyage pour pouvoir l'arrêter si nécessaire
+          if (stopPolling && typeof stopPolling === 'function') {
+            // Optionnel: stocker les fonctions de nettoyage pour les arrêter au démontage
+            setCleanupPolling(prev => {
+              if (prev) prev(); // Arrêter le polling précédent s'il existe
+              return stopPolling;
+            });
+          }
         }
       });
       
@@ -341,8 +383,16 @@ const Dashboard: React.FC<DashboardProps> = ({ user, onRecordingStateChange }) =
     
     // Nettoyer lors du démontage
     return () => {
+      // Arrêter l'enregistrement si en cours
       if (isRecording && mediaRecorderRef.current) {
         stopRecording();
+      }
+      
+      // Arrêter le polling de transcription si en cours
+      if (cleanupPolling) {
+        console.log('🧹 Dashboard unmounting - stopping transcription polling');
+        cleanupPolling();
+        setCleanupPolling(null);
       }
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -792,6 +842,11 @@ const Dashboard: React.FC<DashboardProps> = ({ user, onRecordingStateChange }) =
     setUploadProgress(0);
     setErrorState(null);
     
+    // Notifier le changement d'état d'upload
+    if (onUploadStateChange) {
+      onUploadStateChange(true);
+    }
+    
     try {
       // Conserver le type MIME original du fichier audio
       const originalMimeType = latestAudioFile.type;
@@ -912,6 +967,11 @@ const Dashboard: React.FC<DashboardProps> = ({ user, onRecordingStateChange }) =
         setIsUploading(false);
         setUploadProgress(0);
         setErrorState(null);
+        
+        // Notifier la fin de l'upload
+        if (onUploadStateChange) {
+          onUploadStateChange(false);
+        }
       }, 1500); // Délai de 1.5 secondes pour laisser le temps de voir le message de succès
       
     } catch (error) {
@@ -925,6 +985,11 @@ const Dashboard: React.FC<DashboardProps> = ({ user, onRecordingStateChange }) =
       setErrorState({ message: errorMessage });
       setIsUploading(false);
       setUploadProgress(0);
+      
+      // Notifier la fin de l'upload en cas d'erreur
+      if (onUploadStateChange) {
+        onUploadStateChange(false);
+      }
     }
   };
 
@@ -964,6 +1029,11 @@ const Dashboard: React.FC<DashboardProps> = ({ user, onRecordingStateChange }) =
         "Veuillez sélectionner un fichier audio (MP3, WAV, WebM ou OGG)."
       );
       return;
+    }
+    
+    // Notifier le début de l'upload
+    if (onUploadStateChange) {
+      onUploadStateChange(true);
     }
     
     const interval = setInterval(() => {
@@ -1037,6 +1107,11 @@ const Dashboard: React.FC<DashboardProps> = ({ user, onRecordingStateChange }) =
       setTimeout(() => {
         setShowDialog(false);
         setUploadProgress(0);
+        
+        // Notifier la fin de l'upload
+        if (onUploadStateChange) {
+          onUploadStateChange(false);
+        }
       }, 1000);
       
     } catch (error) {
@@ -1044,44 +1119,10 @@ const Dashboard: React.FC<DashboardProps> = ({ user, onRecordingStateChange }) =
       setUploadProgress(0);
       console.error('Error uploading file:', error);
       
-      // Montrer un message d'erreur plus détaillé et informatif
-      let errorTitle = "Erreur d'upload";
-      let errorMessage = "Une erreur s'est produite lors de l'upload";
-      
-      if (error instanceof Error) {
-        // Analyser le message d'erreur pour fournir des informations plus précises
-        const errorMsg = error.message.toLowerCase();
-        
-        if (errorMsg.includes('network') || errorMsg.includes('connection') || errorMsg.includes('connect')) {
-          errorTitle = "Erreur de connexion";
-          errorMessage = "Impossible de se connecter au serveur. Vérifiez votre connexion internet et réessayez.";
-        } else if (errorMsg.includes('format') || errorMsg.includes('type') || errorMsg.includes('support')) {
-          errorTitle = "Format non supporté";
-          errorMessage = "Le format du fichier audio n'est pas supporté. Veuillez utiliser un format audio standard comme MP3, WAV, WebM ou OGG.";
-        } else if (errorMsg.includes('size') || errorMsg.includes('large') || errorMsg.includes('big')) {
-          errorTitle = "Fichier trop volumineux";
-          errorMessage = "Le fichier audio est trop volumineux. Veuillez utiliser un fichier de moins de 50 MB.";
-        } else if (errorMsg.includes('empty') || errorMsg.includes('corrupt') || errorMsg.includes('invalid')) {
-          errorTitle = "Fichier corrompu";
-          errorMessage = "Le fichier audio semble être vide ou corrompu. Veuillez vérifier le fichier et réessayer.";
-        } else if (errorMsg.includes('auth') || errorMsg.includes('token') || errorMsg.includes('login')) {
-          errorTitle = "Erreur d'authentification";
-          errorMessage = "Votre session a expiré. Veuillez vous reconnecter et réessayer.";
-        } else {
-          // Si nous ne pouvons pas catégoriser l'erreur, utiliser le message original
-          errorMessage = error.message;
-        }
+      // Notifier la fin de l'upload en cas d'erreur
+      if (onUploadStateChange) {
+        onUploadStateChange(false);
       }
-      
-      // Réinitialiser le champ de fichier pour permettre une nouvelle tentative
-      if (fileInputRef.current) {
-        fileInputRef.current.value = '';
-      }
-      
-      showSuccessPopup(
-        errorTitle,
-        errorMessage
-      );
     }
   };
 
@@ -1139,6 +1180,11 @@ const Dashboard: React.FC<DashboardProps> = ({ user, onRecordingStateChange }) =
   const transcribeAudio = async (file: File, title: string) => {
     setIsUploading(true);
     setUploadProgress(0);
+    
+    // Notifier le début de l'upload
+    if (onUploadStateChange) {
+      onUploadStateChange(true);
+    }
     
     try {
       console.log(`Uploading file "${title}" (${file.type}, ${(file.size / 1024 / 1024).toFixed(2)} MB)...`);
@@ -1221,6 +1267,11 @@ const Dashboard: React.FC<DashboardProps> = ({ user, onRecordingStateChange }) =
     } finally {
       setIsUploading(false);
       setUploadProgress(0);
+      
+      // Notifier la fin de l'upload
+      if (onUploadStateChange) {
+        onUploadStateChange(false);
+      }
     }
   };
 
@@ -1331,7 +1382,6 @@ const Dashboard: React.FC<DashboardProps> = ({ user, onRecordingStateChange }) =
   return (
     <Box sx={{ 
       p: 4,
-      background: 'linear-gradient(145deg, rgba(255,255,255,0.9) 0%, rgba(249,250,251,0.9) 100%)',
       minHeight: '100vh',
       opacity: isLoaded ? 1 : 0,
       transform: isLoaded ? 'translateY(0)' : 'translateY(10px)',
@@ -1347,7 +1397,7 @@ const Dashboard: React.FC<DashboardProps> = ({ user, onRecordingStateChange }) =
         <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mb: 1 }}>
           <Box sx={{ display: 'flex', alignItems: 'center', ml: -2 }}>
             <Box component="img" 
-              src="/img/avatar.jpg" 
+              src="/img/avatar.png" 
               alt="Avatar" 
               sx={{ 
                 width: 150, 
@@ -1432,7 +1482,7 @@ const Dashboard: React.FC<DashboardProps> = ({ user, onRecordingStateChange }) =
                   <Button
                     variant="contained"
                     startIcon={<MicIcon sx={{ color: 'white' }} />}
-                    onClick={startRecording}
+                    onClick={() => setShowRecordingWarning(true)}
                     sx={{
                       bgcolor: '#FF5722', // Orange vif
                       color: 'white',
@@ -1559,19 +1609,26 @@ const Dashboard: React.FC<DashboardProps> = ({ user, onRecordingStateChange }) =
         >
           <Grid container spacing={3} alignItems="center">
             {/* Section principale avec statistiques */}
-            <Grid item xs={12} md={8}>
-              <Box sx={{ display: 'flex', alignItems: 'flex-start', mb: 3 }}>
+            <Grid item xs={12} lg={8}>
+              <Box sx={{ 
+                display: 'flex', 
+                alignItems: { xs: 'center', sm: 'flex-start' }, 
+                flexDirection: { xs: 'column', sm: 'row' },
+                mb: { xs: 2, md: 3 },
+                textAlign: { xs: 'center', sm: 'left' }
+              }}>
                 {/* Avatar Gilbert avec animation */}
                 <Box
                   sx={{
-                    width: 60,
-                    height: 60,
+                    width: { xs: 50, sm: 60 },
+                    height: { xs: 50, sm: 60 },
                     borderRadius: '50%',
                     background: 'linear-gradient(135deg, #3B82F6 0%, #6366F1 100%)',
                     display: 'flex',
                     alignItems: 'center',
                     justifyContent: 'center',
-                    mr: 3,
+                    mr: { xs: 0, sm: 3 },
+                    mb: { xs: 2, sm: 0 },
                     flexShrink: 0,
                     boxShadow: '0 8px 20px rgba(59, 130, 246, 0.15)',
                     position: 'relative',
@@ -1608,38 +1665,55 @@ const Dashboard: React.FC<DashboardProps> = ({ user, onRecordingStateChange }) =
                   </Box>
                 </Box>
 
-                <Box sx={{ flex: 1 }}>
+                <Box sx={{ flex: 1, width: '100%' }}>
                   <Typography 
-                    variant="h5" 
+                    variant="h5"
                     sx={{ 
                       fontWeight: 600,
                       color: 'text.primary',
-                      mb: 1
+                      mb: 1,
+                      fontSize: { xs: '1.25rem', sm: '1.5rem' }
                     }}
                   >
                     Score Gilbert
                   </Typography>
-                  <Typography variant="body1" color="text.secondary" sx={{ mb: 2, lineHeight: 1.6 }}>
+                  <Typography 
+                    variant="body1" 
+                    color="text.secondary" 
+                    sx={{ 
+                      mb: 2, 
+                      lineHeight: 1.6,
+                      fontSize: { xs: '0.9rem', sm: '1rem' }
+                    }}
+                  >
                     Félicitations ! Vous faites partie des <Box component="span" sx={{ color: '#3B82F6', fontWeight: 600 }}>{topPercentage}% d'utilisateurs les plus actifs</Box> de Gilbert.
                     Continuez sur cette lancée ! 🚀
                   </Typography>
 
                   {/* Statistiques détaillées */}
-                  <Box sx={{ mb: 3 }}>
-                    <Grid container spacing={2}>
+                  <Box sx={{ mb: { xs: 2, md: 3 } }}>
+                    <Grid container spacing={{ xs: 1, sm: 2 }}>
                       <Grid item xs={6} sm={3}>
                         <Box sx={{ textAlign: 'center' }}>
                           <Typography 
-                            variant="h4" 
+                            variant="h4"
                             sx={{ 
                               fontWeight: 700,
                               color: '#3B82F6',
-                              mb: 0.5
+                              mb: 0.5,
+                              fontSize: { xs: '1.5rem', sm: '2rem' }
                             }}
                           >
                             {meetingsList.length}
                           </Typography>
-                          <Typography variant="caption" color="text.secondary" sx={{ fontWeight: 500 }}>
+                          <Typography 
+                            variant="caption" 
+                            color="text.secondary" 
+                            sx={{ 
+                              fontWeight: 500,
+                              fontSize: { xs: '0.7rem', sm: '0.75rem' }
+                            }}
+                          >
                             Réunions
                           </Typography>
                         </Box>
@@ -1647,11 +1721,12 @@ const Dashboard: React.FC<DashboardProps> = ({ user, onRecordingStateChange }) =
                       <Grid item xs={6} sm={3}>
                         <Box sx={{ textAlign: 'center' }}>
                           <Typography 
-                            variant="h4" 
+                            variant="h4"
                             sx={{ 
                               fontWeight: 700,
                               color: '#6366F1',
-                              mb: 0.5
+                              mb: 0.5,
+                              fontSize: { xs: '1.5rem', sm: '2rem' }
                             }}
                           >
                             {Math.floor(
@@ -1661,7 +1736,14 @@ const Dashboard: React.FC<DashboardProps> = ({ user, onRecordingStateChange }) =
                               }, 0) / 60
                             )}
                           </Typography>
-                          <Typography variant="caption" color="text.secondary" sx={{ fontWeight: 500 }}>
+                          <Typography 
+                            variant="caption" 
+                            color="text.secondary" 
+                            sx={{ 
+                              fontWeight: 500,
+                              fontSize: { xs: '0.7rem', sm: '0.75rem' }
+                            }}
+                          >
                             Minutes
                           </Typography>
                         </Box>
@@ -1669,11 +1751,12 @@ const Dashboard: React.FC<DashboardProps> = ({ user, onRecordingStateChange }) =
                       <Grid item xs={6} sm={3}>
                         <Box sx={{ textAlign: 'center' }}>
                           <Typography 
-                            variant="h4" 
+                            variant="h4"
                             sx={{ 
                               fontWeight: 700,
                               color: '#8B5CF6',
-                              mb: 0.5
+                              mb: 0.5,
+                              fontSize: { xs: '1.5rem', sm: '2rem' }
                             }}
                           >
                             {meetingsList.filter(m => 
@@ -1682,7 +1765,14 @@ const Dashboard: React.FC<DashboardProps> = ({ user, onRecordingStateChange }) =
                               (m as any).transcription_status === 'completed'
                             ).length}
                           </Typography>
-                          <Typography variant="caption" color="text.secondary" sx={{ fontWeight: 500 }}>
+                          <Typography 
+                            variant="caption" 
+                            color="text.secondary" 
+                            sx={{ 
+                              fontWeight: 500,
+                              fontSize: { xs: '0.7rem', sm: '0.75rem' }
+                            }}
+                          >
                             Transcrites
                           </Typography>
                         </Box>
@@ -1690,16 +1780,30 @@ const Dashboard: React.FC<DashboardProps> = ({ user, onRecordingStateChange }) =
                       <Grid item xs={6} sm={3}>
                         <Box sx={{ textAlign: 'center' }}>
                           <Typography 
-                            variant="h4" 
+                            variant="h2"
                             sx={{ 
-                              fontWeight: 700,
-                              color: '#F97316',
-                              mb: 0.5
+                              fontWeight: 800,
+                              background: 'linear-gradient(135deg, #3B82F6 0%, #6366F1 100%)',
+                              backgroundClip: 'text',
+                              WebkitBackgroundClip: 'text',
+                              color: 'transparent',
+                              WebkitTextFillColor: 'transparent',
+                              filter: 'drop-shadow(0 2px 4px rgba(59, 130, 246, 0.2))',
+                              lineHeight: 0.9,
+                              mb: 0.5,
+                              fontSize: { xs: '1.8rem', sm: '2.125rem' }
                             }}
                           >
                             {engagementScore}
                           </Typography>
-                          <Typography variant="caption" color="text.secondary" sx={{ fontWeight: 500 }}>
+                          <Typography 
+                            variant="caption" 
+                            color="text.secondary" 
+                            sx={{ 
+                              fontWeight: 500,
+                              fontSize: { xs: '0.7rem', sm: '0.75rem' }
+                            }}
+                          >
                             Score
                           </Typography>
                         </Box>
@@ -1710,10 +1814,24 @@ const Dashboard: React.FC<DashboardProps> = ({ user, onRecordingStateChange }) =
                   {/* Barre de progression du score */}
                   <Box sx={{ mb: 2 }}>
                     <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 1 }}>
-                      <Typography variant="body2" sx={{ fontWeight: 600, color: 'text.primary' }}>
+                      <Typography 
+                        variant="body2" 
+                        sx={{ 
+                          fontWeight: 600, 
+                          color: 'text.primary',
+                          fontSize: { xs: '0.8rem', sm: '0.875rem' }
+                        }}
+                      >
                         Niveau d'engagement
                       </Typography>
-                      <Typography variant="body2" sx={{ fontWeight: 600, color: '#3B82F6' }}>
+                      <Typography 
+                        variant="body2" 
+                        sx={{ 
+                          fontWeight: 600, 
+                          color: '#3B82F6',
+                          fontSize: { xs: '0.8rem', sm: '0.875rem' }
+                        }}
+                      >
                         {engagementScore}/100
                       </Typography>
                     </Box>
@@ -1721,7 +1839,7 @@ const Dashboard: React.FC<DashboardProps> = ({ user, onRecordingStateChange }) =
                       variant="determinate" 
                       value={engagementScore} 
                       sx={{ 
-                        height: 8,
+                        height: { xs: 6, sm: 8 },
                         borderRadius: 4,
                         backgroundColor: 'rgba(59, 130, 246, 0.1)',
                         '& .MuiLinearProgress-bar': {
@@ -1736,7 +1854,8 @@ const Dashboard: React.FC<DashboardProps> = ({ user, onRecordingStateChange }) =
                       sx={{ 
                         display: 'block', 
                         mt: 1,
-                        fontStyle: 'italic'
+                        fontStyle: 'italic',
+                        fontSize: { xs: '0.7rem', sm: '0.75rem' }
                       }}
                     >
                       {pointsToNextLevel > 0 ? `Prochain niveau dans ${pointsToNextLevel} points ! 🎯` : 'Félicitations ! Vous avez atteint le niveau maximum ! 🏆'}
@@ -1744,7 +1863,15 @@ const Dashboard: React.FC<DashboardProps> = ({ user, onRecordingStateChange }) =
                   </Box>
 
                   {/* Badges de récompenses professionnels */}
-                  <Stack direction="row" spacing={1} sx={{ flexWrap: 'wrap', gap: 1 }}>
+                  <Stack 
+                    direction="row" 
+                    spacing={1} 
+                    sx={{ 
+                      flexWrap: 'wrap', 
+                      gap: { xs: 0.5, sm: 1 },
+                      justifyContent: { xs: 'center', sm: 'flex-start' }
+                    }}
+                  >
                     {/* Badge de niveau d'engagement */}
                     <Chip 
                       icon={
@@ -1779,7 +1906,9 @@ const Dashboard: React.FC<DashboardProps> = ({ user, onRecordingStateChange }) =
                                     engagementScore >= 25 ? 'rgba(245, 158, 11, 0.2)' : 'rgba(107, 114, 128, 0.2)',
                         '& .MuiChip-icon': { 
                           color: 'inherit'
-                        }
+                        },
+                        fontSize: { xs: '0.7rem', sm: '0.8125rem' },
+                        height: { xs: 24, sm: 32 }
                       }}
                     />
                     
@@ -1810,7 +1939,9 @@ const Dashboard: React.FC<DashboardProps> = ({ user, onRecordingStateChange }) =
                         border: '1px solid rgba(245, 158, 11, 0.2)',
                         '& .MuiChip-icon': { 
                           color: 'inherit'
-                        }
+                        },
+                        fontSize: { xs: '0.7rem', sm: '0.8125rem' },
+                        height: { xs: 24, sm: 32 }
                       }}
                     />
                     
@@ -1842,7 +1973,9 @@ const Dashboard: React.FC<DashboardProps> = ({ user, onRecordingStateChange }) =
                           border: '1px solid rgba(99, 102, 241, 0.2)',
                           '& .MuiChip-icon': { 
                             color: 'inherit'
-                          }
+                          },
+                          fontSize: { xs: '0.7rem', sm: '0.8125rem' },
+                          height: { xs: 24, sm: 32 }
                         }}
                       />
                     )}
@@ -1850,14 +1983,13 @@ const Dashboard: React.FC<DashboardProps> = ({ user, onRecordingStateChange }) =
                     {/* Badge Utilisateur Actif (si beaucoup de réunions récentes) */}
                     {(() => {
                       const recentMeetings = meetingsList.filter(meeting => {
-                        if (!meeting.created_at) return false;
-                        const meetingDate = new Date(meeting.created_at);
+                        const meetingDate = new Date(meeting.date);
                         const thirtyDaysAgo = new Date();
                         thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
                         return meetingDate >= thirtyDaysAgo;
-                      }).length;
+                      });
                       
-                      return recentMeetings >= 5 ? (
+                      return recentMeetings.length >= 5 ? (
                         <Chip 
                           icon={
                             <Box sx={{ 
@@ -1869,13 +2001,13 @@ const Dashboard: React.FC<DashboardProps> = ({ user, onRecordingStateChange }) =
                             }}>
                               <svg width="14" height="14" viewBox="0 0 24 24" fill="none">
                                 <path
-                                  d="M12 2C13.1 2 14 2.9 14 4V6H18C19.1 6 20 6.9 20 8V18C20 19.1 19.1 20 18 20H6C4.9 20 4 19.1 4 18V8C4 6.9 4.9 6 6 6H10V4C10 2.9 10.9 2 12 2ZM12 7C10.9 7 10 7.9 10 9S10.9 11 12 11 14 10.1 14 9 13.1 7 12 7ZM18 19V16.5C18 14.6 14.9 13.5 12 13.5S6 14.6 6 16.5V19H18Z"
+                                  d="M13 9V3.5L18.49 9M6 2C4.89 2 4 2.89 4 4V20A2 2 0 0 0 6 22H18A2 2 0 0 0 20 20V8L14 2H6Z"
                                   fill="currentColor"
                                 />
                               </svg>
                             </Box>
                           }
-                          label="Utilisateur Actif" 
+                          label="Très actif" 
                           size="small"
                           sx={{ 
                             bgcolor: 'rgba(16, 185, 129, 0.1)',
@@ -1884,7 +2016,9 @@ const Dashboard: React.FC<DashboardProps> = ({ user, onRecordingStateChange }) =
                             border: '1px solid rgba(16, 185, 129, 0.2)',
                             '& .MuiChip-icon': { 
                               color: 'inherit'
-                            }
+                            },
+                            fontSize: { xs: '0.7rem', sm: '0.8125rem' },
+                            height: { xs: 24, sm: 32 }
                           }}
                         />
                       ) : null;
@@ -1895,17 +2029,18 @@ const Dashboard: React.FC<DashboardProps> = ({ user, onRecordingStateChange }) =
             </Grid>
 
             {/* Graphique circulaire du score */}
-            <Grid item xs={12} md={4}>
+            <Grid item xs={12} lg={4}>
               <Box sx={{ 
                 display: 'flex', 
                 justifyContent: 'center',
                 alignItems: 'center',
-                position: 'relative'
+                position: 'relative',
+                mt: { xs: 2, lg: 0 }
               }}>
                 <Box
                   sx={{
-                    width: 140,
-                    height: 140,
+                    width: { xs: 120, sm: 140 },
+                    height: { xs: 120, sm: 140 },
                     borderRadius: '50%',
                     background: `conic-gradient(#3B82F6 0% ${engagementScore}%, rgba(59, 130, 246, 0.08) ${engagementScore}% 100%)`,
                     display: 'flex',
@@ -1920,8 +2055,8 @@ const Dashboard: React.FC<DashboardProps> = ({ user, onRecordingStateChange }) =
                     },
                     '&::before': {
                       content: '""',
-                      width: 105,
-                      height: 105,
+                      width: { xs: 90, sm: 105 },
+                      height: { xs: 90, sm: 105 },
                       borderRadius: '50%',
                       backgroundColor: 'background.paper',
                       position: 'absolute',
@@ -1931,10 +2066,10 @@ const Dashboard: React.FC<DashboardProps> = ({ user, onRecordingStateChange }) =
                     '&::after': {
                       content: '""',
                       position: 'absolute',
-                      top: '15px',
-                      left: '15px',
-                      width: '40px',
-                      height: '40px',
+                      top: { xs: '12px', sm: '15px' },
+                      left: { xs: '12px', sm: '15px' },
+                      width: { xs: '32px', sm: '40px' },
+                      height: { xs: '32px', sm: '40px' },
                       borderRadius: '50%',
                       background: 'linear-gradient(135deg, rgba(255, 255, 255, 0.3) 0%, rgba(255, 255, 255, 0.1) 100%)',
                       filter: 'blur(8px)',
@@ -1952,7 +2087,7 @@ const Dashboard: React.FC<DashboardProps> = ({ user, onRecordingStateChange }) =
                     justifyContent: 'center'
                   }}>
                     <Typography 
-                      variant="h2" 
+                      variant="h3"
                       sx={{ 
                         fontWeight: 800,
                         background: 'linear-gradient(135deg, #3B82F6 0%, #6366F1 100%)',
@@ -1960,9 +2095,9 @@ const Dashboard: React.FC<DashboardProps> = ({ user, onRecordingStateChange }) =
                         WebkitBackgroundClip: 'text',
                         color: 'transparent',
                         WebkitTextFillColor: 'transparent',
-                        filter: 'drop-shadow(0 2px 4px rgba(59, 130, 246, 0.2))',
                         lineHeight: 0.9,
-                        mb: 0.5
+                        mb: 0.5,
+                        fontSize: { xs: '2rem', sm: '2.5rem' }
                       }}
                     >
                       {engagementScore}
@@ -1972,7 +2107,7 @@ const Dashboard: React.FC<DashboardProps> = ({ user, onRecordingStateChange }) =
                       sx={{ 
                         color: 'text.secondary',
                         fontWeight: 600,
-                        fontSize: '10px',
+                        fontSize: { xs: '8px', sm: '10px' },
                         letterSpacing: '0.5px',
                         textTransform: 'uppercase'
                       }}
@@ -1996,7 +2131,7 @@ const Dashboard: React.FC<DashboardProps> = ({ user, onRecordingStateChange }) =
       }}>
         <Paper
           sx={{
-            p: 4,
+            p: { xs: 2, sm: 3, md: 4 },
             borderRadius: '16px',
             background: 'linear-gradient(135deg, rgba(255, 255, 255, 0.9) 0%, rgba(248, 250, 252, 0.9) 100%)',
             border: '1px solid rgba(0, 0, 0, 0.05)',
@@ -2009,14 +2144,21 @@ const Dashboard: React.FC<DashboardProps> = ({ user, onRecordingStateChange }) =
           }}
         >
           {/* En-tête du graphique */}
-          <Box sx={{ mb: 4 }}>
-            <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mb: 2 }}>
+          <Box sx={{ mb: { xs: 3, md: 4 } }}>
+            <Box sx={{ 
+              display: 'flex', 
+              alignItems: { xs: 'flex-start', sm: 'center' }, 
+              justifyContent: 'space-between', 
+              mb: 2,
+              flexDirection: { xs: 'column', sm: 'row' },
+              gap: { xs: 2, sm: 0 }
+            }}>
               <Box sx={{ display: 'flex', alignItems: 'center' }}>
                 <Box
                   sx={{
-                    width: 48,
-                    height: 48,
-                    borderRadius: '12px',
+                    width: { xs: 40, sm: 48 },
+                    height: { xs: 40, sm: 48 },
+                    borderRadius: { xs: '10px', sm: '12px' },
                     background: 'linear-gradient(135deg, #10B981 0%, #059669 100%)',
                     display: 'flex',
                     alignItems: 'center',
@@ -2032,7 +2174,7 @@ const Dashboard: React.FC<DashboardProps> = ({ user, onRecordingStateChange }) =
                       transform: 'translate(-50%, -50%)',
                       width: '70%',
                       height: '70%',
-                      borderRadius: '8px',
+                      borderRadius: { xs: '7px', sm: '8px' },
                       background: 'rgba(255, 255, 255, 0.15)',
                       backdropFilter: 'blur(8px)',
                     }
@@ -2048,7 +2190,7 @@ const Dashboard: React.FC<DashboardProps> = ({ user, onRecordingStateChange }) =
                     }}
                   >
                     {/* Icône de pulse/activité minimaliste */}
-                    <svg width="24" height="24" viewBox="0 0 24 24" fill="none">
+                    <svg width={isMobile ? "20" : "24"} height={isMobile ? "20" : "24"} viewBox="0 0 24 24" fill="none">
                       {/* Ligne de base */}
                       <path d="M2 12h4" stroke="white" strokeWidth="2" strokeLinecap="round" opacity="0.6"/>
                       <path d="M18 12h4" stroke="white" strokeWidth="2" strokeLinecap="round" opacity="0.6"/>
@@ -2067,10 +2209,23 @@ const Dashboard: React.FC<DashboardProps> = ({ user, onRecordingStateChange }) =
                   </Box>
                 </Box>
                 <Box>
-                  <Typography variant="h5" sx={{ fontWeight: 600, color: 'text.primary' }}>
-                    Votre activité sur Gilbert
+                  <Typography 
+                    variant="h5" 
+                    sx={{ 
+                      fontWeight: 600, 
+                      color: 'text.primary',
+                      fontSize: { xs: '1.25rem', sm: '1.5rem' }
+                    }}
+                  >
+                    Votre activité Gilbert
                   </Typography>
-                  <Typography variant="body2" color="text.secondary">
+                  <Typography 
+                    variant="body2" 
+                    color="text.secondary"
+                    sx={{ 
+                      fontSize: { xs: '0.8rem', sm: '0.875rem' }
+                    }}
+                  >
                     {totalContributions > 0 
                       ? `${totalContributions} réunion${totalContributions > 1 ? 's' : ''} enregistrée${totalContributions > 1 ? 's' : ''} cette année`
                       : "Commencez à enregistrer vos réunions pour voir votre activité"
@@ -2080,28 +2235,73 @@ const Dashboard: React.FC<DashboardProps> = ({ user, onRecordingStateChange }) =
               </Box>
               
               {/* Statistiques rapides */}
-              <Box sx={{ display: 'flex', alignItems: 'center', gap: 3 }}>
+              <Box sx={{ 
+                display: 'flex', 
+                alignItems: 'center', 
+                gap: { xs: 2, sm: 3 },
+                flexWrap: 'wrap',
+                justifyContent: { xs: 'flex-start', sm: 'flex-end' }
+              }}>
                 <Box sx={{ textAlign: 'center' }}>
-                  <Typography variant="h6" sx={{ fontWeight: 700, color: '#10B981' }}>
+                  <Typography 
+                    variant="h6" 
+                    sx={{ 
+                      fontWeight: 700, 
+                      color: '#10B981',
+                      fontSize: { xs: '1rem', sm: '1.25rem' }
+                    }}
+                  >
                     {totalContributions}
                   </Typography>
-                  <Typography variant="caption" color="text.secondary">
+                  <Typography 
+                    variant="caption" 
+                    color="text.secondary"
+                    sx={{ 
+                      fontSize: { xs: '0.7rem', sm: '0.75rem' }
+                    }}
+                  >
                     réunion{totalContributions > 1 ? 's' : ''}
                   </Typography>
                 </Box>
                 <Box sx={{ textAlign: 'center' }}>
-                  <Typography variant="h6" sx={{ fontWeight: 700, color: '#3B82F6' }}>
+                  <Typography 
+                    variant="h6" 
+                    sx={{ 
+                      fontWeight: 700, 
+                      color: '#3B82F6',
+                      fontSize: { xs: '1rem', sm: '1.25rem' }
+                    }}
+                  >
                     {currentStreak}
                   </Typography>
-                  <Typography variant="caption" color="text.secondary">
+                  <Typography 
+                    variant="caption" 
+                    color="text.secondary"
+                    sx={{ 
+                      fontSize: { xs: '0.7rem', sm: '0.75rem' }
+                    }}
+                  >
                     jour{currentStreak > 1 ? 's' : ''} de suite
                   </Typography>
                 </Box>
                 <Box sx={{ textAlign: 'center' }}>
-                  <Typography variant="h6" sx={{ fontWeight: 700, color: '#8B5CF6' }}>
+                  <Typography 
+                    variant="h6" 
+                    sx={{ 
+                      fontWeight: 700, 
+                      color: '#8B5CF6',
+                      fontSize: { xs: '1rem', sm: '1.25rem' }
+                    }}
+                  >
                     {activeWeeks}
                   </Typography>
-                  <Typography variant="caption" color="text.secondary">
+                  <Typography 
+                    variant="caption" 
+                    color="text.secondary"
+                    sx={{ 
+                      fontSize: { xs: '0.7rem', sm: '0.75rem' }
+                    }}
+                  >
                     semaine{activeWeeks > 1 ? 's' : ''} active{activeWeeks > 1 ? 's' : ''}
                   </Typography>
                 </Box>
@@ -2112,7 +2312,11 @@ const Dashboard: React.FC<DashboardProps> = ({ user, onRecordingStateChange }) =
           {/* Graphique heatmap */}
           <Box sx={{ mb: 3 }}>
             {/* Labels des mois */}
-            <Box sx={{ display: 'flex', mb: 1, pl: 4 }}>
+            <Box sx={{ 
+              display: { xs: 'none', sm: 'flex' }, 
+              mb: 1, 
+              pl: { sm: 3, md: 4 } 
+            }}>
               {['Jan', 'Fév', 'Mar', 'Avr', 'Mai', 'Jun', 'Jul', 'Aoû', 'Sep', 'Oct', 'Nov', 'Déc'].map((month, index) => (
                 <Box
                   key={month}
@@ -2130,9 +2334,19 @@ const Dashboard: React.FC<DashboardProps> = ({ user, onRecordingStateChange }) =
             </Box>
 
             {/* Graphique principal */}
-            <Box sx={{ display: 'flex', alignItems: 'flex-start' }}>
+            <Box sx={{ 
+              display: 'flex', 
+              alignItems: 'flex-start',
+              overflowX: { xs: 'auto', sm: 'visible' },
+              pb: { xs: 1, sm: 0 }
+            }}>
               {/* Labels des jours */}
-              <Box sx={{ display: 'flex', flexDirection: 'column', mr: 2, pt: 1 }}>
+              <Box sx={{ 
+                display: { xs: 'none', sm: 'flex' }, 
+                flexDirection: 'column', 
+                mr: 2, 
+                pt: 1 
+              }}>
                 {['Lun', 'Mar', 'Mer', 'Jeu', 'Ven', 'Sam', 'Dim'].map((day, index) => (
                   <Box
                     key={day}
@@ -2156,9 +2370,15 @@ const Dashboard: React.FC<DashboardProps> = ({ user, onRecordingStateChange }) =
               </Box>
 
               {/* Grille d'activité */}
-              <Box sx={{ display: 'flex', gap: '2px', flexWrap: 'wrap', maxWidth: '100%' }}>
+              <Box sx={{ 
+                display: 'flex', 
+                gap: { xs: '1px', sm: '2px' }, 
+                flexWrap: 'wrap', 
+                maxWidth: '100%',
+                minWidth: { xs: '280px', sm: 'auto' }
+              }}>
                 {weeklyData.map((week, weekIndex) => (
-                  <Box key={weekIndex} sx={{ display: 'flex', flexDirection: 'column', gap: '2px' }}>
+                  <Box key={weekIndex} sx={{ display: 'flex', flexDirection: 'column', gap: { xs: '1px', sm: '2px' } }}>
                     {week.map((day, dayIndex) => {
                       const getColor = (level: number) => {
                         switch (level) {
@@ -2194,8 +2414,8 @@ const Dashboard: React.FC<DashboardProps> = ({ user, onRecordingStateChange }) =
                         >
                           <Box
                             sx={{
-                              width: '11px',
-                              height: '11px',
+                              width: { xs: '9px', sm: '11px' },
+                              height: { xs: '9px', sm: '11px' },
                               borderRadius: '2px',
                               backgroundColor: getColor(day.level),
                               cursor: 'pointer',
@@ -2220,9 +2440,24 @@ const Dashboard: React.FC<DashboardProps> = ({ user, onRecordingStateChange }) =
           </Box>
 
           {/* Légende et informations supplémentaires */}
-          <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', pt: 2, borderTop: '1px solid rgba(0, 0, 0, 0.05)' }}>
+          <Box sx={{ 
+            display: 'flex', 
+            justifyContent: 'space-between', 
+            alignItems: 'center', 
+            pt: 2, 
+            borderTop: '1px solid rgba(0, 0, 0, 0.05)',
+            flexDirection: { xs: 'column', sm: 'row' },
+            gap: { xs: 2, sm: 0 }
+          }}>
             <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
-              <Typography variant="caption" color="text.secondary" sx={{ fontWeight: 500 }}>
+              <Typography 
+                variant="caption" 
+                color="text.secondary" 
+                sx={{ 
+                  fontWeight: 500,
+                  fontSize: { xs: '0.7rem', sm: '0.75rem' }
+                }}
+              >
                 Moins
               </Typography>
               <Box sx={{ display: 'flex', gap: '2px' }}>
@@ -2230,83 +2465,41 @@ const Dashboard: React.FC<DashboardProps> = ({ user, onRecordingStateChange }) =
                   <Box
                     key={level}
                     sx={{
-                      width: '10px',
-                      height: '10px',
+                      width: { xs: '8px', sm: '10px' },
+                      height: { xs: '8px', sm: '10px' },
                       borderRadius: '2px',
                       backgroundColor: level === 0 ? 'rgba(0, 0, 0, 0.04)' : `rgba(16, 185, 129, ${0.2 + level * 0.2})`,
                     }}
                   />
                 ))}
               </Box>
-              <Typography variant="caption" color="text.secondary" sx={{ fontWeight: 500 }}>
+              <Typography 
+                variant="caption" 
+                color="text.secondary" 
+                sx={{ 
+                  fontWeight: 500,
+                  fontSize: { xs: '0.7rem', sm: '0.75rem' }
+                }}
+              >
                 Plus
               </Typography>
             </Box>
-
-            <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
-              {currentStreak > 0 && (
-                <Chip
-                  icon={
-                    <Box sx={{ 
-                      display: 'flex', 
-                      alignItems: 'center', 
-                      justifyContent: 'center',
-                      width: 16,
-                      height: 16
-                    }}>
-                      <svg width="14" height="14" viewBox="0 0 24 24" fill="none">
-                        <path
-                          d="M13.5.67s.74 2.65.74 4.8c0 2.06-1.35 3.73-3.41 3.73-2.07 0-3.63-1.67-3.63-3.73l.03-.36C5.21 7.51 4 10.62 4 14c0 4.42 3.58 8 8 8s8-3.58 8-8C20 8.61 17.41 3.8 13.5.67zM11.71 19c-1.78 0-3.22-1.4-3.22-3.14 0-1.62 1.05-2.76 2.81-3.12 1.77-.36 3.6-1.21 4.62-2.58.39 1.29.59 2.65.59 4.04 0 2.65-2.15 4.8-4.8 4.8z"
-                          fill="currentColor"
-                        />
-                      </svg>
-                    </Box>
-                  }
-                  label={`${currentStreak} jours de suite`}
-                  size="small"
-                  sx={{
-                    bgcolor: 'rgba(239, 68, 68, 0.1)',
-                    color: '#DC2626',
-                    fontWeight: 600,
-                    border: '1px solid rgba(239, 68, 68, 0.2)',
-                    '& .MuiChip-icon': { 
-                      color: 'inherit'
-                    }
-                  }}
-                />
-              )}
-              {totalContributions > 10 && (
-                <Chip
-                  icon={
-                    <Box sx={{ 
-                      display: 'flex', 
-                      alignItems: 'center', 
-                      justifyContent: 'center',
-                      width: 16,
-                      height: 16
-                    }}>
-                      <svg width="14" height="14" viewBox="0 0 24 24" fill="none">
-                        <path
-                          d="M12 17.27L18.18 21L16.54 13.97L22 9.24L14.81 8.63L12 2L9.19 8.63L2 9.24L7.46 13.97L5.82 21L12 17.27Z"
-                          fill="currentColor"
-                        />
-                      </svg>
-                    </Box>
-                  }
-                  label="Utilisateur Assidu"
-                  size="small"
-                  sx={{
-                    bgcolor: 'rgba(16, 185, 129, 0.1)',
-                    color: '#059669',
-                    fontWeight: 600,
-                    border: '1px solid rgba(16, 185, 129, 0.2)',
-                    '& .MuiChip-icon': { 
-                      color: 'inherit'
-                    }
-                  }}
-                />
-              )}
-            </Box>
+            
+            {/* Message motivationnel */}
+            <Typography 
+              variant="caption" 
+              color="text.secondary" 
+              sx={{ 
+                fontStyle: 'italic',
+                textAlign: { xs: 'center', sm: 'right' },
+                fontSize: { xs: '0.7rem', sm: '0.75rem' }
+              }}
+            >
+              {totalContributions > 0 
+                ? `Excellent travail ! Continuez sur cette lancée 🚀`
+                : "Votre première réunion vous attend ! 💪"
+              }
+            </Typography>
           </Box>
         </Paper>
       </Box>
@@ -2317,60 +2510,60 @@ const Dashboard: React.FC<DashboardProps> = ({ user, onRecordingStateChange }) =
         transform: isLoaded ? 'translateY(0)' : 'translateY(30px)',
         transition: 'all 0.2s ease-out 0.1s'
       }}>
-        <Typography variant="h5" sx={{ mb: 3, fontWeight: 600 }}>
-        Fonctionnalités disponibles
-        </Typography>
-        <Grid container spacing={3} sx={{ mb: 6 }}>
-          {features.map((feature) => (
-            <Grid item xs={12} sm={6} md={4} key={feature.title}>
-              <Card
-                sx={{
-                  height: '100%',
-                  display: 'flex',
-                  flexDirection: 'column',
-                  ...(feature.highlight && {
-                    borderColor: 'primary.main',
-                    borderWidth: 2,
-                    borderStyle: 'solid',
-                  }),
-                }}
-              >
-                <CardContent sx={{ flexGrow: 1 }}>
-                  <IconButton
-                    sx={{
-                      mb: 2,
-                      color: feature.highlight ? 'primary.main' : 'text.secondary',
+      <Typography variant="h5" sx={{ mb: 3, fontWeight: 600 }}>
+      Fonctionnalités disponibles
+      </Typography>
+      <Grid container spacing={3} sx={{ mb: 6 }}>
+        {features.map((feature) => (
+          <Grid item xs={12} sm={6} md={4} key={feature.title}>
+            <Card
+              sx={{
+                height: '100%',
+                display: 'flex',
+                flexDirection: 'column',
+                ...(feature.highlight && {
+                  borderColor: 'primary.main',
+                  borderWidth: 2,
+                  borderStyle: 'solid',
+                }),
+              }}
+            >
+              <CardContent sx={{ flexGrow: 1 }}>
+                <IconButton
+                  sx={{
+                    mb: 2,
+                    color: feature.highlight ? 'primary.main' : 'text.secondary',
+                    bgcolor: feature.highlight
+                      ? 'primary.light'
+                      : 'action.selected',
+                    '&:hover': {
                       bgcolor: feature.highlight
                         ? 'primary.light'
                         : 'action.selected',
-                      '&:hover': {
-                        bgcolor: feature.highlight
-                          ? 'primary.light'
-                          : 'action.selected',
-                      },
-                    }}
-                  >
-                    {feature.icon}
-                  </IconButton>
-                  <Typography variant="h6" component="h2" sx={{ mb: 1 }}>
-                    {feature.title}
-                  </Typography>
-                  <Typography variant="body2" color="text.secondary">
-                    {feature.description}
-                  </Typography>
-                </CardContent>
-                <CardActions>
-                  <Button 
-                    size="small"
-                    onClick={handleOpenSettings}
-                  >
-                    {feature.action}
-                  </Button>
-                </CardActions>
-              </Card>
-            </Grid>
-          ))}
-        </Grid>
+                    },
+                  }}
+                >
+                  {feature.icon}
+                </IconButton>
+                <Typography variant="h6" component="h2" sx={{ mb: 1 }}>
+                  {feature.title}
+                </Typography>
+                <Typography variant="body2" color="text.secondary">
+                  {feature.description}
+                </Typography>
+              </CardContent>
+              <CardActions>
+                <Button 
+                  size="small"
+                  onClick={handleOpenSettings}
+                >
+                  {feature.action}
+                </Button>
+              </CardActions>
+            </Card>
+          </Grid>
+        ))}
+      </Grid>
       </Box>
 
       {/* Dialogue pour nommer l'enregistrement */}
@@ -2529,6 +2722,209 @@ const Dashboard: React.FC<DashboardProps> = ({ user, onRecordingStateChange }) =
             startIcon={<ShareIcon />}
           >
             Contacter Lexia France
+          </Button>
+        </DialogActions>
+      </Dialog>
+
+      {/* Dialog d'avertissement avant l'enregistrement */}
+      <Dialog 
+        open={showRecordingWarning} 
+        onClose={handleCloseRecordingWarning}
+        maxWidth="sm"
+        fullWidth
+        PaperProps={{
+          sx: {
+            borderRadius: 3,
+            overflow: 'hidden',
+            background: 'rgba(255, 255, 255, 0.95)',
+            backdropFilter: 'blur(20px)',
+            border: '1px solid rgba(255, 255, 255, 0.2)',
+            boxShadow: '0 20px 60px rgba(0, 0, 0, 0.1), 0 0 0 1px rgba(255, 255, 255, 0.05)',
+          }
+        }}
+        TransitionProps={{
+          timeout: 300
+        }}
+      >
+        <DialogTitle sx={{ 
+          textAlign: 'center',
+          pb: 2,
+          pt: 4,
+          px: 4,
+          position: 'relative'
+        }}>
+          <IconButton 
+            onClick={handleCloseRecordingWarning} 
+            size="small"
+            sx={{ 
+              position: 'absolute',
+              top: 16,
+              right: 16,
+              color: 'text.secondary',
+              '&:hover': {
+                backgroundColor: 'rgba(0, 0, 0, 0.04)'
+              }
+            }}
+          >
+            <CloseIcon />
+          </IconButton>
+
+          {/* Icône centrale élégante */}
+          <Box
+            sx={{
+              width: 80,
+              height: 80,
+              borderRadius: '50%',
+              background: 'linear-gradient(135deg, #3b82f6 0%, #1d4ed8 100%)',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              margin: '0 auto 24px',
+              position: 'relative',
+              '&::before': {
+                content: '""',
+                position: 'absolute',
+                top: -4,
+                left: -4,
+                right: -4,
+                bottom: -4,
+                borderRadius: '50%',
+                background: 'linear-gradient(135deg, #3b82f6 0%, #1d4ed8 100%)',
+                opacity: 0.2,
+                animation: 'pulse 2s ease-in-out infinite',
+                '@keyframes pulse': {
+                  '0%, 100%': { 
+                    transform: 'scale(1)',
+                    opacity: 0.2
+                  },
+                  '50%': { 
+                    transform: 'scale(1.1)',
+                    opacity: 0.1
+                  }
+                }
+              }
+            }}
+          >
+            <MicIcon sx={{ color: 'white', fontSize: 32 }} />
+          </Box>
+
+          <Typography 
+            variant="h5" 
+            sx={{ 
+              fontWeight: 600,
+              color: 'text.primary',
+              mb: 1,
+              letterSpacing: '-0.02em'
+            }}
+          >
+            Connexion requise
+          </Typography>
+          
+          <Typography 
+            variant="body1" 
+            sx={{ 
+              color: 'text.secondary',
+              lineHeight: 1.5,
+              maxWidth: '320px',
+              margin: '0 auto'
+            }}
+          >
+            Assurez-vous d'avoir une connexion internet stable pour une transcription optimale
+          </Typography>
+        </DialogTitle>
+        
+        <DialogContent sx={{ px: 4, py: 2 }}>
+          {/* Points clés avec design épuré */}
+          <Box sx={{ mb: 3 }}>
+            <Box sx={{ display: 'flex', alignItems: 'flex-start', mb: 2 }}>
+              <Box
+                sx={{
+                  width: 6,
+                  height: 6,
+                  borderRadius: '50%',
+                  backgroundColor: '#10b981',
+                  mt: 1,
+                  mr: 2,
+                  flexShrink: 0
+                }}
+              />
+              <Typography variant="body2" sx={{ color: 'text.secondary', lineHeight: 1.6 }}>
+                Transcription en temps réel pendant l'enregistrement
+              </Typography>
+            </Box>
+            <Box sx={{ display: 'flex', alignItems: 'flex-start', mb: 2 }}>
+              <Box
+                sx={{
+                  width: 6,
+                  height: 6,
+                  borderRadius: '50%',
+                  backgroundColor: '#3b82f6',
+                  mt: 1,
+                  mr: 2,
+                  flexShrink: 0
+                }}
+              />
+              <Typography variant="body2" sx={{ color: 'text.secondary', lineHeight: 1.6 }}>
+                Sauvegarde automatique et sécurisée dans le cloud
+              </Typography>
+            </Box>
+            <Box sx={{ display: 'flex', alignItems: 'flex-start' }}>
+              <Box
+                sx={{
+                  width: 6,
+                  height: 6,
+                  borderRadius: '50%',
+                  backgroundColor: '#f59e0b',
+                  mt: 1,
+                  mr: 2,
+                  flexShrink: 0
+                }}
+              />
+              <Typography variant="body2" sx={{ color: 'text.secondary', lineHeight: 1.6 }}>
+                Résumé intelligent généré automatiquement
+              </Typography>
+            </Box>
+          </Box>
+        </DialogContent>
+        
+        <DialogActions sx={{ px: 4, py: 3, gap: 2, justifyContent: 'center' }}>
+          <Button 
+            onClick={handleCloseRecordingWarning}
+            sx={{
+              color: 'text.secondary',
+              fontWeight: 500,
+              px: 3,
+              py: 1,
+              borderRadius: 2,
+              textTransform: 'none',
+              '&:hover': {
+                backgroundColor: 'rgba(0, 0, 0, 0.04)'
+              }
+            }}
+          >
+            Annuler
+          </Button>
+          <Button 
+            onClick={handleConfirmRecording} 
+            variant="contained"
+            sx={{
+              background: 'linear-gradient(135deg, #3b82f6 0%, #1d4ed8 100%)',
+              color: 'white',
+              fontWeight: 600,
+              px: 4,
+              py: 1.5,
+              borderRadius: 2,
+              textTransform: 'none',
+              boxShadow: '0 4px 16px rgba(59, 130, 246, 0.3)',
+              '&:hover': {
+                background: 'linear-gradient(135deg, #2563eb 0%, #1e40af 100%)',
+                boxShadow: '0 6px 20px rgba(59, 130, 246, 0.4)',
+                transform: 'translateY(-1px)',
+              },
+              transition: 'all 0.2s ease'
+            }}
+          >
+            Commencer l'enregistrement
           </Button>
         </DialogActions>
       </Dialog>
